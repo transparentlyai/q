@@ -12,7 +12,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.theme import Theme
 
-__version__ = "0.3.0"
+__version__ = "0.3.3"
 
 # Custom theme for the console
 custom_theme = Theme({
@@ -203,7 +203,7 @@ def main():
         style=prompt_style,
         vi_mode=False,    # Use standard emacs-like keybindings
         complete_in_thread=True,  # More responsive completion
-        mouse_support=True  # Enable mouse support
+        mouse_support=False  # Disable mouse support to allow normal terminal scrolling
     )
     
     if os.environ.get("Q_DEBUG"):

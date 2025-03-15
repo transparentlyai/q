@@ -13,6 +13,7 @@ A simple command-line tool for sending questions to Claude AI and getting beauti
 - 📋 Context management via config file
 - 💾 Load questions from file
 - 🔄 History navigation with up/down arrow keys
+- 🖱️ Terminal scrolling support for navigating long responses
 - 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
 
 ## Installation
