@@ -59,6 +59,8 @@ An example configuration file is provided in the repository as `example_config.c
 - `MODEL`: Default model to use (e.g., "claude-3-opus-20240229", "claude-3-haiku-20240307")
 - `MAX_TOKENS`: Maximum number of tokens in the response (default: 4096)
 
+check the anthropic available models here: https://docs.anthropic.com/en/docs/about-claude/models/all-models
+
 ⚠️ **Security Warning:** 
 - Never include API keys or sensitive information in your context section or context files
 - Any text that looks like an API key, or contains words like "api_key", "key", "token", or "secret" will be automatically redacted
