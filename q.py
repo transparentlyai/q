@@ -4,6 +4,9 @@ import os
 import sys
 import anthropic
 import readline
+import termios
+import tty
+import select
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -75,6 +78,37 @@ def format_markdown(text):
     """Format markdown text into Rich-formatted text for terminal display"""
     return Markdown(text)
 
+def check_for_escape_key():
+    """Check if the escape key is pressed before starting input"""
+    # Save terminal settings
+    old_settings = termios.tcgetattr(sys.stdin)
+    try:
+        # Set terminal to raw mode
+        tty.setraw(sys.stdin.fileno())
+        
+        # Check if there's input available
+        if select.select([sys.stdin], [], [], 0.0)[0]:
+            # Read a character
+            char = sys.stdin.read(1)
+            
+            # If it's the escape key, exit
+            if char == '\x1b':
+                # Restore terminal settings before exiting
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                sys.exit(0)
+                
+            # Otherwise, put it back
+            else:
+                # HACK: We can't put the character back easily, 
+                # but we can set it as the first history item
+                # and later recall it with UP arrow
+                readline.add_history(char)
+    except Exception:
+        pass
+    finally:
+        # Restore terminal settings
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+
 def get_input_with_escape(prompt="", history=None):
     """Get user input with support for escape key to exit and history navigation using readline"""
     
@@ -86,25 +120,19 @@ def get_input_with_escape(prompt="", history=None):
     readline.clear_history()
     for item in history:
         readline.add_history(item)
-        
-    # Set up custom key bindings for escape
-    # This doesn't directly work, but we'll catch the exception
+    
+    # Display the prompt
+    console.print(prompt, end="", highlight=False)
+    sys.stdout.flush()
+    
+    # First check for Escape key
+    check_for_escape_key()
+    
+    # Try to get input with readline
     try:
-        readline.parse_and_bind('"\\e": "exit"')  # Try to bind Escape to exit
-    except:
-        pass  # Ignore if not supported
-        
-    # Try to get input with a Rich-formatted prompt
-    try:
-        # Convert prompt to plain text for better compatibility
-        from rich.console import Console as PlainConsole
-        plain_console = PlainConsole(highlight=False, markup=False)
-        with plain_console.capture() as capture:
-            console.print(prompt, end="", highlight=False)
-        plain_prompt = capture.get()
-        
-        # Use plain prompt for readline
-        line = input(plain_prompt)
+        # If we're using a fancy prompt, sometimes we need the simplest possible display
+        # But Rich might add markup, so we use simple ANSI
+        line = input("")  # Input without prompt (we've already printed it)
         
         # Check for "exit" or "quit" commands
         if line.strip().lower() in ["exit", "quit"]:
@@ -120,8 +148,9 @@ def get_input_with_escape(prompt="", history=None):
     except Exception as e:
         # Fall back to simple input if readline has issues
         if os.environ.get("Q_DEBUG"):
-            console.print(f"Warning: Readline error: {e}", style="warning")
-        return input(prompt)
+            console.print(f"Warning: Input error: {e}", style="warning")
+        # Try again with simpler prompt
+        return input("\033[33m-> \033[0m")  # Simple orange prompt as fallback
 
 def read_context_file(file_path):
     """Read a context file and return its contents, ensuring no API keys are included"""
