@@ -87,6 +87,12 @@ def main():
     parser.add_argument("--no-context", action="store_true", help="Disable using context from config file")
     parser.add_argument("--no-md", action="store_true", help="Disable markdown formatting of responses")
     parser.add_argument("--context-file", action="append", help="Additional file to use as context (can be used multiple times)")
+    
+    # If no args provided (sys.argv has just the script name), print help and exit
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(0)
+        
     args = parser.parse_args()
 
     # Get API key from args, config file, or environment variable
