@@ -41,7 +41,7 @@ Create a config file at `~/.config/q.conf` with the following format:
 ```
 # Configuration variables (in KEY=value format)
 ANTHROPIC_API_KEY=sk-ant-api-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-MODEL=claude-3-opus-20240229
+MODEL=claude-3-7-sonnet-latest
 MAX_TOKENS=4000
 
 # Optional context section - everything after #CONTEXT is sent with every query
