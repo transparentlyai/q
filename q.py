@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 import anthropic
+import readchar
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -73,6 +74,46 @@ def read_config_file():
 def format_markdown(text):
     """Format markdown text into Rich-formatted text for terminal display"""
     return Markdown(text)
+
+def get_input_with_escape(prompt=""):
+    """Get user input with support for escape key to exit"""
+    console.print(prompt, end="", highlight=False)
+    
+    buffer = ""
+    while True:
+        char = readchar.readchar()
+        
+        # Check for escape key (ASCII 27)
+        if char == readchar.key.ESC:
+            console.print("\nEscape key pressed.")
+            console.print("Exiting...", style="info")
+            sys.exit(0)
+            
+        # Check for enter/return key
+        elif char in [readchar.key.ENTER, '\r', '\n']:
+            console.print()  # Move to next line
+            return buffer
+            
+        # Check for backspace/delete
+        elif char in [readchar.key.BACKSPACE, '\x7f']:
+            if buffer:
+                buffer = buffer[:-1]
+                # Erase last character (backspace, space, backspace)
+                sys.stdout.write('\b \b')
+                sys.stdout.flush()
+                
+        # Check for Ctrl+C
+        elif char == readchar.key.CTRL_C:
+            console.print("\nExiting...", style="info")
+            sys.exit(0)
+            
+        # Regular character input
+        elif ord(char) >= 32:  # Printable characters
+            buffer += char
+            sys.stdout.write(char)
+            sys.stdout.flush()
+            
+    return buffer
 
 def read_context_file(file_path):
     """Read a context file and return its contents, ensuring no API keys are included"""
@@ -174,7 +215,8 @@ def main():
     elif not args.no_interactive:
         # If no question but interactive mode, prompt for first question
         try:
-            question = console.input("[prompt]> [/prompt]")
+            # Use custom input function with escape key support
+            question = get_input_with_escape("[prompt]> [/prompt]")
             # Check for exit command
             if question.strip().lower() in ["exit", "quit"]:
                 console.print("Exiting...", style="info")
@@ -226,7 +268,8 @@ def main():
                     
                 # Get next question
                 try:
-                    question = console.input("[prompt]> [/prompt]")
+                    # Use custom input function with escape key support
+                    question = get_input_with_escape("[prompt]> [/prompt]")
                 except (KeyboardInterrupt, EOFError):
                     console.print("\nExiting...", style="info")
                     sys.exit(0)
