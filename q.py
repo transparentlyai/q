@@ -3,7 +3,7 @@ import argparse
 import os
 import sys
 import anthropic
-import readchar
+import readline
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -76,94 +76,52 @@ def format_markdown(text):
     return Markdown(text)
 
 def get_input_with_escape(prompt="", history=None):
-    """Get user input with support for escape key to exit and history navigation"""
-    # Plain prompt for terminal operations
-    plain_prompt = "-> "
+    """Get user input with support for escape key to exit and history navigation using readline"""
     
-    # Display the actual formatted prompt
-    console.print(prompt, end="", highlight=False)
-    sys.stdout.flush()
-    
+    # Initialize readline and history
     if history is None:
         history = []
     
-    buffer = ""
-    history_pos = len(history)  # Position in history (will be at end initially)
-    
-    def clear_line():
-        """Clear the current input line"""
-        # Move to beginning of line
-        sys.stdout.write('\r')
-        # Clear the line with spaces
-        sys.stdout.write(' ' * (len(plain_prompt) + len(buffer) + 10))  # Add some extra spaces to be safe
-        # Move to beginning again
-        sys.stdout.write('\r')
-        # Print prompt
-        console.print(prompt, end="", highlight=False)
-        sys.stdout.flush()
-    
-    while True:
-        # Read a single character first to check for escape sequence start
-        char = readchar.readchar()
+    # Set up readline with history
+    readline.clear_history()
+    for item in history:
+        readline.add_history(item)
         
-        # Handle escape sequences
-        if char == '\x1b':  # ESC character
-            # Try to read more characters with a small timeout to see if this is an arrow key
-            import select
-            if sys.stdin.isatty() and select.select([sys.stdin], [], [], 0.01)[0]:
-                char2 = readchar.readchar()
-                if char2 == '[':
-                    char3 = readchar.readchar()
-                    
-                    # Handle arrow keys
-                    if char3 == 'A':  # Up arrow
-                        if history and history_pos > 0:
-                            history_pos -= 1
-                            clear_line()
-                            buffer = history[history_pos]
-                            sys.stdout.write(buffer)
-                            sys.stdout.flush()
-                    elif char3 == 'B':  # Down arrow
-                        if history_pos < len(history) - 1:
-                            history_pos += 1
-                            clear_line()
-                            buffer = history[history_pos]
-                            sys.stdout.write(buffer)
-                            sys.stdout.flush()
-                        elif history_pos == len(history) - 1:
-                            history_pos = len(history)
-                            clear_line()
-                            buffer = ""
-                    # Ignore right/left arrows for now
-                    continue
-            
-            # If we get here, it's a regular ESC key and we should exit
+    # Set up custom key bindings for escape
+    # This doesn't directly work, but we'll catch the exception
+    try:
+        readline.parse_and_bind('"\\e": "exit"')  # Try to bind Escape to exit
+    except:
+        pass  # Ignore if not supported
+        
+    # Try to get input with a Rich-formatted prompt
+    try:
+        # Convert prompt to plain text for better compatibility
+        from rich.console import Console as PlainConsole
+        plain_console = PlainConsole(highlight=False, markup=False)
+        with plain_console.capture() as capture:
+            console.print(prompt, end="", highlight=False)
+        plain_prompt = capture.get()
+        
+        # Use plain prompt for readline
+        line = input(plain_prompt)
+        
+        # Check for "exit" or "quit" commands
+        if line.strip().lower() in ["exit", "quit"]:
             sys.exit(0)
             
-        # Enter key
-        elif char in ['\r', '\n', readchar.key.ENTER]:
-            console.print()  # Move to next line
-            return buffer
-            
-        # Backspace/Delete
-        elif char in ['\x7f', '\x08', readchar.key.BACKSPACE]:
-            if buffer:
-                buffer = buffer[:-1]
-                # Erase last character (backspace, space, backspace)
-                sys.stdout.write('\b \b')
-                sys.stdout.flush()
-                
-        # Ctrl+C
-        elif char == '\x03':
-            sys.exit(0)
-            
-        # Regular character input
-        elif ord(char) >= 32:  # Printable characters
-            buffer += char
-            sys.stdout.write(char)
-            sys.stdout.flush()
-    
-    return buffer
+        return line
+        
+    except (KeyboardInterrupt, EOFError):
+        # Handle Ctrl+C or Ctrl+D
+        print()  # Move to a new line
+        sys.exit(0)
+        
+    except Exception as e:
+        # Fall back to simple input if readline has issues
+        if os.environ.get("Q_DEBUG"):
+            console.print(f"Warning: Readline error: {e}", style="warning")
+        return input(prompt)
 
 def read_context_file(file_path):
     """Read a context file and return its contents, ensuring no API keys are included"""
@@ -292,8 +250,9 @@ def main():
                 
             # Add user message to conversation and input history
             conversation.append({"role": "user", "content": question})
+            # Only add non-empty questions that aren't duplicates of the last entry
             if question.strip() and (not input_history or question != input_history[-1]):
-                input_history.append(question)
+                input_history.append(question.strip())
             
             # Send question to Claude
             try:
