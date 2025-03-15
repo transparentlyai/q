@@ -3,11 +3,7 @@ import argparse
 import os
 import sys
 import anthropic
-from prompt_toolkit import PromptSession
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.keys import Keys
-from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.formatted_text import ANSI
+import readline
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -79,48 +75,38 @@ def format_markdown(text):
     """Format markdown text into Rich-formatted text for terminal display"""
     return Markdown(text)
 
-def get_input_with_escape(prompt="", history=None):
-    """Get user input with support for escape key to exit and history navigation"""
+def setup_readline_history():
+    """Set up readline history for arrow key navigation"""
+    try:
+        # Set up readline for history
+        histfile = os.path.expanduser("~/.q_history")
+        try:
+            readline.read_history_file(histfile)
+            readline.set_history_length(1000)
+        except FileNotFoundError:
+            pass
+        atexit.register(readline.write_history_file, histfile)
+    except Exception:
+        pass
+
+def get_input(prompt="", history=None):
+    """Get user input with history navigation"""
     
     # Initialize history
     if history is None:
         history = []
     
-    # Create key bindings with escape key handling
-    kb = KeyBindings()
+    # Add history items
+    for item in history:
+        if item and item.strip():
+            readline.add_history(item)
     
-    # We need to raise an exception instead of calling sys.exit() directly
-    class EscapePressed(Exception):
-        """Exception raised when escape key is pressed."""
-        pass
-    
-    @kb.add(Keys.Escape)
-    def _(event):
-        """Exit on escape key press"""
-        event.app.exit(exception=EscapePressed())
-    
-    # Convert Rich markup to ANSI for prompt_toolkit
-    # This creates a prompt that looks similar to the Rich one
-    ansi_prompt = f"\033[38;5;214m{prompt.replace('[prompt]', '').replace('[/prompt]', '')}\033[0m"
+    # Convert Rich markup to a simple orange prompt
+    orange_prompt = f"\033[38;5;214m{prompt.replace('[prompt]', '').replace('[/prompt]', '')}\033[0m"
     
     try:
-        # Create a prompt session with history
-        session = PromptSession(
-            history=InMemoryHistory(), 
-            key_bindings=kb,
-            enable_history_search=True
-        )
-        
-        # Add history items
-        for item in history:
-            session.history.append_string(item)
-        
-        # Get input
-        try:
-            line = session.prompt(ANSI(ansi_prompt))
-        except EscapePressed:
-            # Handle escape key press
-            sys.exit(0)
+        # Display the prompt and get input
+        line = input(orange_prompt)
         
         # Check for "exit" or "quit" commands
         if line.strip().lower() in ["exit", "quit"]:
@@ -137,20 +123,6 @@ def get_input_with_escape(prompt="", history=None):
         # Handle Ctrl+D
         print()
         sys.exit(0)
-        
-    except Exception as e:
-        # Fall back to simple input if prompt_toolkit has issues
-        if os.environ.get("Q_DEBUG"):
-            console.print(f"Warning: Input error: {e}", style="warning")
-        # Try with standard input as a last resort
-        try:
-            line = input("\033[38;5;214m-> \033[0m")
-            if line.strip().lower() in ["exit", "quit"]:
-                sys.exit(0)
-            return line
-        except (KeyboardInterrupt, EOFError):
-            print()
-            sys.exit(0)
 
 def read_context_file(file_path):
     """Read a context file and return its contents, ensuring no API keys are included"""
@@ -172,6 +144,9 @@ def read_context_file(file_path):
         return ""
 
 def main():
+    # Setup readline history for arrow key navigation
+    setup_readline_history()
+    
     parser = argparse.ArgumentParser(description="Send a question to Claude and get the response")
     parser.add_argument("question", nargs="*", help="The question to send to Claude")
     parser.add_argument("--file", "-f", help="Read question from file")
@@ -259,8 +234,8 @@ def main():
     elif not args.no_interactive:
         # If no question but interactive mode, prompt for first question
         try:
-            # Use custom input function with escape key support
-            question = get_input_with_escape("[prompt]-> [/prompt]", input_history)
+            # Use input function with history support
+            question = get_input("[prompt]-> [/prompt]", input_history)
             # Check for exit command
             if question.strip().lower() in ["exit", "quit"]:
                 sys.exit(0)
@@ -312,8 +287,8 @@ def main():
                     
                 # Get next question
                 try:
-                    # Use custom input function with escape key support
-                    question = get_input_with_escape("[prompt]-> [/prompt]", input_history)
+                    # Use input function with history support
+                    question = get_input("[prompt]-> [/prompt]", input_history)
                 except (KeyboardInterrupt, EOFError):
                     sys.exit(0)
                 

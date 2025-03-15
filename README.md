@@ -12,7 +12,7 @@ A simple command-line tool for sending questions to Claude AI and getting beauti
 - 🔐 Multiple API key sources (config file, environment variable, command-line)
 - 📋 Context management via config file
 - 💾 Load questions from file
-- 🚪 Easy exit with Esc key, Ctrl+C, Ctrl+D, or typing "exit"/"quit"
+- 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
 - ⬆️ Command history navigation with arrow keys (using readline)
 
 ## Installation
