@@ -80,7 +80,7 @@ def format_markdown(text):
     return Markdown(text)
 
 def get_input_with_escape(prompt="", history=None):
-    """Get user input with support for escape key to exit and history navigation using prompt_toolkit"""
+    """Get user input with support for escape key to exit and history navigation"""
     
     # Initialize history
     if history is None:
@@ -89,15 +89,15 @@ def get_input_with_escape(prompt="", history=None):
     # Create key bindings with escape key handling
     kb = KeyBindings()
     
+    # We need to raise an exception instead of calling sys.exit() directly
+    class EscapePressed(Exception):
+        """Exception raised when escape key is pressed."""
+        pass
+    
     @kb.add(Keys.Escape)
     def _(event):
         """Exit on escape key press"""
-        sys.exit(0)
-    
-    @kb.add(Keys.ControlC)
-    def _(event):
-        """Exit on Ctrl+C"""
-        sys.exit(0)
+        event.app.exit(exception=EscapePressed())
     
     # Convert Rich markup to ANSI for prompt_toolkit
     # This creates a prompt that looks similar to the Rich one
@@ -116,7 +116,11 @@ def get_input_with_escape(prompt="", history=None):
             session.history.append_string(item)
         
         # Get input
-        line = session.prompt(ANSI(ansi_prompt))
+        try:
+            line = session.prompt(ANSI(ansi_prompt))
+        except EscapePressed:
+            # Handle escape key press
+            sys.exit(0)
         
         # Check for "exit" or "quit" commands
         if line.strip().lower() in ["exit", "quit"]:
@@ -140,7 +144,10 @@ def get_input_with_escape(prompt="", history=None):
             console.print(f"Warning: Input error: {e}", style="warning")
         # Try with standard input as a last resort
         try:
-            return input("\033[38;5;214m-> \033[0m")
+            line = input("\033[38;5;214m-> \033[0m")
+            if line.strip().lower() in ["exit", "quit"]:
+                sys.exit(0)
+            return line
         except (KeyboardInterrupt, EOFError):
             print()
             sys.exit(0)
