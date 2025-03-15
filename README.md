@@ -34,14 +34,6 @@ cd q
 pip install -e .
 ```
 
-### Install from PyPI (when published)
-
-```bash
-pip install q-claude
-```
-
-After installation, the `q` command will be available in your terminal.
-
 ## Configuration
 
 Create a config file at `~/.config/q.conf` with the following format:

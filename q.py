@@ -12,6 +12,8 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.theme import Theme
 
+__version__ = "0.1.0"
+
 # Custom theme for the console
 custom_theme = Theme({
     "info": "dim cyan",
@@ -30,6 +32,9 @@ def read_config_file():
     config_vars = {}
     context = ""
     context_started = False
+    
+    # Create example config path for reference
+    example_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "example_config.conf")
     
     if os.path.exists(config_path):
         try:
@@ -67,10 +72,15 @@ def read_config_file():
                                 api_key = value
                         # Check for API key (assuming it's just the key on a line by itself)
                         elif not api_key and len(line) > 20:  # Simple validation for API key-like string
-                            if line.startswith('sk-ant'):  # Even stricter validation
+                            if line.startswith('sk-ant-api'):  # Even stricter validation for v1 API key format
                                 api_key = line
         except Exception as e:
             console.print(f"Warning: Error reading config file: {e}", style="warning")
+    else:
+        # If config file doesn't exist, suggest creating it using the example format
+        if os.path.exists(example_config_path):
+            console.print(f"Config file not found. You can create one at {config_path} using the format shown in {example_config_path}", style="info")
+            console.print("Make sure your API key starts with 'sk-ant-api' for Claude API v1 format.", style="info")
     
     return api_key, context.strip(), config_vars
 
@@ -143,6 +153,7 @@ def main():
     parser.add_argument("--no-context", action="store_true", help="Disable using context from config file")
     parser.add_argument("--no-md", action="store_true", help="Disable markdown formatting of responses")
     parser.add_argument("--context-file", action="append", help="Additional file to use as context (can be used multiple times)")
+    parser.add_argument("--version", "-v", action="version", version=f"%(prog)s {__version__}", help="Show program version and exit")
     
     # If no args provided (sys.argv has just the script name), print help and exit
     if len(sys.argv) == 1:
@@ -160,6 +171,9 @@ def main():
     # Set model from args, config file, or default
     if not args.model:
         args.model = config_vars.get("MODEL", "claude-3-opus-20240229")
+        
+    # Set max_tokens from config file or default
+    max_tokens = int(config_vars.get("MAX_TOKENS", 4096))
     
     if not api_key:
         console.print("Error: Anthropic API key not provided. Add to ~/.config/q.conf, set ANTHROPIC_API_KEY environment variable, or use --api-key", style="error")
@@ -280,7 +294,7 @@ def main():
                 with console.status("[info]Thinking...[/info]"):
                     message = client.messages.create(
                         model=args.model,
-                        max_tokens=4096,
+                        max_tokens=max_tokens,
                         temperature=0,
                         system=system_prompt,
                         messages=conversation
@@ -311,6 +325,25 @@ def main():
                 except (KeyboardInterrupt, EOFError):
                     sys.exit(0)
                 
+            except anthropic.APIStatusError as e:
+                if e.status_code == 401:
+                    console.print("Authentication error: Your API key appears to be invalid. Please check your API key in the config file or provide a valid key.", style="error")
+                    if os.environ.get("Q_DEBUG"):
+                        console.print(f"Error details: {e}", style="error")
+                    sys.exit(1)
+                else:
+                    console.print(f"Error communicating with Claude (Status {e.status_code}): {e.message}", style="error")
+                    sys.exit(1)
+            except anthropic.APIConnectionError as e:
+                console.print(f"Connection error: Could not connect to Anthropic API. Please check your internet connection.", style="error")
+                if os.environ.get("Q_DEBUG"):
+                    console.print(f"Error details: {e}", style="error")
+                sys.exit(1)
+            except anthropic.APITimeoutError as e:
+                console.print(f"Timeout error: The request to Anthropic API timed out.", style="error")
+                if os.environ.get("Q_DEBUG"):
+                    console.print(f"Error details: {e}", style="error")
+                sys.exit(1)
             except Exception as e:
                 console.print(f"Error communicating with Claude: {e}", style="error")
                 sys.exit(1)
