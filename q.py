@@ -4,10 +4,14 @@ import os
 import sys
 import anthropic
 import readline
+import atexit
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.theme import Theme
+
+# Global variables
+HISTFILE = None
 
 # Custom theme for the console
 custom_theme = Theme({
@@ -77,17 +81,38 @@ def format_markdown(text):
 
 def setup_readline_history():
     """Set up readline history for arrow key navigation"""
+    global HISTFILE
+    HISTFILE = os.path.expanduser("~/.qhistory")
+    
     try:
         # Set up readline for history
-        histfile = os.path.expanduser("~/.qhistory")
-        try:
-            readline.read_history_file(histfile)
-            readline.set_history_length(1000)
-        except FileNotFoundError:
-            pass
-        atexit.register(readline.write_history_file, histfile)
-    except Exception:
-        pass
+        readline.parse_and_bind("tab: complete")
+        
+        # Create the history file if it doesn't exist
+        if not os.path.exists(HISTFILE):
+            with open(HISTFILE, 'w'):
+                pass
+                
+        # Read existing history
+        if os.path.exists(HISTFILE):
+            try:
+                readline.read_history_file(HISTFILE)
+                readline.set_history_length(1000)  # Limit history to 1000 items
+            except Exception as e:
+                print(f"Error reading history file: {e}")
+                
+        # Make sure to write history on exit
+        import atexit
+        atexit.register(write_history)
+    except Exception as e:
+        print(f"Error setting up history: {e}")
+        
+def write_history():
+    """Write history to file"""
+    try:
+        readline.write_history_file(HISTFILE)
+    except Exception as e:
+        print(f"Error writing history file: {e}")
 
 def get_input(prompt="", history=None):
     """Get user input with history navigation"""
@@ -257,8 +282,15 @@ def main():
             # Only add non-empty questions that aren't duplicates of the last entry
             if question.strip() and (not input_history or question != input_history[-1]):
                 input_history.append(question.strip())
-                # Add to readline history for persistence between sessions
-                readline.add_history(question.strip())
+                # Add to readline history
+                try:
+                    # Force append to history (even if already there)
+                    readline.add_history(question.strip())
+                    # Write history file after each new addition for safety
+                    readline.write_history_file(HISTFILE)
+                except Exception as e:
+                    if os.environ.get("Q_DEBUG"):
+                        print(f"Error adding to history: {e}")
             
             # Send question to Claude
             try:
