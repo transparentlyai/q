@@ -6,12 +6,13 @@ A simple command-line tool for sending questions to Claude AI and getting beauti
 
 ## Features
 
-- 🌟 Interactive mode with conversation history
+- 🌟 Interactive mode with persistent conversation history
 - 💻 Beautiful terminal formatting with syntax highlighting, code blocks, and more
 - 📃 Markdown rendering for responses
 - 🔐 Multiple API key sources (config file, environment variable, command-line)
 - 📋 Context management via config file
 - 💾 Load questions from file
+- 🔄 History navigation with up/down arrow keys
 - 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
 
 ## Installation

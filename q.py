@@ -3,6 +3,10 @@ import argparse
 import os
 import sys
 import anthropic
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -74,15 +78,24 @@ def format_markdown(text):
     """Format markdown text into Rich-formatted text for terminal display"""
     return Markdown(text)
 
-def get_input(prompt=""):
-    """Get user input"""
-    
-    # Convert Rich markup to a simple orange prompt
-    orange_prompt = f"\033[38;5;214m{prompt.replace('[prompt]', '').replace('[/prompt]', '')}\033[0m"
+def get_input(prompt="", session=None):
+    """Get user input using prompt_toolkit with history"""
     
     try:
-        # Display the prompt and get input
-        line = input(orange_prompt)
+        # Use the provided session or create a default one
+        if session:
+            # Create HTML-formatted prompt for prompt_toolkit
+            formatted_prompt = HTML(f'<prompt>{prompt}</prompt>')
+            
+            # Use prompt_toolkit with proper formatting
+            line = session.prompt(
+                formatted_prompt,
+                # Enable key bindings for history navigation (up/down arrows)
+                enable_history_search=True
+            )
+        else:
+            # Fallback to input if no session (shouldn't happen)
+            line = input(prompt)
         
         # Check for "exit" or "quit" commands
         if line.strip().lower() in ["exit", "quit"]:
@@ -159,6 +172,29 @@ def main():
     conversation = []
     input_history = []
     
+    # Set up prompt_toolkit with persistent history and styling
+    history_file_path = os.path.expanduser("~/.qhistory")
+    
+    # Define prompt style with orange color
+    prompt_style = Style.from_dict({
+        'prompt': '#ff8800 bold',  # Orange and bold
+    })
+    
+    # Create history object that we can reuse
+    history = FileHistory(history_file_path)
+    
+    # Create prompt session with history and style
+    prompt_session = PromptSession(
+        history=history,
+        style=prompt_style,
+        vi_mode=False,    # Use standard emacs-like keybindings
+        complete_in_thread=True,  # More responsive completion
+        mouse_support=True  # Enable mouse support
+    )
+    
+    if os.environ.get("Q_DEBUG"):
+        console.print(f"[info]Using history file: {history_file_path}[/info]")
+    
     # Build context from config file and context files
     context = ""
     
@@ -195,21 +231,27 @@ def main():
         
         system_prompt += "\n\nHere is some context that may be helpful:\n" + sanitized_context
     
+    # Reuse the history object we created earlier
+    
     # Get initial question from args or file
     if args.file:
         try:
             with open(args.file, 'r') as f:
                 question = f.read()
+            # Add file content to history
+            history.append_string(question.strip())
         except Exception as e:
             console.print(f"Error reading file: {e}", style="error")
             sys.exit(1)
     elif args.question:
         question = " ".join(args.question)
+        # Add command-line question to history
+        history.append_string(question.strip())
     elif not args.no_interactive:
         # If no question but interactive mode, prompt for first question
         try:
-            # Get user input
-            question = get_input("[prompt]-> [/prompt]")
+            # Get user input using prompt_toolkit session
+            question = get_input("-> ", session=prompt_session)
             # Check for exit command
             if question.strip().lower() in ["exit", "quit"]:
                 sys.exit(0)
@@ -231,6 +273,7 @@ def main():
             # Only add non-empty questions that aren't duplicates of the last entry
             if question.strip() and (not input_history or question != input_history[-1]):
                 input_history.append(question.strip())
+                # Note: prompt_toolkit's FileHistory handles history persistence automatically
             
             # Send question to Claude
             try:
@@ -261,8 +304,8 @@ def main():
                     
                 # Get next question
                 try:
-                    # Get user input
-                    question = get_input("[prompt]-> [/prompt]")
+                    # Get user input using prompt_toolkit session
+                    question = get_input("-> ", session=prompt_session)
                 except (KeyboardInterrupt, EOFError):
                     sys.exit(0)
                 
@@ -271,6 +314,11 @@ def main():
                 sys.exit(1)
     except (KeyboardInterrupt, EOFError):
         # Handle Ctrl+C or Ctrl+D gracefully
+        pass
+    finally:
+        # prompt_toolkit's FileHistory automatically saves history
+        if os.environ.get("Q_DEBUG"):
+            console.print(f"[info]History saved to {history_file_path}[/info]")
         sys.exit(0)
 
 if __name__ == "__main__":
