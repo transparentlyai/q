@@ -23,6 +23,7 @@ def read_config_file():
     """Read the configuration file ~/.config/q.conf for API key and context"""
     config_path = os.path.expanduser("~/.config/q.conf")
     api_key = None
+    config_vars = {}
     context = ""
     context_started = False
     
@@ -32,12 +33,10 @@ def read_config_file():
                 for line in f:
                     line = line.strip()
                     
-                    # Check for API key (assuming it's just the key on a line by itself)
-                    if not line.startswith('#') and not context_started and not api_key:
-                        potential_key = line.strip()
-                        if potential_key and len(potential_key) > 20:  # Simple validation for API key-like string
-                            api_key = potential_key
-                    
+                    # Skip comments
+                    if line.startswith('#'):
+                        continue
+                        
                     # Check for context section
                     if line == "#CONTEXT":
                         context_started = True
@@ -49,10 +48,27 @@ def read_config_file():
                             'apikey' in line.lower() or 'key' in line.lower()):
                             line = "[REDACTED - Potential API key or sensitive information]"
                         context += line + "\n"
+                    else:
+                        # Parse configuration variables (KEY=value format)
+                        if '=' in line:
+                            key, value = line.split('=', 1)
+                            key = key.strip().upper()
+                            value = value.strip()
+                            
+                            # Store in config vars
+                            config_vars[key] = value
+                            
+                            # Check for API key specifically
+                            if key == "ANTHROPIC_API_KEY" and not api_key:
+                                api_key = value
+                        # Check for API key (assuming it's just the key on a line by itself)
+                        elif not api_key and len(line) > 20:  # Simple validation for API key-like string
+                            if line.startswith('sk-ant'):  # Even stricter validation
+                                api_key = line
         except Exception as e:
             console.print(f"Warning: Error reading config file: {e}", style="warning")
     
-    return api_key, context.strip()
+    return api_key, context.strip(), config_vars
 
 def format_markdown(text):
     """Format markdown text into Rich-formatted text for terminal display"""
@@ -82,7 +98,7 @@ def main():
     parser.add_argument("question", nargs="*", help="The question to send to Claude")
     parser.add_argument("--file", "-f", help="Read question from file")
     parser.add_argument("--api-key", help="Anthropic API key (defaults to config file or ANTHROPIC_API_KEY env var)")
-    parser.add_argument("--model", default="claude-3-opus-20240229", help="Model to use (default: claude-3-opus-20240229)")
+    parser.add_argument("--model", help="Model to use (defaults to config file or claude-3-opus-20240229)")
     parser.add_argument("--no-interactive", action="store_true", help="Disable interactive mode")
     parser.add_argument("--no-context", action="store_true", help="Disable using context from config file")
     parser.add_argument("--no-md", action="store_true", help="Disable markdown formatting of responses")
@@ -95,9 +111,15 @@ def main():
         
     args = parser.parse_args()
 
-    # Get API key from args, config file, or environment variable
-    config_api_key, config_context = read_config_file()
+    # Get API key and config vars from config file
+    config_api_key, config_context, config_vars = read_config_file()
+    
+    # Use API key from args, config file, or environment variable (in that order)
     api_key = args.api_key or config_api_key or os.environ.get("ANTHROPIC_API_KEY")
+    
+    # Set model from args, config file, or default
+    if not args.model:
+        args.model = config_vars.get("MODEL", "claude-3-opus-20240229")
     
     if not api_key:
         console.print("Error: Anthropic API key not provided. Add to ~/.config/q.conf, set ANTHROPIC_API_KEY environment variable, or use --api-key", style="error")

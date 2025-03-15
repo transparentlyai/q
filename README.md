@@ -46,7 +46,11 @@ After installation, the `q` command will be available in your terminal.
 Create a config file at `~/.config/q.conf` with the following format:
 
 ```
-# Your Anthropic API key on the first non-comment line
+# Configuration variables (in KEY=value format)
+ANTHROPIC_API_KEY=sk-ant-api-key...
+MODEL=claude-3-haiku-20240307
+
+# Or simply put your API key on a line by itself
 sk-ant-api-key...
 
 # Optional context section
@@ -54,6 +58,11 @@ sk-ant-api-key...
 Your context information here. This will be added to every query.
 You can add multiple lines of context.
 ```
+
+### Supported Configuration Variables
+
+- `ANTHROPIC_API_KEY`: Your Anthropic API key
+- `MODEL`: Default model to use (e.g., "claude-3-haiku-20240307")
 
 ⚠️ **Security Warning:** 
 - Never include API keys or sensitive information in your context section or context files
