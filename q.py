@@ -75,16 +75,77 @@ def format_markdown(text):
     """Format markdown text into Rich-formatted text for terminal display"""
     return Markdown(text)
 
-def get_input_with_escape(prompt=""):
-    """Get user input with support for escape key to exit"""
+def get_input_with_escape(prompt="", history=None):
+    """Get user input with support for escape key to exit and history navigation"""
     console.print(prompt, end="", highlight=False)
     
+    if history is None:
+        history = []
+    
     buffer = ""
+    history_pos = len(history)  # Position in history (will be at end initially)
+    
+    def clear_line():
+        """Clear the current input line"""
+        # Move to beginning of line
+        sys.stdout.write('\r')
+        # Clear the line
+        sys.stdout.write(' ' * (len(prompt) + len(buffer)))
+        # Move to beginning again
+        sys.stdout.write('\r')
+        # Print prompt
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+    
     while True:
         char = readchar.readchar()
         
-        # Check for escape key (ASCII 27)
+        # Check for special key sequences
         if char == readchar.key.ESC:
+            # Could be escape or the start of an escape sequence
+            try:
+                # Check if more characters are available (escape sequence)
+                if sys.stdin.isatty():
+                    # Try to read next char with very small timeout
+                    import select
+                    if select.select([sys.stdin], [], [], 0.01)[0]:
+                        char2 = readchar.readchar()
+                        if char2 == '[':
+                            char3 = readchar.readchar()
+                            
+                            # Up arrow
+                            if char3 == 'A':
+                                if history and history_pos > 0:
+                                    history_pos -= 1
+                                    clear_line()
+                                    buffer = history[history_pos]
+                                    sys.stdout.write(buffer)
+                                    sys.stdout.flush()
+                                continue
+                                
+                            # Down arrow
+                            elif char3 == 'B':
+                                if history_pos < len(history) - 1:
+                                    history_pos += 1
+                                    clear_line()
+                                    buffer = history[history_pos]
+                                    sys.stdout.write(buffer)
+                                    sys.stdout.flush()
+                                elif history_pos == len(history) - 1:
+                                    history_pos = len(history)
+                                    clear_line()
+                                    buffer = ""
+                                    sys.stdout.flush()
+                                continue
+                            
+                            # Right/Left arrows (ignore for now)
+                            elif char3 in ['C', 'D']:
+                                continue
+            except:
+                # If anything goes wrong, just treat it as Escape
+                pass
+                
+            # If we get here, it was just escape by itself
             sys.exit(0)
             
         # Check for enter/return key
@@ -166,8 +227,9 @@ def main():
     # Initialize client
     client = anthropic.Anthropic(api_key=api_key)
     
-    # Initialize conversation history
+    # Initialize conversation history and input history
     conversation = []
+    input_history = []
     
     # Build context from config file and context files
     context = ""
@@ -219,7 +281,7 @@ def main():
         # If no question but interactive mode, prompt for first question
         try:
             # Use custom input function with escape key support
-            question = get_input_with_escape("[prompt]-> [/prompt]")
+            question = get_input_with_escape("[prompt]-> [/prompt]", input_history)
             # Check for exit command
             if question.strip().lower() in ["exit", "quit"]:
                 sys.exit(0)
@@ -234,11 +296,12 @@ def main():
         while question:
             # Check for exit command before processing
             if question.strip().lower() in ["exit", "quit"]:
-                console.print("Exiting...", style="info")
                 sys.exit(0)
                 
-            # Add user message to conversation
+            # Add user message to conversation and input history
             conversation.append({"role": "user", "content": question})
+            if question.strip() and (not input_history or question != input_history[-1]):
+                input_history.append(question)
             
             # Send question to Claude
             try:
@@ -270,7 +333,7 @@ def main():
                 # Get next question
                 try:
                     # Use custom input function with escape key support
-                    question = get_input_with_escape("[prompt]-> [/prompt]")
+                    question = get_input_with_escape("[prompt]-> [/prompt]", input_history)
                 except (KeyboardInterrupt, EOFError):
                     sys.exit(0)
                 
