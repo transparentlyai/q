@@ -3,15 +3,10 @@ import argparse
 import os
 import sys
 import anthropic
-import readline
-import atexit
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.theme import Theme
-
-# Global variables
-HISTFILE = None
 
 # Custom theme for the console
 custom_theme = Theme({
@@ -79,62 +74,14 @@ def format_markdown(text):
     """Format markdown text into Rich-formatted text for terminal display"""
     return Markdown(text)
 
-def setup_readline_history():
-    """Set up readline history for arrow key navigation"""
-    global HISTFILE
-    HISTFILE = os.path.expanduser("~/.qhistory")
-    
-    try:
-        # Set up readline for history
-        readline.parse_and_bind("tab: complete")
-        
-        # Create the history file if it doesn't exist
-        if not os.path.exists(HISTFILE):
-            with open(HISTFILE, 'w'):
-                pass
-                
-        # Read existing history
-        if os.path.exists(HISTFILE):
-            try:
-                readline.read_history_file(HISTFILE)
-                readline.set_history_length(1000)  # Limit history to 1000 items
-            except Exception as e:
-                print(f"Error reading history file: {e}")
-                
-        # Make sure to write history on exit
-        import atexit
-        atexit.register(write_history)
-    except Exception as e:
-        print(f"Error setting up history: {e}")
-        
-def write_history():
-    """Write history to file"""
-    try:
-        readline.write_history_file(HISTFILE)
-    except Exception as e:
-        print(f"Error writing history file: {e}")
-
-def get_input(prompt="", history=None):
-    """Get user input with history navigation"""
-    
-    # Initialize history
-    if history is None:
-        history = []
-    
-    # Clear any existing readline history in this session
-    readline.clear_history()
-    
-    # Add history items
-    for item in history:
-        if item and item.strip():
-            readline.add_history(item)
+def get_input(prompt=""):
+    """Get user input"""
     
     # Convert Rich markup to a simple orange prompt
     orange_prompt = f"\033[38;5;214m{prompt.replace('[prompt]', '').replace('[/prompt]', '')}\033[0m"
     
     try:
         # Display the prompt and get input
-        # The readline library will automatically handle up/down arrow navigation
         line = input(orange_prompt)
         
         # Check for "exit" or "quit" commands
@@ -173,8 +120,6 @@ def read_context_file(file_path):
         return ""
 
 def main():
-    # Setup readline history for arrow key navigation
-    setup_readline_history()
     
     parser = argparse.ArgumentParser(description="Send a question to Claude and get the response")
     parser.add_argument("question", nargs="*", help="The question to send to Claude")
@@ -263,8 +208,8 @@ def main():
     elif not args.no_interactive:
         # If no question but interactive mode, prompt for first question
         try:
-            # Use input function with history support
-            question = get_input("[prompt]-> [/prompt]", input_history)
+            # Get user input
+            question = get_input("[prompt]-> [/prompt]")
             # Check for exit command
             if question.strip().lower() in ["exit", "quit"]:
                 sys.exit(0)
@@ -286,15 +231,6 @@ def main():
             # Only add non-empty questions that aren't duplicates of the last entry
             if question.strip() and (not input_history or question != input_history[-1]):
                 input_history.append(question.strip())
-                # Add to readline history
-                try:
-                    # Force append to history (even if already there)
-                    readline.add_history(question.strip())
-                    # Write history file after each new addition for safety
-                    readline.write_history_file(HISTFILE)
-                except Exception as e:
-                    if os.environ.get("Q_DEBUG"):
-                        print(f"Error adding to history: {e}")
             
             # Send question to Claude
             try:
@@ -325,8 +261,8 @@ def main():
                     
                 # Get next question
                 try:
-                    # Use input function with history support
-                    question = get_input("[prompt]-> [/prompt]", input_history)
+                    # Get user input
+                    question = get_input("[prompt]-> [/prompt]")
                 except (KeyboardInterrupt, EOFError):
                     sys.exit(0)
                 
