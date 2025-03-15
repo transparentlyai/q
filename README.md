@@ -18,14 +18,14 @@ A simple command-line tool for sending questions to Claude AI and getting beauti
 ### Install directly from GitHub
 
 ```bash
-pip install git+https://github.com/yourusername/q.git
+pip install git+https://github.com/transparentlyai/q.git
 ```
 
 ### Install from local repository
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/q.git
+git clone https://github.com/transparentlyai/q.git
 cd q
 
 # Install the package (will install the 'q' command)

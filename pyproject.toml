@@ -32,5 +32,5 @@ dependencies = [
 q = "q:main"
 
 [project.urls]
-"Homepage" = "https://github.com/yourusername/q"
-"Bug Tracker" = "https://github.com/yourusername/q/issues"
+"Homepage" = "https://github.com/transparentlyai/q"
+"Bug Tracker" = "https://github.com/transparentlyai/q/issues"
