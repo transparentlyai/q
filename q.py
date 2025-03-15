@@ -12,7 +12,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.theme import Theme
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # Custom theme for the console
 custom_theme = Theme({
@@ -147,12 +147,12 @@ def main():
     parser = argparse.ArgumentParser(description="Send a question to Claude and get the response")
     parser.add_argument("question", nargs="*", help="The question to send to Claude")
     parser.add_argument("--file", "-f", help="Read question from file")
-    parser.add_argument("--api-key", help="Anthropic API key (defaults to config file or ANTHROPIC_API_KEY env var)")
-    parser.add_argument("--model", help="Model to use (defaults to config file or claude-3-opus-20240229)")
-    parser.add_argument("--no-interactive", action="store_true", help="Disable interactive mode")
-    parser.add_argument("--no-context", action="store_true", help="Disable using context from config file")
-    parser.add_argument("--no-md", action="store_true", help="Disable markdown formatting of responses")
-    parser.add_argument("--context-file", action="append", help="Additional file to use as context (can be used multiple times)")
+    parser.add_argument("--api-key", "-k", help="Anthropic API key (defaults to config file or ANTHROPIC_API_KEY env var)")
+    parser.add_argument("--model", "-m", help="Model to use (defaults to config file or claude-3-opus-20240229)")
+    parser.add_argument("--no-interactive", "-i", action="store_true", help="Disable interactive mode")
+    parser.add_argument("--no-context", "-c", action="store_true", help="Disable using context from config file")
+    parser.add_argument("--no-md", "-p", action="store_true", help="Disable markdown formatting of responses")
+    parser.add_argument("--context-file", "-x", action="append", help="Additional file to use as context (can be used multiple times)")
     parser.add_argument("--version", "-v", action="version", version=f"%(prog)s {__version__}", help="Show program version and exit")
     
     # If no args provided (sys.argv has just the script name), print help and exit

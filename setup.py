@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="q",
-    version="0.2.0",
+    version="0.3.0",
     description="A quick Claude CLI for asking questions",
     author="mauro@sauco.net",
     author_email="mauro@sauco.net",

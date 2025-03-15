@@ -76,37 +76,37 @@ q
 q "What is the capital of France?"
 
 # From file
-q --file questions.txt
+q -f questions.txt
 
 # Use a different model
-q --model claude-3-haiku-20240307 "What is the meaning of life?"
+q -m claude-3-haiku-20240307 "What is the meaning of life?"
 
 # Disable interactive mode
-q --no-interactive "Tell me a joke"
+q -i "Tell me a joke"
 
 # Disable context from config file
-q --no-context
+q -c
 
 # Disable markdown formatting
-q --no-md
+q -p
 
 # Add context from additional files
-q --context-file data.txt --context-file notes.md
+q -x data.txt -x notes.md
 
 # Check the version
-q --version
+q -v
 ```
 
 ## Command-line Options
 
 - `question`: The question to send to Claude
 - `--file`, `-f`: Read question from file
-- `--api-key`: Anthropic API key (defaults to config file or ANTHROPIC_API_KEY env var)
-- `--model`: Model to use (default: claude-3-opus-20240229)
-- `--no-interactive`: Disable interactive mode
-- `--no-context`: Disable using context from config file
-- `--no-md`: Disable markdown formatting of responses
-- `--context-file`: Additional file to use as context (can be used multiple times)
+- `--api-key`, `-k`: Anthropic API key (defaults to config file or ANTHROPIC_API_KEY env var)
+- `--model`, `-m`: Model to use (default: claude-3-opus-20240229)
+- `--no-interactive`, `-i`: Disable interactive mode
+- `--no-context`, `-c`: Disable using context from config file
+- `--no-md`, `-p`: Disable markdown formatting of responses
+- `--context-file`, `-x`: Additional file to use as context (can be used multiple times)
 - `--version`, `-v`: Show program version and exit
 
 ## License
