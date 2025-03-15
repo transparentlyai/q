@@ -85,8 +85,6 @@ def get_input_with_escape(prompt=""):
         
         # Check for escape key (ASCII 27)
         if char == readchar.key.ESC:
-            console.print("\nEscape key pressed.")
-            console.print("Exiting...", style="info")
             sys.exit(0)
             
         # Check for enter/return key
@@ -104,7 +102,6 @@ def get_input_with_escape(prompt=""):
                 
         # Check for Ctrl+C
         elif char == readchar.key.CTRL_C:
-            console.print("\nExiting...", style="info")
             sys.exit(0)
             
         # Regular character input
@@ -225,10 +222,8 @@ def main():
             question = get_input_with_escape("[prompt]> [/prompt]")
             # Check for exit command
             if question.strip().lower() in ["exit", "quit"]:
-                console.print("Exiting...", style="info")
                 sys.exit(0)
         except (KeyboardInterrupt, EOFError):
-            console.print("\nExiting...", style="info")
             sys.exit(0)
     else:
         console.print("Error: No question provided. Use positional arguments or --file", style="error")
@@ -277,7 +272,6 @@ def main():
                     # Use custom input function with escape key support
                     question = get_input_with_escape("[prompt]> [/prompt]")
                 except (KeyboardInterrupt, EOFError):
-                    console.print("\nExiting...", style="info")
                     sys.exit(0)
                 
             except Exception as e:
@@ -285,7 +279,6 @@ def main():
                 sys.exit(1)
     except (KeyboardInterrupt, EOFError):
         # Handle Ctrl+C or Ctrl+D gracefully
-        console.print("\nExiting...", style="info")
         sys.exit(0)
 
 if __name__ == "__main__":
