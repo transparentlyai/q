@@ -153,6 +153,10 @@ def main():
         # If no question but interactive mode, prompt for first question
         try:
             question = console.input("[prompt]> [/prompt]")
+            # Check for exit command
+            if question.strip().lower() in ["exit", "quit"]:
+                console.print("Exiting...", style="info")
+                sys.exit(0)
         except (KeyboardInterrupt, EOFError):
             console.print("\nExiting...", style="info")
             sys.exit(0)
@@ -195,6 +199,11 @@ def main():
                     
                 # Get next question
                 question = console.input("[prompt]> [/prompt]")
+                
+                # Check for exit command
+                if question.strip().lower() in ["exit", "quit"]:
+                    console.print("Exiting...", style="info")
+                    sys.exit(0)
                 
             except Exception as e:
                 console.print(f"Error communicating with Claude: {e}", style="error")
