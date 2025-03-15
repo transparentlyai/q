@@ -54,6 +54,11 @@ Your context information here. This will be added to every query.
 You can add multiple lines of context.
 ```
 
+⚠️ **Security Warning:** 
+- Never include API keys or sensitive information in your context section or context files
+- Any text that looks like an API key, or contains words like "api_key", "key", "token", or "secret" will be automatically redacted
+- The tool includes safeguards to prevent accidentally sending API keys in context, but use caution with sensitive information
+
 ## Usage
 
 ```bash

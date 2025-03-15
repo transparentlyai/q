@@ -44,6 +44,10 @@ def read_config_file():
                         continue
                     
                     if context_started:
+                        # Filter out potential API keys in context
+                        if ('sk-ant' in line.lower() or 'api_key' in line.lower() or 
+                            'apikey' in line.lower() or 'key' in line.lower()):
+                            line = "[REDACTED - Potential API key or sensitive information]"
                         context += line + "\n"
         except Exception as e:
             console.print(f"Warning: Error reading config file: {e}", style="warning")
@@ -55,10 +59,20 @@ def format_markdown(text):
     return Markdown(text)
 
 def read_context_file(file_path):
-    """Read a context file and return its contents"""
+    """Read a context file and return its contents, ensuring no API keys are included"""
     try:
         with open(file_path, 'r') as f:
-            return f.read()
+            content = f.read()
+            # Filter out potential API keys (simple pattern matching)
+            filtered_lines = []
+            for line in content.split('\n'):
+                # Skip lines that look like API keys
+                if ('sk-ant' in line.lower() or 'api_key' in line.lower() or 
+                    'apikey' in line.lower() or 'key' in line.lower()):
+                    filtered_lines.append("[REDACTED - Potential API key or sensitive information]")
+                else:
+                    filtered_lines.append(line)
+            return '\n'.join(filtered_lines)
     except Exception as e:
         console.print(f"Warning: Error reading context file {file_path}: {e}", style="warning")
         return ""
@@ -106,7 +120,18 @@ def main():
     # Set up system prompt with context if available
     system_prompt = "You are a helpful AI assistant. Provide accurate, concise answers."
     if context:
-        system_prompt += "\n\nHere is some context that may be helpful:\n" + context.strip()
+        # Final security check for API keys in combined context
+        sanitized_context = context.strip()
+        for pattern in ['sk-ant', 'api_key', 'apikey', 'token', 'secret']:
+            if pattern in sanitized_context.lower():
+                console.print(f"Warning: Potentially sensitive information matching '{pattern}' found in context. Redacting.", style="warning")
+                lines = sanitized_context.split('\n')
+                for i, line in enumerate(lines):
+                    if pattern in line.lower():
+                        lines[i] = "[REDACTED - Potential sensitive information]"
+                sanitized_context = '\n'.join(lines)
+        
+        system_prompt += "\n\nHere is some context that may be helpful:\n" + sanitized_context
     
     # Get initial question from args or file
     if args.file:
