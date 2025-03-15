@@ -103,7 +103,7 @@ q -v
 - `question`: The question to send to Claude
 - `--file`, `-f`: Read question from file
 - `--api-key`, `-k`: Anthropic API key (defaults to config file or ANTHROPIC_API_KEY env var)
-- `--model`, `-m`: Model to use (default: claude-3-opus-20240229)
+- `--model`, `-m`: Model to use (default: claude-3.7-latest)
 - `--no-interactive`, `-i`: Disable interactive mode
 - `--no-context`, `-c`: Disable using context from config file
 - `--no-md`, `-p`: Disable markdown formatting of responses
