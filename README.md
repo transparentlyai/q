@@ -47,7 +47,7 @@ MAX_TOKENS=4000
 # Optional context section - everything after #CONTEXT is sent with every query
 #CONTEXT
 - my name is Mauro
-- The environment is Linux
+- The environment is Linux nixos
 - be brief unless asked otherwise
 ```
 
