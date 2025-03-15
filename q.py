@@ -203,7 +203,11 @@ def main():
                     break
                     
                 # Get next question
-                question = console.input("[prompt]> [/prompt]")
+                try:
+                    question = console.input("[prompt]> [/prompt]")
+                except (KeyboardInterrupt, EOFError):
+                    console.print("\nExiting...", style="info")
+                    sys.exit(0)
                 
             except Exception as e:
                 console.print(f"Error communicating with Claude: {e}", style="error")
