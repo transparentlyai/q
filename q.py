@@ -251,7 +251,7 @@ def main():
         # If no question but interactive mode, prompt for first question
         try:
             # Get user input using prompt_toolkit session
-            question = get_input("-> ", session=prompt_session)
+            question = get_input("> ", session=prompt_session)
             # Check for exit command
             if question.strip().lower() in ["exit", "quit"]:
                 sys.exit(0)
@@ -290,10 +290,12 @@ def main():
                 response = message.content[0].text
                 
                 # Print formatted response
+                console.print("")  # Add empty line before response
                 if not args.no_md:
-                    console.print(Panel(format_markdown(response), border_style="dim"))
+                    console.print(format_markdown(response))
                 else:
                     console.print(response)
+                console.print("")  # Add empty line after response
                 
                 # Add assistant response to conversation history
                 conversation.append({"role": "assistant", "content": response})
@@ -305,7 +307,7 @@ def main():
                 # Get next question
                 try:
                     # Get user input using prompt_toolkit session
-                    question = get_input("-> ", session=prompt_session)
+                    question = get_input("> ", session=prompt_session)
                 except (KeyboardInterrupt, EOFError):
                     sys.exit(0)
                 
