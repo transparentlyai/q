@@ -34,13 +34,13 @@ def read_config_file():
                 for line in f:
                     line = line.strip()
                     
-                    # Skip comments
-                    if line.startswith('#'):
-                        continue
-                        
-                    # Check for context section
+                    # Check for context section marker
                     if line == "#CONTEXT":
                         context_started = True
+                        continue
+                        
+                    # Skip comments (but not in context section)
+                    if line.startswith('#') and not context_started:
                         continue
                     
                     if context_started:
@@ -189,6 +189,12 @@ def main():
     # Set up system prompt with context if available
     system_prompt = "You are a helpful AI assistant. Provide accurate, concise answers."
     if context:
+        # Print debug info about context if verbose
+        if os.environ.get("Q_DEBUG"):
+            console.print(f"[info]Context from config: {bool(config_context)}[/info]")
+            console.print(f"[info]Context files: {args.context_file or []}[/info]")
+            console.print(f"[info]Combined context length: {len(context.strip())} characters[/info]")
+        
         # Final security check for API keys in combined context
         sanitized_context = context.strip()
         for pattern in ['sk-ant', 'api_key', 'apikey', 'token', 'secret']:
