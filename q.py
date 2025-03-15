@@ -257,6 +257,8 @@ def main():
             # Only add non-empty questions that aren't duplicates of the last entry
             if question.strip() and (not input_history or question != input_history[-1]):
                 input_history.append(question.strip())
+                # Add to readline history for persistence between sessions
+                readline.add_history(question.strip())
             
             # Send question to Claude
             try:
