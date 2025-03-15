@@ -77,6 +77,15 @@ def format_markdown(text):
 
 def get_input_with_escape(prompt="", history=None):
     """Get user input with support for escape key to exit and history navigation"""
+    # Convert console markup to plain text for prompt display
+    # This ensures proper cursor positioning when clearing the line
+    from rich.console import Console as PlainConsole
+    plain_console = PlainConsole(highlight=False, markup=False)
+    with plain_console.capture() as capture:
+        console.print(prompt, end="", highlight=False)
+    plain_prompt = capture.get()
+    
+    # Display the actual prompt
     console.print(prompt, end="", highlight=False)
     
     if history is None:
@@ -90,11 +99,11 @@ def get_input_with_escape(prompt="", history=None):
         # Move to beginning of line
         sys.stdout.write('\r')
         # Clear the line
-        sys.stdout.write(' ' * (len(prompt) + len(buffer)))
+        sys.stdout.write(' ' * (len(plain_prompt) + len(buffer)))
         # Move to beginning again
         sys.stdout.write('\r')
         # Print prompt
-        sys.stdout.write(prompt)
+        sys.stdout.write(plain_prompt)
         sys.stdout.flush()
     
     while True:
@@ -141,11 +150,24 @@ def get_input_with_escape(prompt="", history=None):
                             # Right/Left arrows (ignore for now)
                             elif char3 in ['C', 'D']:
                                 continue
-            except:
-                # If anything goes wrong, just treat it as Escape
-                pass
+                            
+                        # If we get here, it wasn't an arrow key sequence
+                        # So just return to input mode
+                        continue
+                    else:
+                        # No more characters available, so it was just escape
+                        sys.exit(0)
+                else:
+                    # Not a tty, just exit
+                    sys.exit(0)
+            except Exception as e:
+                # If anything goes wrong, handle the plain escape
+                # But don't crash on arrow keys
+                if os.environ.get("Q_DEBUG"):
+                    console.print(f"Error handling key sequence: {e}", style="error")
+                continue
                 
-            # If we get here, it was just escape by itself
+            # If somehow we get here, it was just escape by itself
             sys.exit(0)
             
         # Check for enter/return key
