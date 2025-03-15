@@ -12,7 +12,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.theme import Theme
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Custom theme for the console
 custom_theme = Theme({

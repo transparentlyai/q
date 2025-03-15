@@ -40,22 +40,24 @@ Create a config file at `~/.config/q.conf` with the following format:
 
 ```
 # Configuration variables (in KEY=value format)
-ANTHROPIC_API_KEY=sk-ant-api-key...
-MODEL=claude-3-haiku-20240307
+ANTHROPIC_API_KEY=sk-ant-api-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+MODEL=claude-3-opus-20240229
+MAX_TOKENS=4000
 
-# Or simply put your API key on a line by itself
-sk-ant-api-key...
-
-# Optional context section
+# Optional context section - everything after #CONTEXT is sent with every query
 #CONTEXT
-Your context information here. This will be added to every query.
-You can add multiple lines of context.
+- my name is Mauro
+- The environment is Linux
+- be brief unless asked otherwise
 ```
+
+An example configuration file is provided in the repository as `example_config.conf`.
 
 ### Supported Configuration Variables
 
-- `ANTHROPIC_API_KEY`: Your Anthropic API key
-- `MODEL`: Default model to use (e.g., "claude-3-haiku-20240307")
+- `ANTHROPIC_API_KEY`: Your Anthropic API key (should start with `sk-ant-api-`)
+- `MODEL`: Default model to use (e.g., "claude-3-opus-20240229", "claude-3-haiku-20240307")
+- `MAX_TOKENS`: Maximum number of tokens in the response (default: 4096)
 
 ⚠️ **Security Warning:** 
 - Never include API keys or sensitive information in your context section or context files
@@ -88,6 +90,9 @@ q --no-md
 
 # Add context from additional files
 q --context-file data.txt --context-file notes.md
+
+# Check the version
+q --version
 ```
 
 ## Command-line Options
@@ -100,6 +105,7 @@ q --context-file data.txt --context-file notes.md
 - `--no-context`: Disable using context from config file
 - `--no-md`: Disable markdown formatting of responses
 - `--context-file`: Additional file to use as context (can be used multiple times)
+- `--version`, `-v`: Show program version and exit
 
 ## License
 
