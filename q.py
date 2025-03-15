@@ -14,7 +14,7 @@ custom_theme = Theme({
     "info": "dim cyan",
     "warning": "magenta",
     "error": "bold red",
-    "prompt": "green",
+    "prompt": "orange1",
 })
 
 # Initialize Rich console
@@ -219,7 +219,7 @@ def main():
         # If no question but interactive mode, prompt for first question
         try:
             # Use custom input function with escape key support
-            question = get_input_with_escape("[prompt]> [/prompt]")
+            question = get_input_with_escape("[prompt]-> [/prompt]")
             # Check for exit command
             if question.strip().lower() in ["exit", "quit"]:
                 sys.exit(0)
@@ -270,7 +270,7 @@ def main():
                 # Get next question
                 try:
                     # Use custom input function with escape key support
-                    question = get_input_with_escape("[prompt]> [/prompt]")
+                    question = get_input_with_escape("[prompt]-> [/prompt]")
                 except (KeyboardInterrupt, EOFError):
                     sys.exit(0)
                 
