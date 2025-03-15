@@ -167,6 +167,11 @@ def main():
     # Process questions (initial and then interactive if enabled)
     try:
         while question:
+            # Check for exit command before processing
+            if question.strip().lower() in ["exit", "quit"]:
+                console.print("Exiting...", style="info")
+                sys.exit(0)
+                
             # Add user message to conversation
             conversation.append({"role": "user", "content": question})
             
@@ -199,11 +204,6 @@ def main():
                     
                 # Get next question
                 question = console.input("[prompt]> [/prompt]")
-                
-                # Check for exit command
-                if question.strip().lower() in ["exit", "quit"]:
-                    console.print("Exiting...", style="info")
-                    sys.exit(0)
                 
             except Exception as e:
                 console.print(f"Error communicating with Claude: {e}", style="error")
