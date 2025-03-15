@@ -79,7 +79,7 @@ def setup_readline_history():
     """Set up readline history for arrow key navigation"""
     try:
         # Set up readline for history
-        histfile = os.path.expanduser("~/.q_history")
+        histfile = os.path.expanduser("~/.qhistory")
         try:
             readline.read_history_file(histfile)
             readline.set_history_length(1000)
