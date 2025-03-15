@@ -121,6 +121,9 @@ def get_input(prompt="", history=None):
     if history is None:
         history = []
     
+    # Clear any existing readline history in this session
+    readline.clear_history()
+    
     # Add history items
     for item in history:
         if item and item.strip():
@@ -131,6 +134,7 @@ def get_input(prompt="", history=None):
     
     try:
         # Display the prompt and get input
+        # The readline library will automatically handle up/down arrow navigation
         line = input(orange_prompt)
         
         # Check for "exit" or "quit" commands
