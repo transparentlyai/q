@@ -82,6 +82,7 @@ def get_input_with_escape(prompt="", history=None):
     
     # Display the actual formatted prompt
     console.print(prompt, end="", highlight=False)
+    sys.stdout.flush()
     
     if history is None:
         history = []
@@ -94,82 +95,73 @@ def get_input_with_escape(prompt="", history=None):
         # Move to beginning of line
         sys.stdout.write('\r')
         # Clear the line with spaces
-        sys.stdout.write(' ' * (len(plain_prompt) + len(buffer) + 5))  # Add some extra spaces to be safe
+        sys.stdout.write(' ' * (len(plain_prompt) + len(buffer) + 10))  # Add some extra spaces to be safe
         # Move to beginning again
         sys.stdout.write('\r')
         # Print prompt
         console.print(prompt, end="", highlight=False)
         sys.stdout.flush()
     
-    # Handle arrow keys separately from escape
-    UP_ARROW = '\x1b[A'
-    DOWN_ARROW = '\x1b[B'
-    RIGHT_ARROW = '\x1b[C'
-    LEFT_ARROW = '\x1b[D'
-    ESC = '\x1b'
-    
     while True:
-        try:
-            # Read a key or key sequence
-            key = readchar.readkey()
-            
-            # Check for escape key by itself
-            if key == ESC:
-                sys.exit(0)
-            
-            # Up arrow - previous history
-            elif key == UP_ARROW:
-                if history and history_pos > 0:
-                    history_pos -= 1
-                    clear_line()
-                    buffer = history[history_pos]
-                    sys.stdout.write(buffer)
-                    sys.stdout.flush()
-            
-            # Down arrow - next history
-            elif key == DOWN_ARROW:
-                if history_pos < len(history) - 1:
-                    history_pos += 1
-                    clear_line()
-                    buffer = history[history_pos]
-                    sys.stdout.write(buffer)
-                    sys.stdout.flush()
-                elif history_pos == len(history) - 1:
-                    history_pos = len(history)
-                    clear_line()
-                    buffer = ""
-            
-            # Left/Right arrows - ignore for now
-            elif key in [LEFT_ARROW, RIGHT_ARROW]:
-                pass
-                
-            # Enter key
-            elif key in ['\r', '\n']:
-                console.print()  # Move to next line
-                return buffer
-                
-            # Backspace/Delete
-            elif key in ['\x7f', '\x08']:  # Backspace or Ctrl+H
-                if buffer:
-                    buffer = buffer[:-1]
-                    # Erase last character (backspace, space, backspace)
-                    sys.stdout.write('\b \b')
-                    sys.stdout.flush()
+        # Read a single character first to check for escape sequence start
+        char = readchar.readchar()
+        
+        # Handle escape sequences
+        if char == '\x1b':  # ESC character
+            # Try to read more characters with a small timeout to see if this is an arrow key
+            import select
+            if sys.stdin.isatty() and select.select([sys.stdin], [], [], 0.01)[0]:
+                char2 = readchar.readchar()
+                if char2 == '[':
+                    char3 = readchar.readchar()
                     
-            # Ctrl+C
-            elif key == '\x03':
-                sys.exit(0)
-                
-            # Regular character input
-            elif len(key) == 1 and ord(key) >= 32:  # Printable characters
-                buffer += key
-                sys.stdout.write(key)
+                    # Handle arrow keys
+                    if char3 == 'A':  # Up arrow
+                        if history and history_pos > 0:
+                            history_pos -= 1
+                            clear_line()
+                            buffer = history[history_pos]
+                            sys.stdout.write(buffer)
+                            sys.stdout.flush()
+                    elif char3 == 'B':  # Down arrow
+                        if history_pos < len(history) - 1:
+                            history_pos += 1
+                            clear_line()
+                            buffer = history[history_pos]
+                            sys.stdout.write(buffer)
+                            sys.stdout.flush()
+                        elif history_pos == len(history) - 1:
+                            history_pos = len(history)
+                            clear_line()
+                            buffer = ""
+                    # Ignore right/left arrows for now
+                    continue
+            
+            # If we get here, it's a regular ESC key and we should exit
+            sys.exit(0)
+            
+        # Enter key
+        elif char in ['\r', '\n', readchar.key.ENTER]:
+            console.print()  # Move to next line
+            return buffer
+            
+        # Backspace/Delete
+        elif char in ['\x7f', '\x08', readchar.key.BACKSPACE]:
+            if buffer:
+                buffer = buffer[:-1]
+                # Erase last character (backspace, space, backspace)
+                sys.stdout.write('\b \b')
                 sys.stdout.flush()
                 
-        except Exception as e:
-            if os.environ.get("Q_DEBUG"):
-                console.print(f"Error handling input: {e}", style="error")
-            continue
+        # Ctrl+C
+        elif char == '\x03':
+            sys.exit(0)
+            
+        # Regular character input
+        elif ord(char) >= 32:  # Printable characters
+            buffer += char
+            sys.stdout.write(char)
+            sys.stdout.flush()
     
     return buffer
 
