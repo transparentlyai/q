@@ -10,7 +10,7 @@ A simple command-line tool for sending questions to Claude AI and getting beauti
 - 💻 Beautiful terminal formatting with syntax highlighting, code blocks, and more
 - 📃 Markdown rendering for responses
 - 🔐 Multiple API key sources (config file, environment variable, command-line)
-- 📋 Context management via config file
+- 📋 Context management via config file with environment variable support
 - 💾 Load questions from file
 - 🔄 History navigation with up/down arrow keys
 - 🖱️ Terminal scrolling support for navigating long responses
@@ -41,15 +41,19 @@ Create a config file at `~/.config/q.conf` with the following format:
 
 ```
 # Configuration variables (in KEY=value format)
-ANTHROPIC_API_KEY=sk-ant-api-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# Environment variables can be used with $VAR or ${VAR} syntax
+ANTHROPIC_API_KEY=${CLAUDE_API_KEY}
 MODEL=claude-3-7-sonnet-latest
 MAX_TOKENS=4000
+# Example of using environment variable: DATA_DIR=$HOME/data
 
 # Optional context section - everything after #CONTEXT is sent with every query
+# Environment variables are also expanded in the context section
 #CONTEXT
 - my name is Mauro
 - The environment is Linux nixos
 - be brief unless asked otherwise
+- My home directory is $HOME
 ```
 
 An example configuration file is provided in the repository as `example_config.conf`.
@@ -59,6 +63,8 @@ An example configuration file is provided in the repository as `example_config.c
 - `ANTHROPIC_API_KEY`: Your Anthropic API key (should start with `sk-ant-api-`)
 - `MODEL`: Default model to use (e.g., "claude-3-opus-20240229", "claude-3-haiku-20240307")
 - `MAX_TOKENS`: Maximum number of tokens in the response (default: 4096)
+
+Environment variables in the config file are expanded using the syntax `$VAR` or `${VAR}`.
 
 check the anthropic available models here: https://docs.anthropic.com/en/docs/about-claude/models/all-models
 
@@ -108,6 +114,7 @@ q -v
 - `--no-context`, `-c`: Disable using context from config file
 - `--no-md`, `-p`: Disable markdown formatting of responses
 - `--context-file`, `-x`: Additional file to use as context (can be used multiple times)
+- `--confirm-context`, `-w`: Show context and ask for confirmation before sending to Claude
 - `--version`, `-v`: Show program version and exit
 
 ## License

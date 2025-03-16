@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "q-claude"
-version = "0.3.4"
+version = "0.3.5"
 description = "A quick Claude CLI for asking questions"
 authors = [{name = "Mauro", email = "mauro@sauco.net"}]
 readme = "README.md"

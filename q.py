@@ -6,6 +6,7 @@ with support for conversation history, markdown formatting, and more.
 """
 import argparse
 import os
+import re
 import sys
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -19,7 +20,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.theme import Theme
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 
 # Constants
 DEFAULT_MODEL = "claude-3.7-latest"
@@ -90,6 +91,10 @@ def read_config_file() -> Tuple[Optional[str], str, Dict[str, str]]:
                             key, value = line.split('=', 1)
                             key = key.strip().upper()
                             value = value.strip()
+                            
+                            # Expand environment variables in value
+                            if '$' in value:
+                                value = expand_env_vars(value)
                             
                             # Store in config vars
                             config_vars[key] = value
@@ -200,6 +205,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     parser.add_argument("--no-context", "-c", action="store_true", help="Disable using context from config file")
     parser.add_argument("--no-md", "-p", action="store_true", help="Disable markdown formatting of responses")
     parser.add_argument("--context-file", "-x", action="append", help="Additional file to use as context (can be used multiple times)")
+    parser.add_argument("--confirm-context", "-w", action="store_true", help="Show context and ask for confirmation before sending to Claude")
     parser.add_argument("--version", "-v", action="version", version=f"%(prog)s {__version__}", help="Show program version and exit")
     return parser
 
@@ -261,6 +267,18 @@ def build_context(args: argparse.Namespace, config_context: str) -> str:
     
     return context
 
+def expand_env_vars(text: str) -> str:
+    """Replace environment variables in text."""
+    if '$' not in text:
+        return text
+        
+    import re
+    # Handle ${VAR} format
+    text = re.sub(r'\${(\w+)}', lambda m: os.environ.get(m.group(1), ''), text)
+    # Handle $VAR format
+    text = re.sub(r'\$(\w+)', lambda m: os.environ.get(m.group(1), ''), text)
+    return text
+
 def sanitize_context(context: str) -> str:
     """Ensure no sensitive information is present in the context."""
     if not context:
@@ -268,7 +286,11 @@ def sanitize_context(context: str) -> str:
         
     lines = context.split('\n')
     for i, line in enumerate(lines):
-        if contains_sensitive_info(line):
+        # First expand environment variables in the line
+        lines[i] = expand_env_vars(line)
+        
+        # Then check for sensitive information
+        if contains_sensitive_info(lines[i]):
             console.print(f"Warning: Potentially sensitive information found in context. Redacting.", style="warning")
             lines[i] = REDACTED_TEXT
     
@@ -322,6 +344,21 @@ def handle_claude_error(e: Exception) -> None:
     
     sys.exit(1)
 
+def confirm_context(prompt_session: PromptSession, system_prompt: str) -> bool:
+    """Show the context and ask for user confirmation."""
+    console.print("\n[bold]System prompt that will be sent to Claude:[/bold]")
+    console.print(format_markdown(system_prompt))
+    console.print("")
+    
+    while True:
+        response = get_input("Send this context to Claude? [Y/n] ", session=prompt_session).strip().lower()
+        if response == "" or response.startswith("y"):
+            return True
+        elif response.startswith("n"):
+            return False
+        else:
+            console.print("Please answer Y or N", style="warning")
+
 def main() -> None:
     """Main entry point for the CLI."""
     parser = setup_argparse()
@@ -369,6 +406,12 @@ def main() -> None:
     system_prompt = "You are a helpful AI assistant. Provide accurate, concise answers."
     if sanitized_context:
         system_prompt += "\n\nHere is some context that may be helpful:\n" + sanitized_context
+    
+    # If confirm-context is specified, show the context and ask for confirmation
+    if args.confirm_context and sanitized_context:
+        if not confirm_context(prompt_session, system_prompt):
+            console.print("Context rejected. Exiting.", style="info")
+            sys.exit(0)
     
     # Get initial question from args, file, or prompt
     try:
