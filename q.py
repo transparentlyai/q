@@ -20,7 +20,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.theme import Theme
 
-__version__ = "0.3.6"
+__version__ = "0.3.7"
 
 # Constants
 DEFAULT_MODEL = "claude-3.7-latest"
@@ -30,6 +30,7 @@ HISTORY_PATH = os.path.expanduser("~/.qhistory")
 SENSITIVE_PATTERNS = ["sk-ant", "api_key", "apikey", "token", "secret", "key"]
 REDACTED_TEXT = "[REDACTED - Potential sensitive information]"
 EXIT_COMMANDS = ["exit", "quit"]
+SAVE_COMMAND_PREFIX = "save "
 
 # Custom theme for the console
 custom_theme = Theme(
@@ -416,6 +417,32 @@ def get_initial_question(
         sys.exit(1)
 
 
+def save_response_to_file(response: str, file_path: str) -> bool:
+    """
+    Save the last response from the model to a file.
+
+    Args:
+        response: The text response to save
+        file_path: The path where the file should be saved
+
+    Returns:
+        True if successfully saved, False otherwise
+    """
+    try:
+        # Ensure the directory exists
+        directory = os.path.dirname(file_path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory)
+
+        # Write the response to the file
+        with open(file_path, "w") as f:
+            f.write(response)
+        return True
+    except Exception as e:
+        console.print(f"Error saving file: {e}", style="error")
+        return False
+
+
 def handle_claude_error(e: Exception) -> None:
     """Handle errors from the Claude API in a consistent way."""
     if isinstance(e, anthropic.APIStatusError):
@@ -580,6 +607,32 @@ def main() -> None:
                 # Get next question and handle empty inputs if --no-empty flag is set
                 while True:
                     question = get_input("> ", session=prompt_session)
+
+                    # Handle save command
+                    if question.strip().lower().startswith(SAVE_COMMAND_PREFIX):
+                        # Extract the file path from the save command
+                        file_path = question.strip()[len(SAVE_COMMAND_PREFIX) :].strip()
+
+                        # Expand the file path (handle ~ and environment variables)
+                        file_path = os.path.expanduser(file_path)
+                        file_path = os.path.expandvars(file_path)
+
+                        # Get the last response from conversation history
+                        if (
+                            len(conversation) >= 2
+                            and conversation[-1]["role"] == "assistant"
+                        ):
+                            last_response = conversation[-1]["content"]
+                            if save_response_to_file(last_response, file_path):
+                                console.print(
+                                    f"Response saved to {file_path}", style="info"
+                                )
+                        else:
+                            console.print("No response to save", style="warning")
+
+                        # Continue to get a new question
+                        continue
+
                     # If input is not empty or --no-empty flag is not set, proceed
                     if not args.no_empty or question.strip():
                         break
