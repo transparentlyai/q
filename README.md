@@ -11,28 +11,23 @@ A simple command-line tool for sending questions to Claude AI and getting beauti
 - 📃 Markdown rendering for responses
 - 🔐 Multiple API key sources (config file, environment variable, command-line)
 - 📋 Context management via config file with environment variable support
-- 💾 Load questions from file
+- 💾 Load questions from file and save responses to file
 - 🔄 History navigation with up/down arrow keys
 - 🖱️ Terminal scrolling support for navigating long responses
 - 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
 
 ## Installation
 
-### Install directly from GitHub
+### Install from GitHub
 
 ```bash
 pip install git+https://github.com/transparentlyai/q.git
 ```
 
-### Install from local repository
+### Upgrade to the latest version
 
 ```bash
-# Clone the repository
-git clone https://github.com/transparentlyai/q.git
-cd q
-
-# Install the package (will install the 'q' command)
-pip install -e .
+pip install --upgrade git+https://github.com/transparentlyai/q.git
 ```
 
 ## Configuration
@@ -100,9 +95,24 @@ q -p
 # Add context from additional files
 q -x data.txt -x notes.md
 
+# Disable sending empty inputs in interactive mode
+q -e
+
 # Check the version
 q -v
 ```
+
+## Interactive Mode Features
+
+In interactive mode, you can:
+
+- Navigate through command history with the up/down arrow keys
+- Exit by typing `exit` or `quit`, or by pressing Ctrl+C or Ctrl+D
+- Save the last Claude response to a file by typing `save` followed by a path:
+  ```
+  > save ~/responses/answer.md
+  ```
+- Use the `--no-empty` flag to disable sending empty inputs (pressing Enter without typing anything)
 
 ## Command-line Options
 
@@ -115,6 +125,7 @@ q -v
 - `--no-md`, `-p`: Disable markdown formatting of responses
 - `--context-file`, `-x`: Additional file to use as context (can be used multiple times)
 - `--confirm-context`, `-w`: Show context and ask for confirmation before sending to Claude
+- `--no-empty`, `-e`: Disable sending empty inputs in interactive mode
 - `--version`, `-v`: Show program version and exit
 
 ## License
