@@ -2,7 +2,7 @@
 
 A simple command-line tool for sending questions to Claude AI and getting beautifully formatted responses in your terminal.
 
-**Author:** [mauro@sauco.net](mailto:mauro@sauco.net)
+**Author:** [mauro@transparently.ai](mailto:mauro@transparently.ai)
 
 ## Features
 
