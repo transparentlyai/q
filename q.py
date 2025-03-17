@@ -20,7 +20,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.theme import Theme
 
-__version__ = "0.3.7"
+__version__ = "0.3.8"
 
 # Constants
 DEFAULT_MODEL = "claude-3.7-latest"
@@ -405,7 +405,7 @@ def get_initial_question(
     elif not args.no_interactive:
         # If no question but interactive mode, prompt for first question (handling empty inputs)
         while True:
-            question = get_input("> ", session=prompt_session)
+            question = get_input(" 💡> ", session=prompt_session)
             # If input is not empty or --no-empty flag is not set, proceed
             if not args.no_empty or question.strip():
                 return question
@@ -606,7 +606,7 @@ def main() -> None:
 
                 # Get next question and handle empty inputs if --no-empty flag is set
                 while True:
-                    question = get_input("> ", session=prompt_session)
+                    question = get_input(" 💡> ", session=prompt_session)
 
                     # Handle save command
                     if question.strip().lower().startswith(SAVE_COMMAND_PREFIX):
