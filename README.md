@@ -32,6 +32,10 @@ pip install git+https://github.com/transparentlyai/q.git
 ```bash
 pip install --upgrade git+https://github.com/transparentlyai/q.git
 ```
+or
+```bash
+q update yourself
+```
 
 ## Configuration
 
