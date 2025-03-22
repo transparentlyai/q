@@ -43,6 +43,15 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
     if is_dangerous_command(command):
         return (-1, "", "This command has been blocked for security reasons.")
 
+    # Check if this is a heredoc command
+    heredoc_match = re.search(r'<<\s*[\'"]*([^\'"\s<]*)[\'"]*', command)
+    if heredoc_match:
+        console.print(
+            "[yellow]Heredoc commands (with <<EOF) are not directly supported.[/yellow]"
+        )
+        console.print("[yellow]Use the file creation interface instead.[/yellow]")
+        return (-1, "", "Heredoc commands are not supported for direct execution.")
+
     try:
         # Execute the command and capture output
         process = subprocess.Popen(
@@ -94,6 +103,17 @@ def ask_command_confirmation(
         - Whether to execute this command (True/False)
         - Whether to remember this choice for similar commands (True/False)
     """
+    # Check for heredoc pattern before anything else
+    heredoc_match = re.search(r'<<\s*[\'"]*([^\'"\s<]*)[\'"]*', command)
+    if heredoc_match:
+        console.print(f"\n[bold yellow]Q suggested a heredoc command:[/bold yellow]")
+        console.print(f"[bold cyan]{command}[/bold cyan]")
+        console.print("[yellow]Heredoc commands cannot be executed directly.[/yellow]")
+        console.print(
+            "[yellow]Use the 'cat > file' command followed by a separate content block instead.[/yellow]"
+        )
+        return False, False
+
     # Check if we need to ask for permission
     if permission_manager and not permission_manager.needs_permission(command):
         return True, False  # Command is pre-approved, no need to remember
