@@ -17,7 +17,6 @@ A simple command-line tool for sending questions to Q AI and getting beautifully
 - 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
 - 🖥️ Command execution mode - let Q suggest and run shell commands
 - 🔒 Command permission system with session-based approvals
-- 📦 Modular architecture for easier maintenance and contribution
 
 ## Installation
 
@@ -33,36 +32,6 @@ pip install git+https://github.com/transparentlyai/q.git
 pip install --upgrade git+https://github.com/transparentlyai/q.git
 ```
 
-### Install from source (for development)
-
-```bash
-git clone https://github.com/transparentlyai/q.git
-cd q
-pip install -e .
-```
-
-### Project Structure
-
-Q now uses a modular package structure:
-
-```
-q_cli/
-├── __init__.py          # Package initialization and version
-├── cli/                 # Command-line interface modules
-│   ├── args.py          # Argument parsing
-│   ├── conversation.py  # Conversation management
-│   └── main.py          # Main entry point
-├── io/                  # Input/output handling
-│   ├── config.py        # Configuration file handling
-│   ├── input.py         # User input management
-│   └── output.py        # Terminal output formatting
-└── utils/               # Utility modules
-    ├── commands.py      # Command execution
-    ├── constants.py     # Constant definitions
-    ├── helpers.py       # Helper functions
-    └── permissions.py   # Command permission management
-```
-
 ## Configuration
 
 Create a config file at `~/.config/q.conf` with the following format:
@@ -75,14 +44,24 @@ MODEL=claude-3.7-latest
 MAX_TOKENS=4096
 
 # Command permission settings
-# These commands never need permission to run (comma-separated list)
-ALWAYS_APPROVED_COMMANDS=ls,pwd,echo,date,whoami,uptime,uname,hostname
+# These can be specified in JSON array format (recommended) or comma-separated list
+# JSON format handles special characters and spaces better
+ALWAYS_APPROVED_COMMANDS=[
+    "ls", "pwd", "echo", "date", "whoami", "uptime", "uname", "hostname"
+]
 
 # These commands always require explicit permission
-ALWAYS_RESTRICTED_COMMANDS=sudo,su,chmod,chown,mkfs,dd,systemctl,rm,mv,cp,apt,yum,dnf,pacman,brew,npm,pip
+ALWAYS_RESTRICTED_COMMANDS=[
+    "sudo", "su", "chmod", "chown", "mkfs", "dd", "systemctl", "rm", 
+    "mv", "cp", "apt", "yum", "dnf", "pacman", "brew", "npm", "pip"
+]
 
 # These commands can never be executed
-PROHIBITED_COMMANDS=rm -rf /,rm -rf /*,mkfs,> /dev/sda,dd if=/dev/zero,:(){:|:&};:,chmod -R 777 /,wget -O- | sh,curl | sh,eval `curl`,shutdown,reboot,halt
+PROHIBITED_COMMANDS=[
+    "rm -rf /", "rm -rf /*", "mkfs", "> /dev/sda", "dd if=/dev/zero", 
+    ":(){:|:&};:", "chmod -R 777 /", "wget -O- | sh", "curl | sh", 
+    "eval `curl`", "shutdown", "reboot", "halt"
+]
 
 # Optional context section - everything after #CONTEXT is sent with every query
 # Environment variables are also expanded in the context section
@@ -100,9 +79,9 @@ An example configuration file is provided in the repository as `example_config.c
 - `ANTHROPIC_API_KEY`: Your Anthropic API key (should start with `sk-ant-api-`)
 - `MODEL`: Default model to use (e.g., "claude-3-opus-20240229", "claude-3-haiku-20240307")
 - `MAX_TOKENS`: Maximum number of tokens in the response (default: 4096)
-- `ALWAYS_APPROVED_COMMANDS`: Comma-separated list of commands that will always be executed without asking for permission
-- `ALWAYS_RESTRICTED_COMMANDS`: Comma-separated list of commands that will always require explicit permission
-- `PROHIBITED_COMMANDS`: Comma-separated list of commands that will never be executed
+- `ALWAYS_APPROVED_COMMANDS`: List of commands that will always be executed without asking for permission (JSON array format recommended)
+- `ALWAYS_RESTRICTED_COMMANDS`: List of commands that will always require explicit permission (JSON array format recommended)
+- `PROHIBITED_COMMANDS`: List of commands that will never be executed (JSON array format recommended)
 
 Environment variables in the config file are expanded using the syntax `$VAR` or `${VAR}`.
 

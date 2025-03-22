@@ -111,7 +111,7 @@ def get_initial_question(
     elif not args.no_interactive:
         # If no question but interactive mode, prompt for first question (handling empty inputs)
         while True:
-            question = get_input("> ", session=prompt_session)
+            question = get_input("Q> ", session=prompt_session)
             # If input is not empty or --no-empty flag is not set, proceed
             if not args.no_empty or question.strip():
                 return question

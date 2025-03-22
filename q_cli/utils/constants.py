@@ -1,6 +1,7 @@
 """Constants used throughout the q_cli package."""
 
 import os
+import json
 
 # Version - moved to __init__.py
 
@@ -16,22 +17,61 @@ HISTORY_PATH = os.path.expanduser("~/.qhistory")
 SENSITIVE_PATTERNS = ["sk-ant", "api_key", "apikey", "token", "secret", "key"]
 REDACTED_TEXT = "[REDACTED - Potential sensitive information]"
 
+# Prompts directory
+PROMPTS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "prompts",
+)
+
 # Commands
 EXIT_COMMANDS = ["exit", "quit"]
 SAVE_COMMAND_PREFIX = "save "
 
-# Default permission-related values
-DEFAULT_ALWAYS_APPROVED_COMMANDS = [
-    "ls", "pwd", "echo", "date", "whoami", "uptime", "uname", "hostname", 
+# Default permission-related values in JSON format
+
+DEFAULT_ALWAYS_APPROVED_COMMANDS: list[str] = [
+    "ls",
+    "pwd",
+    "echo",
+    "date",
+    "whoami",
+    "uptime",
+    "uname",
+    "hostname",
 ]
 
-DEFAULT_ALWAYS_RESTRICTED_COMMANDS = [
-    "sudo", "su", "chmod", "chown", "mkfs", "dd", "systemctl", "rm", 
-    "mv", "cp", "apt", "yum", "dnf", "pacman", "brew", "npm", "pip"
+DEFAULT_ALWAYS_RESTRICTED_COMMANDS: list[str] = [
+    "sudo",
+    "su",
+    "chmod",
+    "chown",
+    "mkfs",
+    "dd",
+    "systemctl",
+    "rm",
+    "mv",
+    "cp",
+    "apt",
+    "yum",
+    "dnf",
+    "pacman",
+    "brew",
+    "npm",
+    "pip",
 ]
 
-DEFAULT_PROHIBITED_COMMANDS = [
-    "rm -rf /", "rm -rf /*", "mkfs", "> /dev/sda", "dd if=/dev/zero", 
-    ":(){:|:&};:", "chmod -R 777 /", "wget -O- | sh", "curl | sh", 
-    "eval `curl", "shutdown", "reboot", "halt"
+DEFAULT_PROHIBITED_COMMANDS: list[str] = [
+    "rm -rf /",
+    "rm -rf /*",
+    "mkfs",
+    "> /dev/sda",
+    "dd if=/dev/zero",
+    ":(){:|:&};:",
+    "chmod -R 777 /",
+    "wget -O- | sh",
+    "curl | sh",
+    "eval `curl`",
+    "shutdown",
+    "reboot",
+    "halt",
 ]

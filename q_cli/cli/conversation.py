@@ -19,6 +19,7 @@ from q_cli.utils.commands import (
     format_command_output,
 )
 from q_cli.utils.permissions import CommandPermissionManager
+from q_cli.utils.prompts import get_command_result_prompt
 
 
 def run_conversation(
@@ -38,7 +39,7 @@ def run_conversation(
         system_prompt: System prompt with context
         args: Command line arguments
         prompt_session: PromptSession for input
-        console: Rich console for output
+        console: Console for output
         initial_question: First question to send to Q
     """
     # Initialize conversation history and input history
@@ -91,10 +92,12 @@ def run_conversation(
                 if not getattr(args, "no_execute", False):
                     commands = extract_commands_from_response(response)
                     if commands:
-                        command_results = process_commands(commands, console, permission_manager)
+                        command_results = process_commands(
+                            commands, console, permission_manager
+                        )
                         if command_results:
                             # Add the command results to the conversation
-                            follow_up = f"I ran the command(s) you suggested. Here are the results:\n\n{command_results}"
+                            follow_up = get_command_result_prompt(command_results)
                             conversation.append({"role": "user", "content": follow_up})
 
                             # Get Q's analysis of the command results
@@ -148,18 +151,18 @@ def run_conversation(
 
 
 def process_commands(
-    commands: List[str], 
+    commands: List[str],
     console: Console,
-    permission_manager: Optional['CommandPermissionManager'] = None
+    permission_manager: Optional["CommandPermissionManager"] = None,
 ) -> Optional[str]:
     """
     Process and execute commands extracted from Q's response.
-    
+
     Args:
         commands: List of commands to execute
         console: Console for output
         permission_manager: Optional manager for command permissions
-        
+
     Returns:
         Formatted command results, or None if no commands were executed
     """
@@ -171,12 +174,14 @@ def process_commands(
             continue
 
         # Ask for confirmation before executing
-        execute, remember = ask_command_confirmation(command, console, permission_manager)
-        
+        execute, remember = ask_command_confirmation(
+            command, console, permission_manager
+        )
+
         if not execute:
             console.print("[yellow]Command execution skipped by user[/yellow]")
             continue
-            
+
         # Remember this command type if requested
         if remember and permission_manager:
             permission_manager.approve_command_type(command)

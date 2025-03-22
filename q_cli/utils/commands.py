@@ -78,18 +78,16 @@ def format_command_output(return_code: int, stdout: str, stderr: str) -> str:
 
 
 def ask_command_confirmation(
-    command: str, 
-    console: Console, 
-    permission_manager=None
+    command: str, console: Console, permission_manager=None
 ) -> Tuple[bool, bool]:
     """
     Ask the user for confirmation before running a command.
-    
+
     Args:
         command: The command to run
         console: Console for output
         permission_manager: Optional permission manager for tracking approvals
-        
+
     Returns:
         Tuple containing:
         - Whether to execute this command (True/False)
@@ -101,20 +99,22 @@ def ask_command_confirmation(
 
     # If command is prohibited, don't even ask
     if permission_manager and permission_manager.is_command_prohibited(command):
-        console.print(f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]")
+        console.print(
+            f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]"
+        )
         return False, False
 
     # Ask for user confirmation
     console.print(f"\n[bold yellow]Q wants to run this command:[/bold yellow]")
     console.print(f"[bold cyan]{command}[/bold cyan]")
-    
+
     options = "[y/a/N] (y=yes, a=always, N=no): "
     response = input(f"\nExecute this command? {options}").lower().strip()
-    
+
     if response.startswith("a"):
         # "Always" option - remember for the session
         return True, True
-    
+
     return response.startswith("y"), False
 
 
