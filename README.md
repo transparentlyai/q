@@ -44,8 +44,7 @@ MODEL=claude-3.7-latest
 MAX_TOKENS=4096
 
 # Command permission settings
-# These can be specified in JSON array format (recommended) or comma-separated list
-# JSON format handles special characters and spaces better
+# Command lists must be specified in JSON array format
 # IMPORTANT: JSON arrays must be on a single line
 ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "date", "whoami", "uptime", "uname", "hostname", "cat", "find"]
 
@@ -54,9 +53,6 @@ ALWAYS_RESTRICTED_COMMANDS=["sudo", "su", "chmod", "chown", "mkfs", "dd", "syste
 
 # These commands can never be executed
 PROHIBITED_COMMANDS=["rm -rf /", "rm -rf /*", "mkfs", "> /dev/sda", "dd if=/dev/zero", ":(){:|:&};:", "chmod -R 777 /", "wget -O- | sh", "curl | sh", "eval `curl`", "shutdown", "reboot", "halt"]
-
-# Alternative format using comma-separated values:
-# ALWAYS_APPROVED_COMMANDS=ls, pwd, echo, date, whoami, uptime, uname, hostname, cat, find
 
 # Optional context section - everything after #CONTEXT is sent with every query
 # Environment variables are also expanded in the context section

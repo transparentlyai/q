@@ -175,13 +175,11 @@ class CommandPermissionManager:
 
 def parse_command_list(command_list_str: str) -> List[str]:
     """
-    Parse commands from a string, supporting multiple formats:
-    - JSON array format
-    - Comma-separated list
-    - Line-by-line list
+    Parse commands from a JSON array string.
+    Command lists must be specified in JSON array format on a single line.
 
     Args:
-        command_list_str: String containing commands
+        command_list_str: String containing commands in JSON array format
 
     Returns:
         List of individual commands
@@ -191,20 +189,15 @@ def parse_command_list(command_list_str: str) -> List[str]:
 
     command_list_str = command_list_str.strip()
 
-    # Try to parse as JSON first
+    # Parse as JSON
     if command_list_str.startswith("[") and command_list_str.endswith("]"):
         try:
             return json.loads(command_list_str)
-        except json.JSONDecodeError:
-            # If JSON parsing fails, fall back to other formats
-            pass
-
-    # Handle comma-separated format
-    if "," in command_list_str:
-        commands = [cmd.strip() for cmd in command_list_str.split(",")]
+        except json.JSONDecodeError as e:
+            # Log an error but return empty list
+            print(f"Error parsing command list JSON: {e}")
+            return []
     else:
-        # Line-by-line format
-        commands = [cmd.strip() for cmd in command_list_str.splitlines()]
-
-    # Filter out empty strings
-    return [cmd for cmd in commands if cmd]
+        # Not a valid JSON array format
+        print(f"Invalid command list format. Must be a JSON array: {command_list_str}")
+        return []
