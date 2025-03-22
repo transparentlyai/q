@@ -153,6 +153,16 @@ def is_file_creation_command(command: str) -> Dict[str, Any]:
         result["delimiter"] = match.group(2)
         return result
 
+    # Check for simple file creation pattern: cat > file
+    simple_cat_pattern = r"(?:cat|tee)\s+(?:>>?)\s+([^\s<]+)"
+    match = re.match(simple_cat_pattern, command)
+
+    if match:
+        result["is_file_creation"] = True
+        result["file_path"] = match.group(1)
+        result["method"] = "cat"
+        return result
+
     return result
 
 
