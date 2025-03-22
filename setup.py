@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="q",
-    version="0.4.1",
+    version="0.5.0",
     description="A command Line AI Assistant",
     author="mauro@sauco.net",
     author_email="mauro@sauco.net",

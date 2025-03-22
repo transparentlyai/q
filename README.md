@@ -15,7 +15,9 @@ A simple command-line tool for sending questions to Q AI and getting beautifully
 - 🔄 History navigation with up/down arrow keys
 - 🖱️ Terminal scrolling support for navigating long responses
 - 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
-- 🖥️ Command execution mode - let Claude suggest and run shell commands
+- 🖥️ Command execution mode - let Q suggest and run shell commands
+- 🔒 Command permission system with session-based approvals
+- 📦 Modular architecture for easier maintenance and contribution
 
 ## Installation
 
@@ -31,6 +33,36 @@ pip install git+https://github.com/transparentlyai/q.git
 pip install --upgrade git+https://github.com/transparentlyai/q.git
 ```
 
+### Install from source (for development)
+
+```bash
+git clone https://github.com/transparentlyai/q.git
+cd q
+pip install -e .
+```
+
+### Project Structure
+
+Q now uses a modular package structure:
+
+```
+q_cli/
+├── __init__.py          # Package initialization and version
+├── cli/                 # Command-line interface modules
+│   ├── args.py          # Argument parsing
+│   ├── conversation.py  # Conversation management
+│   └── main.py          # Main entry point
+├── io/                  # Input/output handling
+│   ├── config.py        # Configuration file handling
+│   ├── input.py         # User input management
+│   └── output.py        # Terminal output formatting
+└── utils/               # Utility modules
+    ├── commands.py      # Command execution
+    ├── constants.py     # Constant definitions
+    ├── helpers.py       # Helper functions
+    └── permissions.py   # Command permission management
+```
+
 ## Configuration
 
 Create a config file at `~/.config/q.conf` with the following format:
@@ -38,10 +70,19 @@ Create a config file at `~/.config/q.conf` with the following format:
 ```
 # Configuration variables (in KEY=value format)
 # Environment variables can be used with $VAR or ${VAR} syntax
-ANTHROPIC_API_KEY=${CLAUDE_API_KEY}
-MODEL=claude-3-7-sonnet-latest
-MAX_TOKENS=4000
-# Example of using environment variable: DATA_DIR=$HOME/data
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+MODEL=claude-3.7-latest
+MAX_TOKENS=4096
+
+# Command permission settings
+# These commands never need permission to run (comma-separated list)
+ALWAYS_APPROVED_COMMANDS=ls,pwd,echo,date,whoami,uptime,uname,hostname
+
+# These commands always require explicit permission
+ALWAYS_RESTRICTED_COMMANDS=sudo,su,chmod,chown,mkfs,dd,systemctl,rm,mv,cp,apt,yum,dnf,pacman,brew,npm,pip
+
+# These commands can never be executed
+PROHIBITED_COMMANDS=rm -rf /,rm -rf /*,mkfs,> /dev/sda,dd if=/dev/zero,:(){:|:&};:,chmod -R 777 /,wget -O- | sh,curl | sh,eval `curl`,shutdown,reboot,halt
 
 # Optional context section - everything after #CONTEXT is sent with every query
 # Environment variables are also expanded in the context section
@@ -59,10 +100,13 @@ An example configuration file is provided in the repository as `example_config.c
 - `ANTHROPIC_API_KEY`: Your Anthropic API key (should start with `sk-ant-api-`)
 - `MODEL`: Default model to use (e.g., "claude-3-opus-20240229", "claude-3-haiku-20240307")
 - `MAX_TOKENS`: Maximum number of tokens in the response (default: 4096)
+- `ALWAYS_APPROVED_COMMANDS`: Comma-separated list of commands that will always be executed without asking for permission
+- `ALWAYS_RESTRICTED_COMMANDS`: Comma-separated list of commands that will always require explicit permission
+- `PROHIBITED_COMMANDS`: Comma-separated list of commands that will never be executed
 
 Environment variables in the config file are expanded using the syntax `$VAR` or `${VAR}`.
 
-check the anthropic available models here: https://docs.anthropic.com/en/docs/about-claude/models/all-models
+Check the anthropic available models here: https://docs.anthropic.com/en/docs/about-claude/models/all-models
 
 ⚠️ **Security Warning:** 
 - Never include API keys or sensitive information in your context section or context files
@@ -117,6 +161,19 @@ In interactive mode, you can:
 - Use the `--no-empty` flag to disable sending empty inputs (pressing Enter without typing anything)
 - Use the `--no-execute` flag to disable command execution functionality
 
+### Command Permission System
+
+Q includes a sophisticated command permission system:
+
+- **Command Categories**: Commands can be categorized as approved, restricted, or prohibited in your config file
+- **Session-Based Approvals**: When you approve a command once, Q remembers it for the current session
+- **Approval Options**: When prompted about executing a command, you can:
+  - `y` or `yes`: Execute this one time
+  - `a` or `always`: Always execute this command type in the current session
+  - `n` or `no`: Don't execute this command
+- **Command Pattern Matching**: Commands are matched against patterns, not just exact matches
+- **Security First**: Potentially dangerous commands require explicit permission
+
 ## Command-line Options
 
 - `question`: The question to send to Q
@@ -130,7 +187,31 @@ In interactive mode, you can:
 - `--confirm-context`, `-w`: Show context and ask for confirmation before sending to Q
 - `--no-empty`, `-e`: Disable sending empty inputs in interactive mode
 - `--no-execute`: Disable command execution functionality
+- `--no-command-approval`: Disable command approval system (not recommended)
 - `--version`, `-v`: Show program version and exit
+
+## Development
+
+If you want to contribute to Q, here's how to get started:
+
+1. Clone the repository and install it in development mode:
+   ```bash
+   git clone https://github.com/transparentlyai/q.git
+   cd q
+   pip install -e .
+   ```
+
+2. Run linting and type checking:
+   ```bash
+   flake8 q_cli
+   black q_cli
+   mypy q_cli
+   ```
+
+3. Testing (run after implementing changes):
+   ```bash
+   python -m unittest discover -s tests
+   ```
 
 ## License
 
