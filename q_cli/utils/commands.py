@@ -7,6 +7,8 @@ import re
 from typing import Tuple, List, Optional
 from rich.console import Console
 
+from q_cli.utils.permissions import CommandPermissionManager
+
 # List of potentially dangerous commands to block
 BLOCKED_COMMANDS = [
     "rm -rf /",
@@ -75,13 +77,45 @@ def format_command_output(return_code: int, stdout: str, stderr: str) -> str:
     return output.strip()
 
 
-def ask_command_confirmation(command: str, console: Console) -> bool:
-    """Ask the user for confirmation before running a command."""
+def ask_command_confirmation(
+    command: str, 
+    console: Console, 
+    permission_manager=None
+) -> Tuple[bool, bool]:
+    """
+    Ask the user for confirmation before running a command.
+    
+    Args:
+        command: The command to run
+        console: Console for output
+        permission_manager: Optional permission manager for tracking approvals
+        
+    Returns:
+        Tuple containing:
+        - Whether to execute this command (True/False)
+        - Whether to remember this choice for similar commands (True/False)
+    """
+    # Check if we need to ask for permission
+    if permission_manager and not permission_manager.needs_permission(command):
+        return True, False  # Command is pre-approved, no need to remember
+
+    # If command is prohibited, don't even ask
+    if permission_manager and permission_manager.is_command_prohibited(command):
+        console.print(f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]")
+        return False, False
+
+    # Ask for user confirmation
     console.print(f"\n[bold yellow]Q wants to run this command:[/bold yellow]")
     console.print(f"[bold cyan]{command}[/bold cyan]")
-
-    response = input("\nExecute this command? [y/N] ").lower().strip()
-    return response == "y" or response == "yes"
+    
+    options = "[y/a/N] (y=yes, a=always, N=no): "
+    response = input(f"\nExecute this command? {options}").lower().strip()
+    
+    if response.startswith("a"):
+        # "Always" option - remember for the session
+        return True, True
+    
+    return response.startswith("y"), False
 
 
 def extract_commands_from_response(response: str) -> List[str]:

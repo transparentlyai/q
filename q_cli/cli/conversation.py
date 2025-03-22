@@ -18,6 +18,7 @@ from q_cli.utils.commands import (
     execute_command,
     format_command_output,
 )
+from q_cli.utils.permissions import CommandPermissionManager
 
 
 def run_conversation(
@@ -27,6 +28,7 @@ def run_conversation(
     prompt_session: PromptSession,
     console: Console,
     initial_question: str,
+    permission_manager: Optional[CommandPermissionManager] = None,
 ) -> None:
     """
     Run the conversation loop with Q.
@@ -89,7 +91,7 @@ def run_conversation(
                 if not getattr(args, "no_execute", False):
                     commands = extract_commands_from_response(response)
                     if commands:
-                        command_results = process_commands(commands, console)
+                        command_results = process_commands(commands, console, permission_manager)
                         if command_results:
                             # Add the command results to the conversation
                             follow_up = f"I ran the command(s) you suggested. Here are the results:\n\n{command_results}"
@@ -145,14 +147,19 @@ def run_conversation(
         sys.exit(0)
 
 
-def process_commands(commands: List[str], console: Console) -> Optional[str]:
+def process_commands(
+    commands: List[str], 
+    console: Console,
+    permission_manager: Optional['CommandPermissionManager'] = None
+) -> Optional[str]:
     """
-    Process and execute commands extracted from Claude's response.
-
+    Process and execute commands extracted from Q's response.
+    
     Args:
         commands: List of commands to execute
         console: Console for output
-
+        permission_manager: Optional manager for command permissions
+        
     Returns:
         Formatted command results, or None if no commands were executed
     """
@@ -164,9 +171,15 @@ def process_commands(commands: List[str], console: Console) -> Optional[str]:
             continue
 
         # Ask for confirmation before executing
-        if not ask_command_confirmation(command, console):
+        execute, remember = ask_command_confirmation(command, console, permission_manager)
+        
+        if not execute:
             console.print("[yellow]Command execution skipped by user[/yellow]")
             continue
+            
+        # Remember this command type if requested
+        if remember and permission_manager:
+            permission_manager.approve_command_type(command)
 
         # Execute the command
         console.print(f"[bold green]Executing:[/bold green] {command}")

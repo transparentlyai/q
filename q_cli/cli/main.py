@@ -8,9 +8,13 @@ from q_cli.cli.args import setup_argparse
 from q_cli.io.config import read_config_file, build_context
 from q_cli.io.input import create_prompt_session, get_initial_question, confirm_context
 from q_cli.io.output import setup_console
-from q_cli.utils.constants import DEFAULT_MODEL, DEFAULT_MAX_TOKENS
+from q_cli.utils.constants import (
+    DEFAULT_MODEL, DEFAULT_MAX_TOKENS,
+    DEFAULT_ALWAYS_APPROVED_COMMANDS, DEFAULT_ALWAYS_RESTRICTED_COMMANDS, DEFAULT_PROHIBITED_COMMANDS
+)
 from q_cli.utils.helpers import sanitize_context
 from q_cli.cli.conversation import run_conversation
+from q_cli.utils.permissions import CommandPermissionManager
 
 
 def main() -> None:
@@ -99,6 +103,17 @@ Command guidelines:
             console.print("Context rejected. Exiting.", style="info")
             sys.exit(0)
 
+    # Set up permission manager
+    permission_manager = CommandPermissionManager.from_config(config_vars)
+    
+    # Use default lists if not specified in config
+    if not permission_manager.always_approved_commands:
+        permission_manager.always_approved_commands = set(DEFAULT_ALWAYS_APPROVED_COMMANDS)
+    if not permission_manager.always_restricted_commands:
+        permission_manager.always_restricted_commands = set(DEFAULT_ALWAYS_RESTRICTED_COMMANDS)
+    if not permission_manager.prohibited_commands:
+        permission_manager.prohibited_commands = set(DEFAULT_PROHIBITED_COMMANDS)
+
     # Get initial question from args, file, or prompt
     try:
         question = get_initial_question(args, prompt_session, history)
@@ -106,7 +121,15 @@ Command guidelines:
         sys.exit(0)
 
     # Run the conversation
-    run_conversation(client, system_prompt, args, prompt_session, console, question)
+    run_conversation(
+        client, 
+        system_prompt, 
+        args, 
+        prompt_session, 
+        console, 
+        question,
+        permission_manager
+    )
 
 
 if __name__ == "__main__":
