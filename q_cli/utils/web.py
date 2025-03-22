@@ -2,45 +2,58 @@
 
 import re
 import requests
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Dict
 from rich.console import Console
+from bs4 import BeautifulSoup
 
-# Define the special format for web content fetching
+# Define the special formats for web content fetching
 URL_MARKER_START = "<<FETCH_URL:"
 URL_MARKER_END = ">>"
+MODEL_URL_MARKER_START = "<<FETCH_FOR_MODEL:"
+MODEL_URL_MARKER_END = ">>"
 
 
-def extract_urls_from_response(response: str) -> List[Tuple[str, str, int]]:
+def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]]:
     """
     Extract URLs that are marked for fetching in the model's response.
     
-    Format: <<FETCH_URL:https://example.com>>
+    Format: 
+    - <<FETCH_URL:https://example.com>> (for user display)
+    - <<FETCH_FOR_MODEL:https://example.com>> (for model context)
     
     Args:
         response: The model's response text
     
     Returns:
-        List of tuples containing (original_marker, url, position)
+        List of tuples containing (original_marker, url, position, is_for_model)
     """
-    pattern = re.compile(f"{re.escape(URL_MARKER_START)}(.*?){re.escape(URL_MARKER_END)}")
+    patterns = [
+        (URL_MARKER_START, URL_MARKER_END, False),
+        (MODEL_URL_MARKER_START, MODEL_URL_MARKER_END, True)
+    ]
+    
     matches = []
     
-    for match in pattern.finditer(response):
-        full_match = match.group(0)  # The entire marker
-        url = match.group(1).strip()  # Just the URL part
-        position = match.start()
-        matches.append((full_match, url, position))
+    for start_marker, end_marker, is_for_model in patterns:
+        pattern = re.compile(f"{re.escape(start_marker)}(.*?){re.escape(end_marker)}")
+        
+        for match in pattern.finditer(response):
+            full_match = match.group(0)  # The entire marker
+            url = match.group(1).strip()  # Just the URL part
+            position = match.start()
+            matches.append((full_match, url, position, is_for_model))
     
     return matches
 
 
-def fetch_url_content(url: str, console: Console) -> Optional[str]:
+def fetch_url_content(url: str, console: Console, for_model: bool = False) -> Optional[str]:
     """
     Fetch content from a URL.
     
     Args:
         url: The URL to fetch
         console: Console for output
+        for_model: Whether the content is meant for the model (True) or user display (False)
     
     Returns:
         The content of the URL, or None if there was an error
@@ -53,54 +66,119 @@ def fetch_url_content(url: str, console: Console) -> Optional[str]:
         # Check content type to format appropriately
         content_type = response.headers.get('Content-Type', '')
         
-        if 'application/json' in content_type:
-            # Return formatted JSON
-            return f"JSON content from {url}:\n```json\n{response.text}\n```"
-        elif 'text/html' in content_type:
-            # For HTML, return a simple version with limited length
-            text = response.text
-            if len(text) > 10000:
-                text = text[:10000] + "\n\n[Content truncated due to length]"
-            return f"HTML content from {url} (truncated):\n```html\n{text}\n```"
+        if for_model:
+            # For model consumption, provide a more processed version
+            if 'text/html' in content_type:
+                # Parse HTML and extract meaningful text
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Remove script and style elements
+                for script in soup(["script", "style"]):
+                    script.extract()
+                    
+                # Get text and clean it up
+                text = soup.get_text(separator='\n')
+                lines = [line.strip() for line in text.splitlines() if line.strip()]
+                text = '\n'.join(lines)
+                
+                # Truncate if too long
+                if len(text) > 15000:
+                    text = text[:15000] + "\n\n[Content truncated due to length]"
+                
+                return f"Content from {url}:\n{text}"
+            
+            elif 'application/json' in content_type:
+                # For JSON, provide the raw JSON for the model
+                return f"JSON from {url}:\n{response.text}"
+            
+            else:
+                # For other content types, return as text
+                text = response.text
+                if len(text) > 15000:
+                    text = text[:15000] + "\n\n[Content truncated due to length]"
+                return f"Content from {url}:\n{text}"
         else:
-            # For other content types, return as-is with limited length
-            text = response.text
-            if len(text) > 10000:
-                text = text[:10000] + "\n\n[Content truncated due to length]"
-            return f"Content from {url}:\n```\n{text}\n```"
+            # For user display, format nicely with markdown
+            if 'application/json' in content_type:
+                # Return formatted JSON
+                return f"JSON content from {url}:\n```json\n{response.text}\n```"
+            elif 'text/html' in content_type:
+                # For HTML, return a simple version with limited length
+                text = response.text
+                if len(text) > 10000:
+                    text = text[:10000] + "\n\n[Content truncated due to length]"
+                return f"HTML content from {url} (truncated):\n```html\n{text}\n```"
+            else:
+                # For other content types, return as-is with limited length
+                text = response.text
+                if len(text) > 10000:
+                    text = text[:10000] + "\n\n[Content truncated due to length]"
+                return f"Content from {url}:\n```\n{text}\n```"
             
     except requests.RequestException as e:
-        console.print(f"[error]Error fetching URL {url}: {str(e)}[/error]")
-        return None
+        error_msg = f"Error fetching URL {url}: {str(e)}"
+        console.print(f"[error]{error_msg}[/error]")
+        return f"[Failed to fetch: {error_msg}]" if for_model else None
 
 
-def process_urls_in_response(response: str, console: Console) -> str:
+def process_urls_in_response(
+    response: str, 
+    console: Console
+) -> Tuple[str, Dict[str, str]]:
     """
-    Process a response from the model, fetching any URLs and replacing the 
-    markers with the fetched content.
+    Process a response from the model, fetching any URLs.
+    
+    - For user display URLs (<<FETCH_URL:...>>), replace markers with content in the response
+    - For model URLs (<<FETCH_FOR_MODEL:...>>), collect content for model context
     
     Args:
         response: The model's response text
         console: Console for output
     
     Returns:
-        The processed response with URL content fetched and inserted
+        Tuple containing:
+        - Processed response with URL content for user display
+        - Dictionary of URL content fetched for the model
     """
     # Extract all URL markers
     url_matches = extract_urls_from_response(response)
     
     if not url_matches:
-        return response
+        return response, {}
+    
+    # Dictionary to hold content fetched for model
+    model_url_content = {}
+    processed_response = response
     
     # Process in reverse order to avoid position changes
-    for marker, url, _ in sorted(url_matches, key=lambda x: x[2], reverse=True):
-        content = fetch_url_content(url, console)
+    for marker, url, position, is_for_model in sorted(
+        url_matches, key=lambda x: x[2], reverse=True
+    ):
+        content = fetch_url_content(url, console, for_model=is_for_model)
         
         if content:
-            # Replace the marker with the fetched content
-            response = response.replace(marker, f"\n\n{content}\n\n", 1)
+            if is_for_model:
+                # For model URLs, save content for later use
+                model_url_content[url] = content
+                # Replace marker with a simple note 
+                processed_response = processed_response.replace(
+                    marker, 
+                    f"[Web content from {url} fetched for additional context]", 
+                    1
+                )
+            else:
+                # For user display URLs, insert content directly
+                processed_response = processed_response.replace(
+                    marker, 
+                    f"\n\n{content}\n\n", 
+                    1
+                )
         else:
             # If fetching failed, just remove the marker
-            response = response.replace(marker, f"[Failed to fetch content from {url}]", 1)
+            processed_response = processed_response.replace(
+                marker, 
+                f"[Failed to fetch content from {url}]", 
+                1
+            )
     
-    return response
+    return processed_response, model_url_content

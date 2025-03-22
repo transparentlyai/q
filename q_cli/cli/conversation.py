@@ -78,10 +78,11 @@ def run_conversation(
 
                 # Get response
                 response = message.content[0].text
+                model_url_content = {}
                 
                 # Process any URLs in the response if web fetching is enabled
                 if not getattr(args, "no_web", False):
-                    processed_response = process_urls_in_response(response, console)
+                    processed_response, model_url_content = process_urls_in_response(response, console)
                 else:
                     processed_response = response
 
@@ -96,6 +97,20 @@ def run_conversation(
                 # Add the original (unprocessed) response to conversation history
                 # This ensures URLs are preserved for context in follow-up questions
                 conversation.append({"role": "assistant", "content": response})
+                
+                # If we have URL content for the model, create a follow-up message with that content
+                if model_url_content and not getattr(args, "no_web", False):
+                    web_content = "\n\n".join([
+                        f"Web content fetched from {url}:\n{content}" 
+                        for url, content in model_url_content.items()
+                    ])
+                    
+                    if web_content:
+                        web_context_message = (
+                            "I've fetched additional information from the web "
+                            "based on your request. Here's what I found:\n\n" + web_content
+                        )
+                        conversation.append({"role": "user", "content": web_context_message})
 
                 # Check for command suggestions in the response
                 if not getattr(args, "no_execute", False):
@@ -125,8 +140,9 @@ def run_conversation(
                             analysis_response = analysis.content[0].text
                             
                             # Process any URLs in the analysis response if web fetching is enabled
+                            model_url_content = {}
                             if not getattr(args, "no_web", False):
-                                processed_analysis = process_urls_in_response(analysis_response, console)
+                                processed_analysis, model_url_content = process_urls_in_response(analysis_response, console)
                             else:
                                 processed_analysis = analysis_response
                             
@@ -141,6 +157,20 @@ def run_conversation(
                             conversation.append(
                                 {"role": "assistant", "content": analysis_response}
                             )
+                            
+                            # If we have URL content for the model, create a follow-up message with that content
+                            if model_url_content and not getattr(args, "no_web", False):
+                                web_content = "\n\n".join([
+                                    f"Web content fetched from {url}:\n{content}" 
+                                    for url, content in model_url_content.items()
+                                ])
+                                
+                                if web_content:
+                                    web_context_message = (
+                                        "I've fetched additional information from the web "
+                                        "based on your request. Here's what I found:\n\n" + web_content
+                                    )
+                                    conversation.append({"role": "user", "content": web_context_message})
 
                 # If not in interactive mode, exit after first response
                 if args.no_interactive:
