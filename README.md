@@ -1,6 +1,6 @@
-# q - Quick Claude CLI
+# q - The Command Line Assistant
 
-A simple command-line tool for sending questions to Claude AI and getting beautifully formatted responses in your terminal.
+A simple command-line tool for sending questions to Q AI and getting beautifully formatted responses in your terminal.
 
 **Author:** [mauro@transparently.ai](mailto:mauro@transparently.ai)
 
@@ -15,6 +15,7 @@ A simple command-line tool for sending questions to Claude AI and getting beauti
 - 🔄 History navigation with up/down arrow keys
 - 🖱️ Terminal scrolling support for navigating long responses
 - 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
+- 🖥️ Command execution mode - let Claude suggest and run shell commands
 
 ## Installation
 
@@ -108,15 +109,21 @@ In interactive mode, you can:
 
 - Navigate through command history with the up/down arrow keys
 - Exit by typing `exit` or `quit`, or by pressing Ctrl+C or Ctrl+D
-- Save the last Claude response to a file by typing `save` followed by a path:
+- Save the last Q response to a file by typing `save` followed by a path:
   ```
   > save ~/responses/answer.md
   ```
+- Use command execution mode by starting your question with `!run`:
+  ```
+  > !run How can I check my system's disk usage?
+  ```
+  Q will suggest commands with explanations and, with your confirmation, can execute them
 - Use the `--no-empty` flag to disable sending empty inputs (pressing Enter without typing anything)
+- Use the `--no-execute` flag to disable command execution functionality
 
 ## Command-line Options
 
-- `question`: The question to send to Claude
+- `question`: The question to send to Q
 - `--file`, `-f`: Read question from file
 - `--api-key`, `-k`: Anthropic API key (defaults to config file or ANTHROPIC_API_KEY env var)
 - `--model`, `-m`: Model to use (default: claude-3.7-latest)
@@ -124,8 +131,9 @@ In interactive mode, you can:
 - `--no-context`, `-c`: Disable using context from config file
 - `--no-md`, `-p`: Disable markdown formatting of responses
 - `--context-file`, `-x`: Additional file to use as context (can be used multiple times)
-- `--confirm-context`, `-w`: Show context and ask for confirmation before sending to Claude
+- `--confirm-context`, `-w`: Show context and ask for confirmation before sending to Q
 - `--no-empty`, `-e`: Disable sending empty inputs in interactive mode
+- `--no-execute`: Disable command execution functionality
 - `--version`, `-v`: Show program version and exit
 
 ## License

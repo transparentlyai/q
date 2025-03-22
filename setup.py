@@ -3,8 +3,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="q",
-    version="0.3.8",
-    description="A quick Claude CLI for asking questions",
+    version="0.4.0",
+    description="A command Line AI Assistant",
     author="mauro@sauco.net",
     author_email="mauro@sauco.net",
     packages=find_packages(),
@@ -12,10 +12,11 @@ setup(
     install_requires=[
         "anthropic>=0.18.0",
         "rich>=13.0.0",
+        "prompt_toolkit>=3.0.0",
     ],
     entry_points={
         "console_scripts": [
-            "q=q:main",
+            "q=q_cli:main",
         ],
     },
     classifiers=[
