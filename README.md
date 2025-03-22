@@ -17,6 +17,7 @@ A simple command-line tool for sending questions to Q AI and getting beautifully
 - 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
 - 🖥️ Command execution mode - let Q suggest and run shell commands
 - 🔒 Command permission system with session-based approvals
+- 🌐 Web fetching - Q can access up-to-date information from the internet
 
 ## Installation
 
@@ -128,8 +129,10 @@ In interactive mode, you can:
   > save ~/responses/answer.md
   ```
 - Q can suggest shell commands that might help with your question. When it does, you'll be asked to confirm before any command is executed
+- Q can fetch content from the web to provide up-to-date information using special URL markers
 - Use the `--no-empty` flag to disable sending empty inputs (pressing Enter without typing anything)
 - Use the `--no-execute` flag to disable command execution functionality
+- Use the `--no-web` flag to disable web content fetching
 
 ### Command Permission System
 
@@ -156,7 +159,8 @@ Q includes a sophisticated command permission system:
 - `--context-file`, `-x`: Additional file to use as context (can be used multiple times)
 - `--confirm-context`, `-w`: Show context and ask for confirmation before sending to Q
 - `--no-empty`, `-e`: Disable sending empty inputs in interactive mode
-- `--no-execute`: Disable command execution functionality
+- `--no-execute`: Disable command execution functionality 
+- `--no-web`: Disable web content fetching functionality
 - `--no-command-approval`: Disable command approval system (not recommended)
 - `--version`, `-v`: Show program version and exit
 

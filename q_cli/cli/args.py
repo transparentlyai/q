@@ -60,6 +60,11 @@ def setup_argparse() -> argparse.ArgumentParser:
         help="Disable command execution functionality",
     )
     parser.add_argument(
+        "--no-web",
+        action="store_true",
+        help="Disable web content fetching functionality",
+    )
+    parser.add_argument(
         "--version",
         "-v",
         action="version",

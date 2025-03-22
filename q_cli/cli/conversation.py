@@ -21,6 +21,7 @@ from q_cli.utils.commands import (
 )
 from q_cli.utils.permissions import CommandPermissionManager
 from q_cli.utils.prompts import get_command_result_prompt
+from q_cli.utils.web import process_urls_in_response
 
 
 def run_conversation(
@@ -77,16 +78,23 @@ def run_conversation(
 
                 # Get response
                 response = message.content[0].text
+                
+                # Process any URLs in the response if web fetching is enabled
+                if not getattr(args, "no_web", False):
+                    processed_response = process_urls_in_response(response, console)
+                else:
+                    processed_response = response
 
                 # Print formatted response
                 console.print("")  # Add empty line before response
                 if not args.no_md:
-                    console.print(format_markdown(response))
+                    console.print(format_markdown(processed_response))
                 else:
-                    console.print(response)
+                    console.print(processed_response)
                 console.print("")  # Add empty line after response
 
-                # Add assistant response to conversation history
+                # Add the original (unprocessed) response to conversation history
+                # This ensures URLs are preserved for context in follow-up questions
                 conversation.append({"role": "assistant", "content": response})
 
                 # Check for command suggestions in the response
@@ -113,16 +121,23 @@ def run_conversation(
                                     messages=conversation,
                                 )
 
-                            # Print Q's analysis
+                            # Get Q's analysis
                             analysis_response = analysis.content[0].text
+                            
+                            # Process any URLs in the analysis response if web fetching is enabled
+                            if not getattr(args, "no_web", False):
+                                processed_analysis = process_urls_in_response(analysis_response, console)
+                            else:
+                                processed_analysis = analysis_response
+                            
                             console.print("")  # Add empty line before response
                             if not args.no_md:
-                                console.print(format_markdown(analysis_response))
+                                console.print(format_markdown(processed_analysis))
                             else:
-                                console.print(analysis_response)
+                                console.print(processed_analysis)
                             console.print("")  # Add empty line after response
 
-                            # Add Q's analysis to the conversation
+                            # Add Q's original analysis to the conversation
                             conversation.append(
                                 {"role": "assistant", "content": analysis_response}
                             )
