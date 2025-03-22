@@ -38,6 +38,7 @@ DEFAULT_ALWAYS_APPROVED_COMMANDS: list[str] = [
     "uptime",
     "uname",
     "hostname",
+    "cat",
 ]
 
 DEFAULT_ALWAYS_RESTRICTED_COMMANDS: list[str] = [
