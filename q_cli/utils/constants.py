@@ -19,4 +19,3 @@ REDACTED_TEXT = "[REDACTED - Potential sensitive information]"
 # Commands
 EXIT_COMMANDS = ["exit", "quit"]
 SAVE_COMMAND_PREFIX = "save "
-COMMAND_MODE_PREFIX = "@run "

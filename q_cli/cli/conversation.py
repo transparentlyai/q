@@ -7,7 +7,7 @@ import anthropic
 from prompt_toolkit import PromptSession
 from rich.console import Console
 
-from q_cli.utils.constants import SAVE_COMMAND_PREFIX, COMMAND_MODE_PREFIX
+from q_cli.utils.constants import SAVE_COMMAND_PREFIX
 from q_cli.utils.helpers import handle_api_error
 from q_cli.io.input import get_input, confirm_context
 from q_cli.io.output import save_response_to_file
@@ -51,14 +51,6 @@ def run_conversation(
             if question.strip().lower() in ["exit", "quit"]:
                 sys.exit(0)
 
-            # Check for command mode
-            command_mode = False
-            if question.strip().startswith(COMMAND_MODE_PREFIX):
-                # Enable command execution mode for this query
-                command_mode = True
-                # Remove the prefix from the question
-                question = question[len(COMMAND_MODE_PREFIX) :].strip()
-
             # Add user message to conversation and input history
             conversation.append({"role": "user", "content": question})
 
@@ -93,8 +85,8 @@ def run_conversation(
                 # Add assistant response to conversation history
                 conversation.append({"role": "assistant", "content": response})
 
-                # Process commands in the response if command mode is enabled
-                if command_mode and not getattr(args, "no_execute", False):
+                # Check for command suggestions in the response
+                if not getattr(args, "no_execute", False):
                     commands = extract_commands_from_response(response)
                     if commands:
                         command_results = process_commands(commands, console)

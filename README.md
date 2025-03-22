@@ -113,11 +113,7 @@ In interactive mode, you can:
   ```
   > save ~/responses/answer.md
   ```
-- Use command execution mode by starting your question with `!run`:
-  ```
-  > !run How can I check my system's disk usage?
-  ```
-  Q will suggest commands with explanations and, with your confirmation, can execute them
+- Q can suggest shell commands that might help with your question. When it does, you'll be asked to confirm before any command is executed
 - Use the `--no-empty` flag to disable sending empty inputs (pressing Enter without typing anything)
 - Use the `--no-execute` flag to disable command execution functionality
 
