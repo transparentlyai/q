@@ -91,7 +91,15 @@ def get_initial_question(
     Returns:
         The initial question string
     """
-    if args.file:
+    # If interactive mode is explicitly forced, go straight to prompt
+    if getattr(args, "interactive", False):
+        # If interactive mode is forced, prompt for first question
+        while True:
+            question = get_input("Q> ", session=prompt_session)
+            # If input is not empty or --no-empty flag is not set, proceed
+            if not args.no_empty or question.strip():
+                return question
+    elif args.file:
         try:
             with open(args.file, "r") as f:
                 question = f.read()

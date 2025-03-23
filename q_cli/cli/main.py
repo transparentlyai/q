@@ -9,8 +9,11 @@ from q_cli.io.config import read_config_file, build_context
 from q_cli.io.input import create_prompt_session, get_initial_question, confirm_context
 from q_cli.io.output import setup_console
 from q_cli.utils.constants import (
-    DEFAULT_MODEL, DEFAULT_MAX_TOKENS,
-    DEFAULT_ALWAYS_APPROVED_COMMANDS, DEFAULT_ALWAYS_RESTRICTED_COMMANDS, DEFAULT_PROHIBITED_COMMANDS
+    DEFAULT_MODEL,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_ALWAYS_APPROVED_COMMANDS,
+    DEFAULT_ALWAYS_RESTRICTED_COMMANDS,
+    DEFAULT_PROHIBITED_COMMANDS,
 )
 from q_cli.utils.helpers import sanitize_context
 from q_cli.cli.conversation import run_conversation
@@ -22,10 +25,10 @@ def main() -> None:
     """Main entry point for the CLI."""
     parser = setup_argparse()
 
-    # If no args provided (sys.argv has just the script name), print help and exit
+    # If no args provided (sys.argv has just the script name), go into interactive mode
     if len(sys.argv) == 1:
-        parser.print_help()
-        sys.exit(0)
+        # Set the interactive mode flag to ensure we proceed with interactive mode
+        sys.argv.append("--interactive")
 
     args = parser.parse_args()
 
@@ -67,7 +70,7 @@ def main() -> None:
     include_command_execution = not getattr(args, "no_execute", False)
     system_prompt = get_system_prompt(
         include_command_execution=include_command_execution,
-        context=sanitized_context if sanitized_context else None
+        context=sanitized_context if sanitized_context else None,
     )
 
     # If confirm-context is specified, show the context and ask for confirmation
@@ -78,12 +81,16 @@ def main() -> None:
 
     # Set up permission manager
     permission_manager = CommandPermissionManager.from_config(config_vars)
-    
+
     # Use default lists if not specified in config
     if not permission_manager.always_approved_commands:
-        permission_manager.always_approved_commands = set(DEFAULT_ALWAYS_APPROVED_COMMANDS)
+        permission_manager.always_approved_commands = set(
+            DEFAULT_ALWAYS_APPROVED_COMMANDS
+        )
     if not permission_manager.always_restricted_commands:
-        permission_manager.always_restricted_commands = set(DEFAULT_ALWAYS_RESTRICTED_COMMANDS)
+        permission_manager.always_restricted_commands = set(
+            DEFAULT_ALWAYS_RESTRICTED_COMMANDS
+        )
     if not permission_manager.prohibited_commands:
         permission_manager.prohibited_commands = set(DEFAULT_PROHIBITED_COMMANDS)
 
@@ -95,13 +102,13 @@ def main() -> None:
 
     # Run the conversation
     run_conversation(
-        client, 
-        system_prompt, 
-        args, 
-        prompt_session, 
-        console, 
+        client,
+        system_prompt,
+        args,
+        prompt_session,
+        console,
         question,
-        permission_manager
+        permission_manager,
     )
 
 

@@ -21,8 +21,15 @@ def setup_argparse() -> argparse.ArgumentParser:
         "-m",
         help="Model to use (defaults to config file or claude-3-opus-20240229)",
     )
-    parser.add_argument(
+    # Use a mutually exclusive group for interactive mode options
+    interactive_group = parser.add_mutually_exclusive_group()
+    interactive_group.add_argument(
         "--no-interactive", "-i", action="store_true", help="Disable interactive mode"
+    )
+    interactive_group.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Force interactive mode without a question",
     )
     parser.add_argument(
         "--no-context",
