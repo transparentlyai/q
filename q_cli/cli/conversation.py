@@ -265,20 +265,40 @@ def process_commands(
         result = format_command_output(return_code, stdout, stderr)
         return f"Command: {command}\n{result}"
     
-    # For multiple commands, present the execution plan and ask for confirmation
-    from q_cli.utils.commands import ask_execution_plan_confirmation
-    
-    execute_plan, command_indices = ask_execution_plan_confirmation(
-        commands, console, permission_manager
-    )
-    
-    if not execute_plan:
-        console.print("[yellow]Command execution plan skipped by user[/yellow]")
-        return None
+    # For multiple commands, check if all commands are pre-approved
+    all_approved = True
+    if permission_manager:
+        for command in commands:
+            if command.strip() and not command.startswith("__FILE_CREATION__"):
+                cmd_type = permission_manager.extract_command_type(command)
+                if permission_manager.needs_permission(command):
+                    all_approved = False
+                    break
+    else:
+        # If no permission manager, assume not all approved
+        all_approved = False
         
-    # Determine if we're executing one by one based on previous response
-    # 'a' = approve all at once, 'o' = approve one by one
-    execute_one_by_one = input("\nDo you approve all commands at once, or want to approve each one individually? [a/o] ").lower().startswith("o")
+    # If all commands are pre-approved, execute all without asking
+    if all_approved:
+        console.print("\n[bold green]All commands are pre-approved, executing automatically.[/bold green]")
+        execute_plan = True
+        command_indices = list(range(len(commands)))
+        execute_one_by_one = False
+    else:
+        # Otherwise, present the execution plan and ask for confirmation
+        from q_cli.utils.commands import ask_execution_plan_confirmation
+        
+        execute_plan, command_indices = ask_execution_plan_confirmation(
+            commands, console, permission_manager
+        )
+        
+        if not execute_plan:
+            console.print("[yellow]Command execution plan skipped by user[/yellow]")
+            return None
+            
+        # Determine if we're executing one by one based on previous response
+        # 'a' = approve all at once, 'o' = approve one by one
+        execute_one_by_one = input("\nDo you approve all commands at once, or want to approve each one individually? [a/o] ").lower().startswith("o")
     
     # Execute the commands
     for idx in command_indices:
