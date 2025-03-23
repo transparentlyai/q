@@ -77,14 +77,61 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
         except Exception as e:
             console.print(f"Warning: Error reading config file: {e}", style="warning")
     else:
-        # If config file doesn't exist, suggest creating it using the example format
-        if os.path.exists(example_config_path):
+        # If config file doesn't exist, create a base one with default settings
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+
+            # If example config exists, use it as template, otherwise create minimal config
+            if os.path.exists(example_config_path):
+                with open(example_config_path, "r") as src, open(
+                    CONFIG_PATH, "w"
+                ) as dest:
+                    dest.write(src.read())
+                console.print(
+                    f"[green]Created config file at {CONFIG_PATH} using example template.[/green]"
+                )
+            else:
+                # Create minimal config with default values
+                minimal_config = """# Configuration file for q - AI Command Line Assistant
+# Edit this file to customize behavior
+
+# Anthropic API key (recommended to use environment variable)
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+# Model to use (default: claude-3.7-latest)
+MODEL=claude-3.7-latest
+
+# Command permission settings
+# These commands never need permission to run (comma-separated list)
+ALWAYS_APPROVED_COMMANDS=ls,pwd,echo,date,whoami,uptime,uname,hostname,cat
+
+# These commands always require explicit permission
+ALWAYS_RESTRICTED_COMMANDS=sudo,su,chmod,chown,mkfs,dd,systemctl,rm,mv,cp,apt,yum,dnf,pacman,brew,npm,pip
+
+# These commands can never be executed
+PROHIBITED_COMMANDS=rm -rf /,rm -rf /*,mkfs,> /dev/sda,dd if=/dev/zero,:(){:|:&};:,chmod -R 777 /,wget -O- | sh,curl | sh,eval `curl`,shutdown,reboot,halt
+
+# Context section - everything below will be sent with each query
+#CONTEXT
+- You are Q, an AI assistant
+- Be concise in your answers unless asked for detail
+- Format output nicely with Markdown when appropriate
+"""
+                with open(CONFIG_PATH, "w") as f:
+                    f.write(minimal_config)
+                console.print(
+                    f"[green]Created default config file at {CONFIG_PATH}.[/green]"
+                )
+
             console.print(
-                f"Config file not found. You can create one at {CONFIG_PATH} using the format shown in {example_config_path}",
+                "Make sure your API key is set either in the config file or as ANTHROPIC_API_KEY environment variable.",
                 style="info",
             )
+        except Exception as e:
+            console.print(f"[red]Error creating config file: {e}[/red]")
             console.print(
-                "Make sure your API key starts with 'sk-ant-api' for API v1 format.",
+                f"You can manually create one at {CONFIG_PATH}",
                 style="info",
             )
 
