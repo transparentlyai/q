@@ -2,16 +2,24 @@
 
 import os
 import sys
-from typing import Optional
+import signal
+import threading
+from typing import Optional, List
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
+from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
+from prompt_toolkit.filters import Condition
+from prompt_toolkit.application.current import get_app
+from prompt_toolkit.keys import Keys
 from rich.console import Console
 
 from q_cli.utils.constants import HISTORY_PATH, EXIT_COMMANDS
 from q_cli.utils.helpers import format_markdown
+
+# No need for global events - we'll use prompt_toolkit's native abort mechanism
 
 
 def create_prompt_session(console: Console) -> PromptSession:
@@ -25,11 +33,15 @@ def create_prompt_session(console: Console) -> PromptSession:
 
     # Create history object
     history = FileHistory(HISTORY_PATH)
+    
+    # Create custom keybindings
+    bindings = create_key_bindings()
 
     # Create prompt session with history and style
     prompt_session = PromptSession(
         history=history,
         style=prompt_style,
+        key_bindings=bindings,
         vi_mode=False,  # Use standard emacs-like keybindings
         complete_in_thread=True,  # More responsive completion
         mouse_support=False,  # Disable mouse support to allow normal terminal scrolling
@@ -39,6 +51,32 @@ def create_prompt_session(console: Console) -> PromptSession:
         console.print(f"[info]Using history file: {HISTORY_PATH}[/info]")
 
     return prompt_session
+
+
+def create_key_bindings() -> KeyBindings:
+    """Create custom key bindings for the prompt session."""
+    bindings = KeyBindings()
+    
+    # Create a separate key binding for ESC to exit immediately
+    escape_bindings = KeyBindings()
+    
+    # Override the Enter key to only accept input when there's text
+    @bindings.add("enter")
+    def handle_enter(event):
+        """Submit text when Enter is pressed and there's text."""
+        # Only accept input if there's text
+        if len(event.current_buffer.text.strip()) > 0:
+            event.current_buffer.validate_and_handle()
+    
+    # Add Escape key to abort/exit with highest priority
+    @escape_bindings.add("escape", eager=True)
+    def handle_escape(event):
+        """Exit the application when Escape is pressed."""
+        # Send SIGINT to the current process, which is a cleaner way to exit
+        os.kill(os.getpid(), signal.SIGINT)
+    
+    # Merge the key bindings, with escape_bindings having higher precedence
+    return merge_key_bindings([escape_bindings, bindings])
 
 
 def get_input(prompt: str = "", session: Optional[PromptSession] = None) -> str:
@@ -76,9 +114,11 @@ def get_input(prompt: str = "", session: Optional[PromptSession] = None) -> str:
 
         return line
 
-    except (KeyboardInterrupt, EOFError):
-        # Handle Ctrl+C or Ctrl+D
-        print()
+    except KeyboardInterrupt:
+        # Handle Ctrl+C or ESC key (which we mapped to KeyboardInterrupt)
+        sys.exit(0)
+    except EOFError:
+        # Handle Ctrl+D
         sys.exit(0)
 
 
