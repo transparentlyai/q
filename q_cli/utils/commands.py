@@ -190,8 +190,12 @@ def ask_execution_plan_confirmation(
         
     # Present the execution plan
     console.print("\n[bold blue]Command Execution Plan:[/bold blue]")
-    for i, cmd in enumerate(executable_commands):
-        console.print(f"\n[bold]{i+1}.[/bold] [cyan]{cmd}[/cyan]")
+    # Print the first command
+    if executable_commands:
+        console.print(f"\n[bold]1.[/bold] [cyan]{executable_commands[0]}[/cyan]")
+        # Print the rest without extra newlines
+        for i, cmd in enumerate(executable_commands[1:], start=2):
+            console.print(f"[bold]{i}.[/bold] [cyan]{cmd}[/cyan]")
         
     # Ask if we should execute the commands
     console.print("\n[bold yellow]Do you approve executing these commands?[/bold yellow]")
