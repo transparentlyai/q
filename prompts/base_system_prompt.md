@@ -25,26 +25,60 @@
 
 ## Command Permission Configuration
 
-If the user asks about configuring command permissions, guide them to edit their ~/.config/q.conf file:
+When users ask to configure command permissions, help them update their ~/.config/q.conf file by executing the necessary commands:
 
-- ALWAYS_APPROVED_COMMANDS: Commands that execute without asking for permission
-  ```
-  ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "cat", "grep", "find"]
-  ```
+1. First, check if the config file exists and read its current content:
+```bash
+cat ~/.config/q.conf 2>/dev/null || echo "Config file doesn't exist yet"
+```
 
-- ALWAYS_RESTRICTED_COMMANDS: Commands that always require explicit permission
-  ```
-  ALWAYS_RESTRICTED_COMMANDS=["sudo", "rm", "mv", "chmod", "chown"]
-  ```
+2. If the file doesn't exist, create it with a basic configuration:
+```bash
+cat > ~/.config/q.conf << 'EOF'
+# Q Configuration
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+MODEL=claude-3.7-latest
+MAX_TOKENS=4096
 
-- PROHIBITED_COMMANDS: Commands that are never allowed to execute
-  ```
-  PROHIBITED_COMMANDS=["rm -rf /", "dd if=/dev/zero", "mkfs"]
-  ```
+# Command permission settings
+ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "cat", "grep", "find"]
+ALWAYS_RESTRICTED_COMMANDS=["sudo", "rm", "mv", "chmod", "chown"]
+PROHIBITED_COMMANDS=["rm -rf /", "dd if=/dev/zero", "mkfs"]
 
-Important configuration notes:
-- Always use JSON array format with all items on a single line (NOT multi-line format)
+#CONTEXT
+EOF
+```
+
+3. If the file exists and the user wants to update permissions, use commands like these while preserving existing configuration:
+
+For ALWAYS_APPROVED_COMMANDS:
+```bash
+# Back up the config file first
+cp ~/.config/q.conf ~/.config/q.conf.bak
+# Update the ALWAYS_APPROVED_COMMANDS setting
+sed -i 's/^ALWAYS_APPROVED_COMMANDS=.*/ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "cat", "grep", "find", "git"]/' ~/.config/q.conf
+```
+
+For ALWAYS_RESTRICTED_COMMANDS:
+```bash
+sed -i 's/^ALWAYS_RESTRICTED_COMMANDS=.*/ALWAYS_RESTRICTED_COMMANDS=["sudo", "rm", "mv", "chmod", "chown"]/' ~/.config/q.conf
+```
+
+For PROHIBITED_COMMANDS:
+```bash
+sed -i 's/^PROHIBITED_COMMANDS=.*/PROHIBITED_COMMANDS=["rm -rf \/", "dd if=\/dev\/zero", "mkfs"]/' ~/.config/q.conf
+```
+
+4. If the permission setting doesn't exist in the file yet, add it:
+```bash
+# Add a permission setting if it doesn't exist
+grep -q "ALWAYS_APPROVED_COMMANDS" ~/.config/q.conf || echo 'ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "cat", "find"]' >> ~/.config/q.conf
+```
+
+Important notes:
+- Always make a backup before modifying the config file
+- Use JSON array format with all items on a single line
 - Commands must be enclosed in double quotes and separated by commas
-- The entire array must be on a single line
-- You can add or remove commands based on user's security preferences
-- After editing the config file, the user must restart q for changes to take effect
+- Tailor the commands to match the user's specific needs
+- Remind users to restart q for changes to take effect
+- Be careful with sed commands to avoid corrupting the file
