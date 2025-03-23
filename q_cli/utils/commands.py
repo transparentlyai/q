@@ -141,7 +141,7 @@ def ask_command_confirmation(
 
 def ask_execution_plan_confirmation(
     commands: List[str], console: Console, permission_manager=None
-) -> Tuple[bool, List[int]]:
+) -> Tuple[bool, List[int], bool]:
     """
     Present the full execution plan and ask for user confirmation.
 
@@ -154,9 +154,10 @@ def ask_execution_plan_confirmation(
         Tuple containing:
         - Whether to execute any commands (True/False)
         - List of indices of commands to execute
+        - Whether all commands are approved at once (True for 'a', False for 's' or 'n')
     """
     if not commands:
-        return False, []
+        return False, [], False
 
     # Filter out prohibited commands and special file creation commands
     executable_commands = []
@@ -186,7 +187,7 @@ def ask_execution_plan_confirmation(
 
     if not executable_commands:
         console.print("\n[yellow]No executable commands in the plan.[/yellow]")
-        return False, []
+        return False, [], False
 
     # Present the execution plan
     console.print("\n[bold blue]Command Execution Plan:[/bold blue]")
@@ -206,13 +207,15 @@ def ask_execution_plan_confirmation(
 
     if response.startswith("s"):
         # Let user choose commands one by one
-        return True, command_indices
+        return True, command_indices, False
     elif response.startswith("a"):
-        # Execute all commands
-        return True, command_indices
+        # Execute all commands at once without asking for confirmation on each command
+        # Return a special marker that we don't need to ask permission individually
+        # This will be handled by our caller
+        return True, command_indices, True
     else:
         # Don't execute any commands
-        return False, []
+        return False, [], False
 
 
 def is_file_creation_command(command: str) -> Dict[str, Any]:

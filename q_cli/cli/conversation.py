@@ -285,16 +285,16 @@ def process_commands(
         # Otherwise, present the execution plan and ask for confirmation
         from q_cli.utils.commands import ask_execution_plan_confirmation
 
-        execute_plan, command_indices = ask_execution_plan_confirmation(
-            commands, console, permission_manager
+        execute_plan, command_indices, execute_all_at_once = (
+            ask_execution_plan_confirmation(commands, console, permission_manager)
         )
 
         if not execute_plan:
             console.print("[yellow]Command execution plan skipped by user[/yellow]")
             return None
 
-        # We don't need to ask this extra question since options are included in the first prompt
-        execute_one_by_one = False
+        # If the user selected 'all', we don't need to ask for confirmation per command
+        execute_one_by_one = not execute_all_at_once
 
     # Execute the commands
     for idx in command_indices:
@@ -323,13 +323,9 @@ def process_commands(
             results.append(f"Command: cat > {original_cmd}\n{result}")
             continue
 
-        # Check if we need permission for this specific command
-        needs_permission = permission_manager and permission_manager.needs_permission(
-            command
-        )
-
-        if needs_permission:
-            # Still ask for confirmation for commands that need permission
+        # Check if we need to ask for permission
+        if execute_one_by_one:
+            # Ask for confirmation for individual commands
             execute, remember = ask_command_confirmation(
                 command, console, permission_manager
             )
@@ -341,6 +337,13 @@ def process_commands(
             # Remember this command type if requested
             if remember and permission_manager:
                 permission_manager.approve_command_type(command)
+        else:
+            # All commands approved at once, but still check for prohibited commands
+            if permission_manager and permission_manager.is_command_prohibited(command):
+                console.print(
+                    f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]"
+                )
+                continue
 
         # Execute the command
         console.print(f"[bold green]Executing:[/bold green] {command}")
