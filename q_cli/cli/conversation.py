@@ -377,7 +377,7 @@ def handle_next_input(
         The next question from the user
     """
     while True:
-        question = get_input("> ", session=prompt_session)
+        question = get_input("Q> ", session=prompt_session)
 
         # Handle save command
         if question.strip().lower().startswith(SAVE_COMMAND_PREFIX):
