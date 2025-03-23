@@ -213,8 +213,30 @@ def process_commands(
         Formatted command results, or None if no commands were executed
     """
     results = []
-
-    for command in commands:
+    
+    # Skip if no commands
+    if not commands:
+        return None
+        
+    # Present the execution plan and ask for confirmation
+    from q_cli.utils.commands import ask_execution_plan_confirmation
+    
+    execute_plan, command_indices = ask_execution_plan_confirmation(
+        commands, console, permission_manager
+    )
+    
+    if not execute_plan:
+        console.print("[yellow]Command execution plan skipped by user[/yellow]")
+        return None
+        
+    # Determine if we're executing one by one based on previous response
+    # 'a' = all at once, 'o' = one by one
+    execute_one_by_one = input("\nWould you like to execute all commands at once or one by one? [a/o] ").lower().startswith("o")
+    
+    # Execute the commands
+    for idx in command_indices:
+        command = commands[idx]
+        
         # Skip empty commands
         if not command.strip():
             continue
@@ -238,18 +260,36 @@ def process_commands(
             results.append(f"Command: cat > {original_cmd}\n{result}")
             continue
 
-        # Regular command - ask for confirmation before executing
-        execute, remember = ask_command_confirmation(
-            command, console, permission_manager
-        )
-
-        if not execute:
-            console.print("[yellow]Command execution skipped by user[/yellow]")
-            continue
-
-        # Remember this command type if requested
-        if remember and permission_manager:
-            permission_manager.approve_command_type(command)
+        # If executing one by one, ask for confirmation for each command
+        if execute_one_by_one:
+            execute, remember = ask_command_confirmation(
+                command, console, permission_manager
+            )
+            
+            if not execute:
+                console.print("[yellow]Command execution skipped by user[/yellow]")
+                continue
+                
+            # Remember this command type if requested
+            if remember and permission_manager:
+                permission_manager.approve_command_type(command)
+        else:
+            # Check if we need permission for this specific command
+            needs_permission = permission_manager and permission_manager.needs_permission(command)
+            
+            if needs_permission:
+                # Still ask for confirmation for commands that need permission
+                execute, remember = ask_command_confirmation(
+                    command, console, permission_manager
+                )
+                
+                if not execute:
+                    console.print("[yellow]Command execution skipped by user[/yellow]")
+                    continue
+                    
+                # Remember this command type if requested
+                if remember and permission_manager:
+                    permission_manager.approve_command_type(command)
 
         # Execute the command
         console.print(f"[bold green]Executing:[/bold green] {command}")

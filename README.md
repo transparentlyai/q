@@ -15,7 +15,7 @@ A simple command-line tool for sending questions to Q AI and getting beautifully
 - 🔄 History navigation with up/down arrow keys
 - 🖱️ Terminal scrolling support for navigating long responses
 - 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
-- 🖥️ Command execution mode - let Q suggest and run shell commands
+- 🖥️ Command execution plans - let Q suggest and run comprehensive shell command plans
 - 🔒 Command permission system with session-based approvals
 - 🌐 Web fetching - Q can access up-to-date information from the internet and analyze content for better responses
 
@@ -132,7 +132,10 @@ In interactive mode, you can:
   ```
   > save ~/responses/answer.md
   ```
-- Q can suggest shell commands that might help with your question. When it does, you'll be asked to confirm before any command is executed
+- Q can suggest complete shell command plans to solve your problems:
+  - It will present the full execution plan upfront 
+  - You can choose to execute all commands at once or one by one
+  - For each command, you'll be asked to confirm before execution
 - Q can fetch content from the web to provide up-to-date information in two ways:
   - Displaying web content directly to you with URL markers
   - Fetching web content as context for Q to analyze and use in responses

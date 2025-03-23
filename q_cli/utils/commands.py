@@ -139,6 +139,73 @@ def ask_command_confirmation(
     return response.startswith("y"), False
 
 
+def ask_execution_plan_confirmation(
+    commands: List[str], console: Console, permission_manager=None
+) -> Tuple[bool, List[int]]:
+    """
+    Present the full execution plan and ask for user confirmation.
+    
+    Args:
+        commands: List of commands to execute
+        console: Console for output
+        permission_manager: Optional permission manager for tracking approvals
+        
+    Returns:
+        Tuple containing:
+        - Whether to execute any commands (True/False)
+        - List of indices of commands to execute
+    """
+    if not commands:
+        return False, []
+        
+    # Filter out prohibited commands and special file creation commands
+    executable_commands = []
+    command_indices = []
+    
+    for i, command in enumerate(commands):
+        # Skip empty commands
+        if not command.strip():
+            continue
+            
+        # Skip special file creation commands for now
+        if command.startswith("__FILE_CREATION__"):
+            executable_commands.append(f"Create file (special command)")
+            command_indices.append(i)
+            continue
+            
+        # Skip prohibited commands
+        if permission_manager and permission_manager.is_command_prohibited(command):
+            console.print(
+                f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]"
+            )
+            continue
+            
+        # Include all other commands
+        executable_commands.append(command)
+        command_indices.append(i)
+        
+    if not executable_commands:
+        console.print("\n[yellow]No executable commands in the plan.[/yellow]")
+        return False, []
+        
+    # Present the execution plan
+    console.print("\n[bold blue]Command Execution Plan:[/bold blue]")
+    for i, cmd in enumerate(executable_commands):
+        console.print(f"\n[bold]{i+1}.[/bold] [cyan]{cmd}[/cyan]")
+        
+    # Ask if we should execute the commands
+    console.print("\n[bold yellow]Would you like to execute these commands?[/bold yellow]")
+    options = "[y/n] (y=yes, n=no): "
+    response = input(f"\nExecute commands? {options}").lower().strip()
+    
+    if response.startswith("y"):
+        # Execute commands
+        return True, command_indices
+    else:
+        # Don't execute any commands
+        return False, []
+
+
 def is_file_creation_command(command: str) -> Dict[str, Any]:
     """
     Detect if a command is trying to create a file using a heredoc or similar.
