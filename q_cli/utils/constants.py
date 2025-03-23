@@ -1,9 +1,6 @@
 """Constants used throughout the q_cli package."""
 
 import os
-import json
-
-# Version - moved to __init__.py
 
 # Model Constants
 DEFAULT_MODEL = "claude-3.7-latest"  # Keep model name as is for API compatibility

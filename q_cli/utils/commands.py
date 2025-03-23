@@ -257,12 +257,49 @@ def is_file_creation_command(command: str) -> Dict[str, Any]:
     return result
 
 
+def extract_code_blocks(response: str) -> Dict[str, List[str]]:
+    """
+    Extract all code blocks from a response, categorized by block type.
+    
+    Args:
+        response: The response text
+        
+    Returns:
+        Dictionary mapping block types (shell, bash, etc.) to lists of blocks
+    """
+    blocks = {"shell": [], "other": []}
+    
+    lines = response.split("\n")
+    in_code_block = False
+    current_type = ""
+    current_block = []
+    
+    for line in lines:
+        if line.strip().startswith("```") and not in_code_block:
+            # Start of a code block
+            block_type = line.strip()[3:].lower()
+            in_code_block = True
+            current_type = "shell" if block_type in ["shell", "bash", "sh", ""] else "other"
+            current_block = []
+            continue
+            
+        if line.strip() == "```" and in_code_block:
+            # End of a code block
+            in_code_block = False
+            if current_block:  # Only add non-empty blocks
+                blocks[current_type].append(current_block)
+            current_block = []
+            continue
+            
+        if in_code_block:
+            current_block.append(line)
+    
+    return blocks
+
+
 def extract_file_content_for_command(command: Dict[str, Any], response: str) -> str:
     """
-    Extract content intended for a file from code blocks in the response.
-
-    This function looks for a non-shell code block following a file creation command
-    in the response, assuming it contains the content intended for the file.
+    Extract content intended for a file from non-shell code blocks in the response.
 
     Args:
         command: Command info dictionary from is_file_creation_command
@@ -274,35 +311,19 @@ def extract_file_content_for_command(command: Dict[str, Any], response: str) -> 
     if not command["is_file_creation"]:
         return ""
 
-    # Find the code blocks in the response
-    lines = response.split("\n")
-    in_code_block = False
-    current_block_content = []
-    found_blocks = []
-
-    for line in lines:
-        if line.strip().startswith("```") and not in_code_block:
-            # Start of a code block
-            in_code_block = True
-            block_type = line.strip()[3:].lower()
-            current_block_content = []
-            continue
-
-        if line.strip() == "```" and in_code_block:
-            # End of a code block
-            in_code_block = False
-            # Save the complete block
-            found_blocks.append("\n".join(current_block_content))
-            continue
-
-        if in_code_block:
-            current_block_content.append(line)
-
+    # Use the extract_code_blocks function to get all code blocks
+    blocks = extract_code_blocks(response)
+    
+    # Get all "other" blocks (non-shell blocks)
+    other_blocks = blocks["other"]
+    
+    # Convert block lists to strings
+    content_blocks = ["\n".join(block) for block in other_blocks]
+    
     # If we have code blocks, return the largest one (most likely the file content)
-    if found_blocks:
-        # Sort blocks by size and return the largest one
-        return max(found_blocks, key=len)
-
+    if content_blocks:
+        return max(content_blocks, key=len)
+        
     return ""
 
 
@@ -310,68 +331,34 @@ def extract_commands_from_response(response: str) -> List[str]:
     """
     Extract commands from Q's response.
 
-    Looks for commands formatted as:
-    ```shell
-    command here
-    ```
-    or
-    ```bash
-    command here
-    ```
-    Properly handles multi-line commands with backslashes.
-
-    Also looks for file content in other code blocks for file creation commands.
+    Looks for commands in shell/bash code blocks and handles file creation commands
+    by finding content in other code blocks.
     """
+    # Extract all code blocks from the response
+    blocks = extract_code_blocks(response)
+    
+    # Process shell blocks to get commands
     commands = []
-    file_creation_commands = []
-
-    # Find ```shell or ```bash blocks
-    lines = response.split("\n")
-    in_code_block = False
-    is_shell_block = False
-    current_block = []
-
-    for line in lines:
-        if line.strip().startswith("```") and not in_code_block:
-            block_type = line.strip()[3:].lower()
-            if block_type in ["shell", "bash", "sh", ""]:
-                in_code_block = True
-                is_shell_block = True
-                continue
-            else:
-                in_code_block = True
-                is_shell_block = False
-                continue
-
-        if line.strip() == "```" and in_code_block:
-            in_code_block = False
-            if is_shell_block and current_block:
-                # Process the complete block now that we have all lines
-                process_command_block(current_block, commands)
-            current_block = []
-            is_shell_block = False
-            continue
-
-        if in_code_block and is_shell_block:
-            current_block.append(line)
-
-    # Post-process commands to handle file creation
+    for block in blocks["shell"]:
+        process_command_block(block, commands)
+    
+    # Process commands to handle file creation
     processed_commands = []
+    file_creation_commands = []
+    
     for cmd in commands:
         file_info = is_file_creation_command(cmd)
         if file_info["is_file_creation"]:
-            # Mark this as a file creation command with its details
             file_creation_commands.append((cmd, file_info))
         else:
             processed_commands.append(cmd)
 
-    # Handle file creation commands
+    # Handle file creation commands by finding content in other blocks
     for cmd, file_info in file_creation_commands:
-        # Try to find content for this file in the response
         content = extract_file_content_for_command(file_info, response)
-
+        
         if content:
-            # Store the original command and the intended content as metadata
+            # Create metadata-enriched command for file creation
             cmd_with_metadata = f"__FILE_CREATION__{file_info['file_path']}__DELIMITER__{file_info['delimiter']}__CONTENT__{content}"
             processed_commands.append(cmd_with_metadata)
         else:
