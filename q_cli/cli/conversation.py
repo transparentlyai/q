@@ -218,7 +218,54 @@ def process_commands(
     if not commands:
         return None
         
-    # Present the execution plan and ask for confirmation
+    # If only one command, use the standard confirmation flow
+    if len(commands) == 1:
+        command = commands[0]
+        
+        # Skip empty commands
+        if not command.strip():
+            return None
+            
+        # Check if this is a special file creation command
+        if command.startswith("__FILE_CREATION__"):
+            # Handle the file creation command specially
+            success, stdout, stderr = handle_file_creation_command(command, console)
+
+            # Get the original command for display purposes
+            original_cmd = command.split("__")[2]  # Extract file path as the "command"
+            if not original_cmd:
+                original_cmd = "Create file"
+
+            # Format and store the results
+            if success:
+                result = f"Exit Code: 0\n\nOutput:\n```\n{stdout}\n```"
+            else:
+                result = f"Exit Code: 1\n\nErrors:\n```\n{stderr}\n```"
+
+            return f"Command: cat > {original_cmd}\n{result}"
+            
+        # Regular command - ask for confirmation before executing
+        execute, remember = ask_command_confirmation(
+            command, console, permission_manager
+        )
+
+        if not execute:
+            console.print("[yellow]Command execution skipped by user[/yellow]")
+            return None
+
+        # Remember this command type if requested
+        if remember and permission_manager:
+            permission_manager.approve_command_type(command)
+
+        # Execute the command
+        console.print(f"[bold green]Executing:[/bold green] {command}")
+        return_code, stdout, stderr = execute_command(command, console)
+
+        # Format and store the results
+        result = format_command_output(return_code, stdout, stderr)
+        return f"Command: {command}\n{result}"
+    
+    # For multiple commands, present the execution plan and ask for confirmation
     from q_cli.utils.commands import ask_execution_plan_confirmation
     
     execute_plan, command_indices = ask_execution_plan_confirmation(
