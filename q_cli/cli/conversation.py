@@ -78,7 +78,7 @@ def run_conversation(
 
                 # Get response
                 response = message.content[0].text
-                
+
                 # Process response, handle URLs, and update conversation
                 process_response_with_urls(response, args, console, conversation)
 
@@ -108,9 +108,11 @@ def run_conversation(
 
                             # Get Q's analysis
                             analysis_response = analysis.content[0].text
-                            
+
                             # Process analysis response, handle URLs, and update conversation
-                            process_response_with_urls(analysis_response, args, console, conversation)
+                            process_response_with_urls(
+                                analysis_response, args, console, conversation
+                            )
 
                 # If not in interactive mode, exit after first response
                 if args.no_interactive:
@@ -137,14 +139,11 @@ def run_conversation(
 
 
 def process_response_with_urls(
-    response: str, 
-    args, 
-    console: Console, 
-    conversation: List[Dict[str, str]]
+    response: str, args, console: Console, conversation: List[Dict[str, str]]
 ) -> None:
     """
     Process a response from the model, handle any URLs, and update the conversation.
-    
+
     Args:
         response: The model's response text
         args: Command line arguments
@@ -152,10 +151,12 @@ def process_response_with_urls(
         conversation: Current conversation history
     """
     model_url_content = {}
-    
+
     # Process any URLs in the response if web fetching is enabled
     if not getattr(args, "no_web", False):
-        processed_response, model_url_content = process_urls_in_response(response, console)
+        processed_response, model_url_content = process_urls_in_response(
+            response, console
+        )
     else:
         processed_response = response
 
@@ -170,21 +171,23 @@ def process_response_with_urls(
     # Add the original (unprocessed) response to conversation history
     # This ensures URLs are preserved for context in follow-up questions
     conversation.append({"role": "assistant", "content": response})
-    
+
     # If we have URL content for the model, create a follow-up message with that content
     if model_url_content and not getattr(args, "no_web", False):
-        web_content = "\n\n".join([
-            f"Web content fetched from {url}:\n{content}" 
-            for url, content in model_url_content.items()
-        ])
-        
+        web_content = "\n\n".join(
+            [
+                f"Web content fetched from {url}:\n{content}"
+                for url, content in model_url_content.items()
+            ]
+        )
+
         if web_content:
             web_context_message = (
                 "I've fetched additional information from the web "
                 "based on your request. Here's what I found:\n\n" + web_content
             )
             conversation.append({"role": "user", "content": web_context_message})
-            
+
     return processed_response
 
 
@@ -205,19 +208,19 @@ def process_commands(
         Formatted command results, or None if no commands were executed
     """
     results = []
-    
+
     # Skip if no commands
     if not commands:
         return None
-        
+
     # If only one command, use the standard confirmation flow
     if len(commands) == 1:
         command = commands[0]
-        
+
         # Skip empty commands
         if not command.strip():
             return None
-            
+
         # Check if this is a special file creation command
         if command.startswith("__FILE_CREATION__"):
             # Handle the file creation command specially
@@ -235,7 +238,7 @@ def process_commands(
                 result = f"Exit Code: 1\n\nErrors:\n```\n{stderr}\n```"
 
             return f"Command: cat > {original_cmd}\n{result}"
-            
+
         # Regular command - ask for confirmation before executing
         execute, remember = ask_command_confirmation(
             command, console, permission_manager
@@ -256,7 +259,7 @@ def process_commands(
         # Format and store the results
         result = format_command_output(return_code, stdout, stderr)
         return f"Command: {command}\n{result}"
-    
+
     # For multiple commands, check if all commands are pre-approved
     all_approved = True
     if permission_manager:
@@ -269,33 +272,34 @@ def process_commands(
     else:
         # If no permission manager, assume not all approved
         all_approved = False
-        
+
     # If all commands are pre-approved, execute all without asking
     if all_approved:
-        console.print("\n[bold green]All commands are pre-approved, executing automatically.[/bold green]")
+        console.print(
+            "\n[bold green]All commands are pre-approved, executing automatically.[/bold green]"
+        )
         execute_plan = True
         command_indices = list(range(len(commands)))
         execute_one_by_one = False
     else:
         # Otherwise, present the execution plan and ask for confirmation
         from q_cli.utils.commands import ask_execution_plan_confirmation
-        
+
         execute_plan, command_indices = ask_execution_plan_confirmation(
             commands, console, permission_manager
         )
-        
+
         if not execute_plan:
             console.print("[yellow]Command execution plan skipped by user[/yellow]")
             return None
-            
-        # Determine if we're executing one by one based on previous response
-        # 'a' = approve all at once, 'o' = approve one by one
-        execute_one_by_one = input("\nDo you approve all commands at once, or want to approve each one individually? [a/o] ").lower().startswith("o")
-    
+
+        # We don't need to ask this extra question since options are included in the first prompt
+        execute_one_by_one = False
+
     # Execute the commands
     for idx in command_indices:
         command = commands[idx]
-        
+
         # Skip empty commands
         if not command.strip():
             continue
@@ -319,36 +323,24 @@ def process_commands(
             results.append(f"Command: cat > {original_cmd}\n{result}")
             continue
 
-        # If executing one by one, ask for confirmation for each command
-        if execute_one_by_one:
+        # Check if we need permission for this specific command
+        needs_permission = permission_manager and permission_manager.needs_permission(
+            command
+        )
+
+        if needs_permission:
+            # Still ask for confirmation for commands that need permission
             execute, remember = ask_command_confirmation(
                 command, console, permission_manager
             )
-            
+
             if not execute:
                 console.print("[yellow]Command execution skipped by user[/yellow]")
                 continue
-                
+
             # Remember this command type if requested
             if remember and permission_manager:
                 permission_manager.approve_command_type(command)
-        else:
-            # Check if we need permission for this specific command
-            needs_permission = permission_manager and permission_manager.needs_permission(command)
-            
-            if needs_permission:
-                # Still ask for confirmation for commands that need permission
-                execute, remember = ask_command_confirmation(
-                    command, console, permission_manager
-                )
-                
-                if not execute:
-                    console.print("[yellow]Command execution skipped by user[/yellow]")
-                    continue
-                    
-                # Remember this command type if requested
-                if remember and permission_manager:
-                    permission_manager.approve_command_type(command)
 
         # Execute the command
         console.print(f"[bold green]Executing:[/bold green] {command}")

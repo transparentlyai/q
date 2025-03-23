@@ -144,12 +144,12 @@ def ask_execution_plan_confirmation(
 ) -> Tuple[bool, List[int]]:
     """
     Present the full execution plan and ask for user confirmation.
-    
+
     Args:
         commands: List of commands to execute
         console: Console for output
         permission_manager: Optional permission manager for tracking approvals
-        
+
     Returns:
         Tuple containing:
         - Whether to execute any commands (True/False)
@@ -157,37 +157,37 @@ def ask_execution_plan_confirmation(
     """
     if not commands:
         return False, []
-        
+
     # Filter out prohibited commands and special file creation commands
     executable_commands = []
     command_indices = []
-    
+
     for i, command in enumerate(commands):
         # Skip empty commands
         if not command.strip():
             continue
-            
+
         # Skip special file creation commands for now
         if command.startswith("__FILE_CREATION__"):
             executable_commands.append(f"Create file (special command)")
             command_indices.append(i)
             continue
-            
+
         # Skip prohibited commands
         if permission_manager and permission_manager.is_command_prohibited(command):
             console.print(
                 f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]"
             )
             continue
-            
+
         # Include all other commands
         executable_commands.append(command)
         command_indices.append(i)
-        
+
     if not executable_commands:
         console.print("\n[yellow]No executable commands in the plan.[/yellow]")
         return False, []
-        
+
     # Present the execution plan
     console.print("\n[bold blue]Command Execution Plan:[/bold blue]")
     # Print the first command
@@ -196,14 +196,19 @@ def ask_execution_plan_confirmation(
         # Print the rest without extra newlines
         for i, cmd in enumerate(executable_commands[1:], start=2):
             console.print(f"[bold]{i}.[/bold] [cyan]{cmd}[/cyan]")
-        
+
     # Ask if we should execute the commands
-    console.print("\n[bold yellow]Do you approve executing these commands?[/bold yellow]")
-    options = "[y/n] (y=yes, n=no): "
+    console.print(
+        "\n[bold yellow]Do you approve executing these commands?[/bold yellow]"
+    )
+    options = "[s/a/n] (s=some, a=all, n=no): "
     response = input(f"\nApprove commands? {options}").lower().strip()
-    
-    if response.startswith("y"):
-        # Execute commands
+
+    if response.startswith("s"):
+        # Let user choose commands one by one
+        return True, command_indices
+    elif response.startswith("a"):
+        # Execute all commands
         return True, command_indices
     else:
         # Don't execute any commands
@@ -260,29 +265,31 @@ def is_file_creation_command(command: str) -> Dict[str, Any]:
 def extract_code_blocks(response: str) -> Dict[str, List[str]]:
     """
     Extract all code blocks from a response, categorized by block type.
-    
+
     Args:
         response: The response text
-        
+
     Returns:
         Dictionary mapping block types (shell, bash, etc.) to lists of blocks
     """
     blocks = {"shell": [], "other": []}
-    
+
     lines = response.split("\n")
     in_code_block = False
     current_type = ""
     current_block = []
-    
+
     for line in lines:
         if line.strip().startswith("```") and not in_code_block:
             # Start of a code block
             block_type = line.strip()[3:].lower()
             in_code_block = True
-            current_type = "shell" if block_type in ["shell", "bash", "sh", ""] else "other"
+            current_type = (
+                "shell" if block_type in ["shell", "bash", "sh", ""] else "other"
+            )
             current_block = []
             continue
-            
+
         if line.strip() == "```" and in_code_block:
             # End of a code block
             in_code_block = False
@@ -290,10 +297,10 @@ def extract_code_blocks(response: str) -> Dict[str, List[str]]:
                 blocks[current_type].append(current_block)
             current_block = []
             continue
-            
+
         if in_code_block:
             current_block.append(line)
-    
+
     return blocks
 
 
@@ -313,17 +320,17 @@ def extract_file_content_for_command(command: Dict[str, Any], response: str) -> 
 
     # Use the extract_code_blocks function to get all code blocks
     blocks = extract_code_blocks(response)
-    
+
     # Get all "other" blocks (non-shell blocks)
     other_blocks = blocks["other"]
-    
+
     # Convert block lists to strings
     content_blocks = ["\n".join(block) for block in other_blocks]
-    
+
     # If we have code blocks, return the largest one (most likely the file content)
     if content_blocks:
         return max(content_blocks, key=len)
-        
+
     return ""
 
 
@@ -336,16 +343,16 @@ def extract_commands_from_response(response: str) -> List[str]:
     """
     # Extract all code blocks from the response
     blocks = extract_code_blocks(response)
-    
+
     # Process shell blocks to get commands
     commands = []
     for block in blocks["shell"]:
         process_command_block(block, commands)
-    
+
     # Process commands to handle file creation
     processed_commands = []
     file_creation_commands = []
-    
+
     for cmd in commands:
         file_info = is_file_creation_command(cmd)
         if file_info["is_file_creation"]:
@@ -356,7 +363,7 @@ def extract_commands_from_response(response: str) -> List[str]:
     # Handle file creation commands by finding content in other blocks
     for cmd, file_info in file_creation_commands:
         content = extract_file_content_for_command(file_info, response)
-        
+
         if content:
             # Create metadata-enriched command for file creation
             cmd_with_metadata = f"__FILE_CREATION__{file_info['file_path']}__DELIMITER__{file_info['delimiter']}__CONTENT__{content}"
