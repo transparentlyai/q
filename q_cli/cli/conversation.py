@@ -230,8 +230,8 @@ def process_commands(
         return None
         
     # Determine if we're executing one by one based on previous response
-    # 'a' = all at once, 'o' = one by one
-    execute_one_by_one = input("\nWould you like to execute all commands at once or one by one? [a/o] ").lower().startswith("o")
+    # 'a' = approve all at once, 'o' = approve one by one
+    execute_one_by_one = input("\nDo you approve all commands at once, or want to approve each one individually? [a/o] ").lower().startswith("o")
     
     # Execute the commands
     for idx in command_indices:

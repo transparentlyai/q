@@ -194,9 +194,9 @@ def ask_execution_plan_confirmation(
         console.print(f"\n[bold]{i+1}.[/bold] [cyan]{cmd}[/cyan]")
         
     # Ask if we should execute the commands
-    console.print("\n[bold yellow]Would you like to execute these commands?[/bold yellow]")
+    console.print("\n[bold yellow]Do you approve executing these commands?[/bold yellow]")
     options = "[y/n] (y=yes, n=no): "
-    response = input(f"\nExecute commands? {options}").lower().strip()
+    response = input(f"\nApprove commands? {options}").lower().strip()
     
     if response.startswith("y"):
         # Execute commands
