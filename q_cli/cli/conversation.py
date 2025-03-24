@@ -2,7 +2,7 @@
 
 import os
 import sys
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import anthropic
 from prompt_toolkit import PromptSession
 from rich.console import Console
@@ -17,9 +17,7 @@ from q_cli.utils.commands import (
     ask_command_confirmation,
     execute_command,
     format_command_output,
-    handle_file_creation_command,
     process_file_writes,
-    is_file_creation_command,
     WRITE_FILE_MARKER_START,
 )
 from q_cli.utils.permissions import CommandPermissionManager
@@ -51,6 +49,9 @@ def run_conversation(
     conversation = []
     input_history = []
     question = initial_question
+    
+    # Track if we're in a continuation (prevents duplicate errors)
+    in_continuation = False
 
     # Process questions (initial and then interactive if enabled)
     try:
@@ -70,24 +71,35 @@ def run_conversation(
 
             # Send question to Claude
             try:
-                with console.status("[info]Thinking...[/info]"):
-                    message = client.messages.create(
-                        model=args.model,
-                        max_tokens=args.max_tokens,
-                        temperature=0,
-                        system=system_prompt,
-                        messages=conversation,
-                    )
+                # Reset continuation flag for new questions
+                if not in_continuation:
+                    with console.status("[info]Thinking...[/info]"):
+                        message = client.messages.create(
+                            model=args.model,
+                            max_tokens=args.max_tokens,
+                            temperature=0,
+                            system=system_prompt,
+                            messages=conversation,
+                        )
 
-                # Get response
-                response = message.content[0].text
-                
-                if DEBUG:
-                    console.print(f"[yellow]DEBUG: Received model response ({len(response)} chars)[/yellow]")
-                    console.print(f"[red]DEBUG RESPONSE: {response}[/red]")
+                    # Get response
+                    response = message.content[0].text
+                    
+                    if DEBUG:
+                        console.print(f"[yellow]DEBUG: Received model response ({len(response)} chars)[/yellow]")
+                        console.print(f"[red]DEBUG RESPONSE: {response}[/red]")
 
                 # Process response, handle URLs, file writes, and update conversation
-                processed_response = process_response_with_urls(response, args, console, conversation, client, system_prompt)
+                # We'll only show errors once in new user messages, not continuations
+                # Create state dictionary to track continuation state changes
+                continuation_state = {'in_continuation': in_continuation}
+                processed_response = process_response_with_urls(
+                    response, args, console, conversation, client, system_prompt, 
+                    show_errors=not in_continuation,
+                    continuation_state=continuation_state
+                )
+                # Update the in_continuation flag based on the state dictionary
+                in_continuation = continuation_state.get('in_continuation', in_continuation)
 
                 # Check for command suggestions in the response
                 # Note: extract_commands_from_response will ignore WRITE_FILE markers
@@ -103,6 +115,9 @@ def run_conversation(
                         "```RUN_SHELL"
                     ]
                     
+                    # Track if we have any errors
+                    has_error = False
+                    
                     # Create a more targeted extract_commands call that ignores file operation messages
                     commands = extract_commands_from_response(command_response)
                     
@@ -115,10 +130,16 @@ def run_conversation(
                         filtered_commands.append(cmd)
                     
                     if filtered_commands:
-                        command_results = process_commands(
-                            filtered_commands, console, permission_manager
+                        # Process commands but don't show errors (they'll be shown centrally)
+                        command_results, cmd_has_error = process_commands(
+                            filtered_commands, console, permission_manager, False
                         )
+                        has_error = has_error or cmd_has_error
+                        
                         if command_results:
+                            # We're now entering continuation mode (prevents duplicate errors)
+                            in_continuation = True
+                            
                             # Add the command results to the conversation
                             follow_up = get_command_result_prompt(command_results)
                             conversation.append({"role": "user", "content": follow_up})
@@ -143,9 +164,14 @@ def run_conversation(
                                 console.print(f"[red]DEBUG RESPONSE: {analysis_response}[/red]")
 
                             # Process analysis response, handle URLs, and update conversation
+                            # Create state dictionary to track continuation state changes
+                            continuation_state = {'in_continuation': in_continuation}
                             process_response_with_urls(
-                                analysis_response, args, console, conversation, client, system_prompt
+                                analysis_response, args, console, conversation, client, system_prompt,
+                                continuation_state=continuation_state
                             )
+                            # Update the in_continuation flag based on the state dictionary
+                            in_continuation = continuation_state.get('in_continuation', in_continuation)
 
                 # If not in interactive mode, exit after first response
                 if args.no_interactive:
@@ -155,6 +181,9 @@ def run_conversation(
                 question = handle_next_input(
                     args, prompt_session, conversation, console
                 )
+                
+                # Reset continuation flag for next user input
+                in_continuation = False
 
             except Exception as e:
                 handle_api_error(e, console)
@@ -173,7 +202,8 @@ def run_conversation(
 
 def process_response_with_urls(
     response: str, args, console: Console, conversation: List[Dict[str, str]], 
-    client=None, system_prompt=None
+    client=None, system_prompt=None, show_errors: bool = True,
+    continuation_state: dict = None
 ) -> str:
     """
     Process a response from the model, handle any URLs and file writes, and update the conversation.
@@ -185,18 +215,22 @@ def process_response_with_urls(
         conversation: Current conversation history
         client: Optional Anthropic client for callbacks
         system_prompt: Optional system prompt for callbacks
+        show_errors: Whether to display error messages (default True)
+        continuation_state: Optional dictionary to track continuation state
         
     Returns:
         The processed response after handling URLs and file writes
     """
     model_url_content = {}
     processed_response = response
+    has_error = False
     
     # Process any URLs in the response if web fetching is enabled
     if not getattr(args, "no_web", False):
-        processed_response, model_url_content = process_urls_in_response(
-            processed_response, console
+        processed_response, model_url_content, url_has_error = process_urls_in_response(
+            processed_response, console, False  # Always suppress errors, we'll handle them here
         )
+        has_error = has_error or url_has_error
     
     # Clean special markers from response before displaying to user
     from q_cli.utils.commands import remove_special_markers
@@ -217,8 +251,11 @@ def process_response_with_urls(
         # Check if there are any file write markers before showing the processing message
         if WRITE_FILE_MARKER_START in processed_response:
             console.print("[info]Processing file operations...[/info]")
-        processed_response, file_results = process_file_writes(processed_response, console)
-
+        processed_response, file_results, file_has_error = process_file_writes(
+            processed_response, console, False  # Pass False to suppress error messages
+        )
+        has_error = has_error or file_has_error
+    
     # Add the original (unprocessed) response to conversation history
     # This ensures URLs are preserved for context in follow-up questions
     conversation.append({"role": "assistant", "content": response})
@@ -233,6 +270,11 @@ def process_response_with_urls(
         )
 
         if web_content:
+            # We're now entering continuation mode (prevents duplicate errors)
+            # Set continuation state if provided
+            if continuation_state is not None:
+                continuation_state['in_continuation'] = True
+            
             web_context_message = (
                 "I've fetched additional information from the web "
                 "based on your request. Here's what I found:\n\n" + web_content
@@ -245,6 +287,11 @@ def process_response_with_urls(
                     console.print("[yellow]DEBUG: Sending web fetch results to model...[/yellow]")
                 # Use an explicit message to indicate we're processing web content
                 console.print("[info]Processing web content...[/info]")
+                
+                # Now is a good time to show the error message, if needed
+                if has_error and show_errors:
+                    console.print("[red]Operation failed.[/red]")
+                    
                 # Use the status for API call, but with a different message to avoid repetition
                 with console.status("[info]Calling API with web content...[/info]"):
                     try:
@@ -326,6 +373,11 @@ def process_response_with_urls(
                 file_messages.append(f"Failed to write file {result['file_path']}: {result['stderr']}")
         
         if file_messages:
+            # We're now entering continuation mode (prevents duplicate errors)
+            # Set continuation state if provided
+            if continuation_state is not None:
+                continuation_state['in_continuation'] = True
+            
             file_context_message = (
                 "I've processed your file writing requests. Here are the results:\n\n" + 
                 "\n".join(file_messages)
@@ -338,6 +390,11 @@ def process_response_with_urls(
                     console.print("[yellow]DEBUG: Sending file operation results to model...[/yellow]")
                 # Use an explicit message to indicate we're processing file results
                 console.print("[info]Processing file operation results...[/info]")
+                
+                # Now is a good time to show the error message, if needed
+                if has_error and show_errors:
+                    console.print("[red]Operation failed.[/red]")
+                    
                 # Use the status for API call, but with a different message to avoid repetition
                 with console.status("[info]Calling API with file operation results...[/info]"):
                     try:
@@ -412,39 +469,15 @@ def process_response_with_urls(
     return processed_response
 
 
-def handle_file_creation_and_format_result(command: str, console: Console) -> str:
-    """
-    Handle a file creation command and format the result for display.
-    
-    Args:
-        command: The file creation command
-        console: Console for output
-        
-    Returns:
-        Formatted result string
-    """
-    # Handle the file creation command
-    success, stdout, stderr = handle_file_creation_command(command, console)
-
-    # Get the original command for display purposes
-    original_cmd = command.split("__")[2]  # Extract file path as the "command"
-    if not original_cmd:
-        original_cmd = "Create file"
-
-    # Format and store the results
-    if success:
-        result = f"Exit Code: 0\n\nOutput:\n```\n{stdout}\n```"
-    else:
-        result = f"Exit Code: 1\n\nErrors:\n```\n{stderr}\n```"
-
-    return f"Command: cat > {original_cmd}\n{result}"
+# File creation is now handled exclusively through WRITE_FILE blocks
 
 
 def process_commands(
     commands: List[str],
     console: Console,
     permission_manager: Optional["CommandPermissionManager"] = None,
-) -> Optional[str]:
+    show_errors: bool = True
+) -> Tuple[Optional[str], bool]:
     """
     Process and execute commands extracted from Q's response.
 
@@ -452,15 +485,19 @@ def process_commands(
         commands: List of commands to execute
         console: Console for output
         permission_manager: Optional manager for command permissions
+        show_errors: Whether to display error messages to the user
 
     Returns:
-        Formatted command results, or None if no commands were executed
+        Tuple containing:
+        - Formatted command results, or None if no commands were executed
+        - Boolean indicating if any errors occurred
     """
     results = []
+    has_error = False
 
     # Skip if no commands
     if not commands:
-        return None
+        return None, False
 
     # Process commands individually
     for command in commands:
@@ -468,30 +505,17 @@ def process_commands(
         if not command.strip() or WRITE_FILE_MARKER_START in command:
             continue
 
-        # Check if this is a special file creation command (legacy method)
-        if command.startswith("__FILE_CREATION__"):
-            result = handle_file_creation_and_format_result(command, console)
-            results.append(result)
-            continue
-            
-        # Check if this is a file creation command using cat/tee
-        file_info = is_file_creation_command(command)
-        if file_info["is_file_creation"]:
-            console.print(
-                f"\n[yellow]File creation via command line is deprecated. Using the WRITE_FILE mechanism is preferred.[/yellow]"
-            )
-            console.print(
-                f"[yellow]To create files, use the <<WRITE_FILE:path/to/file>>content<<WRITE_FILE>> format.[/yellow]"
-            )
-            # Skip the command to avoid line-by-line file creation
-            continue
+        # Skip any file creation commands that might have been detected
+        # File creation should only happen through WRITE_FILE blocks now
 
         # Check if the command is prohibited
         if permission_manager and permission_manager.is_command_prohibited(command):
             error_msg = f"Command '{command}' is prohibited and cannot be executed."
-            console.print(f"\n[bold red]{error_msg}[/bold red]")
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
             # Add this error to the results for the model
             results.append(f"Command: {command}\nError: {error_msg}")
+            has_error = True
             continue
 
         # Ask for confirmation if needed
@@ -502,9 +526,11 @@ def process_commands(
 
             if not execute:
                 error_msg = "Command execution skipped by user"
-                console.print(f"[yellow]{error_msg}[/yellow]")
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
                 # Add this information to the results for the model
                 results.append(f"Command: {command}\nStatus: {error_msg}")
+                has_error = True
                 continue
 
             # Remember this command type if requested
@@ -517,14 +543,22 @@ def process_commands(
         # Execute the command
         console.print(f"[bold green]Executing:[/bold green] {command}")
         return_code, stdout, stderr = execute_command(command, console)
+        
+        # Check if the command failed
+        if return_code != 0:
+            has_error = True
 
         # Format and store the results
         result = format_command_output(return_code, stdout, stderr)
         results.append(f"Command: {command}\n{result}")
-
+        
+    # Show a single error message if any command failed and we're set to show errors
+    if has_error and show_errors:
+        console.print("[red]Operation failed.[/red]")
+        
     if results:
-        return "\n\n".join(results)
-    return None
+        return "\n\n".join(results), has_error
+    return None, has_error
 
 
 def handle_next_input(

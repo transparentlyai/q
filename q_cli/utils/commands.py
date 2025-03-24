@@ -12,6 +12,7 @@ WRITE_FILE_MARKER_START = "WRITE_FILE:"
 WRITE_FILE_MARKER_END = "WRITE_FILE"
 RUN_SHELL_MARKER_START = "RUN_SHELL"
 RUN_SHELL_MARKER_END = "RUN_SHELL"
+URL_BLOCK_MARKER = "FETCH_URL"  # Match the block marker in web.py
 
 # List of potentially dangerous commands to block
 BLOCKED_COMMANDS = [
@@ -49,7 +50,7 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
     # Check for dangerous commands
     if is_dangerous_command(command):
         if DEBUG:
-            console.print(f"[red]DEBUG: Command blocked as dangerous: {command}[/red]")
+            console.print(f"[yellow]DEBUG: Command blocked as dangerous: {command}[/yellow]")
         return (-1, "", "This command has been blocked for security reasons.")
 
     # Check if this is a heredoc command
@@ -57,10 +58,8 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
     if heredoc_match:
         if DEBUG:
             console.print(f"[yellow]DEBUG: Heredoc command detected: {command}[/yellow]")
-        console.print(
-            "[yellow]Heredoc commands (with <<EOF) are not directly supported.[/yellow]"
-        )
-        console.print("[yellow]Use the file creation interface instead.[/yellow]")
+            console.print("[yellow]Heredoc commands (with <<EOF) are not directly supported.[/yellow]")
+            console.print("[yellow]Use the file creation interface instead.[/yellow]")
         return (-1, "", "Heredoc commands are not supported for direct execution.")
 
     try:
@@ -90,11 +89,11 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
 
     except subprocess.TimeoutExpired:
         if DEBUG:
-            console.print(f"[red]DEBUG: Command timed out: {command}[/red]")
+            console.print(f"[yellow]DEBUG: Command timed out: {command}[/yellow]")
         return (-1, "", "Command timed out after 30 seconds")
     except Exception as e:
         if DEBUG:
-            console.print(f"[red]DEBUG: Command error: {str(e)}[/red]")
+            console.print(f"[yellow]DEBUG: Command error: {str(e)}[/yellow]")
         return (-1, "", f"Error executing command: {str(e)}")
 
 
@@ -130,12 +129,13 @@ def ask_command_confirmation(
     # Check for heredoc pattern before anything else
     heredoc_match = re.search(r'<<\s*[\'"]*([^\'"\s<]*)[\'"]*', command)
     if heredoc_match:
-        console.print("\n[bold yellow]Q suggested a heredoc command:[/bold yellow]")
-        console.print(f"[bold cyan]{command}[/bold cyan]")
-        console.print("[yellow]Heredoc commands cannot be executed directly.[/yellow]")
-        console.print(
-            "[yellow]Use the 'cat > file' command followed by a separate content block instead.[/yellow]"
-        )
+        if DEBUG:
+            console.print("\n[yellow]DEBUG: Q suggested a heredoc command:[/yellow]")
+            console.print(f"[yellow]DEBUG: {command}[/yellow]")
+            console.print("[yellow]DEBUG: Heredoc commands cannot be executed directly.[/yellow]")
+            console.print(
+                "[yellow]DEBUG: Use the 'cat > file' command followed by a separate content block instead.[/yellow]"
+            )
         return False, False
 
     # Check if we need to ask for permission
@@ -144,9 +144,8 @@ def ask_command_confirmation(
 
     # If command is prohibited, don't even ask
     if permission_manager and permission_manager.is_command_prohibited(command):
-        console.print(
-            f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]"
-        )
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Command '{command}' is prohibited and cannot be executed.[/yellow]")
         return False, False
 
     # Ask for user confirmation
@@ -163,64 +162,10 @@ def ask_command_confirmation(
     return response.startswith("y"), False
 
 
-# This function was removed as part of the simplified command execution flow
 # Individual commands are now processed directly without a batch execution plan
-def ask_execution_plan_confirmation(
-    commands: List[str], console: Console, permission_manager=None
-) -> Tuple[bool, List[int], bool]:
-    """
-    DEPRECATED: This function is no longer used.
-    Commands are now individually processed and approved.
-    """
-    # Return empty values that will not be used
-    return False, [], False
 
 
-def is_file_creation_command(command: str) -> Dict[str, Any]:
-    """
-    Detect if a command is trying to create a file using a heredoc or similar.
-
-    Args:
-        command: The command string to analyze
-
-    Returns:
-        Dictionary with command information:
-        - 'is_file_creation': bool - True if this is a file creation command
-        - 'file_path': str - Path to the file (if detected)
-        - 'method': str - Method used ('heredoc', 'cat', etc.)
-        - 'delimiter': str - Delimiter for heredoc (if applicable)
-    """
-    result = {
-        "is_file_creation": False,
-        "file_path": None,
-        "method": None,
-        "delimiter": None,
-    }
-
-    # Check for heredoc pattern: cat > file << 'EOF' or cat > file << EOF
-    heredoc_pattern = (
-        r'(?:cat|tee)\s+(?:>>?)\s+([^\s<]+)\s*<<\s*[\'"]*([^\'"\s]*)[\'"]*'
-    )
-    match = re.match(heredoc_pattern, command)
-
-    if match:
-        result["is_file_creation"] = True
-        result["file_path"] = match.group(1)
-        result["method"] = "heredoc"
-        result["delimiter"] = match.group(2)
-        return result
-
-    # Check for simple file creation pattern: cat > file
-    simple_cat_pattern = r"(?:cat|tee)\s+(?:>>?)\s+([^\s<]+)"
-    match = re.match(simple_cat_pattern, command)
-
-    if match:
-        result["is_file_creation"] = True
-        result["file_path"] = match.group(1)
-        result["method"] = "cat"
-        return result
-
-    return result
+# File creation is now handled exclusively through WRITE_FILE blocks
 
 
 def extract_code_blocks(response: str) -> Dict[str, List[str]]:
@@ -301,34 +246,7 @@ def extract_code_blocks(response: str) -> Dict[str, List[str]]:
     return blocks
 
 
-def extract_file_content_for_command(command: Dict[str, Any], response: str) -> str:
-    """
-    Extract content intended for a file from non-shell code blocks in the response.
-
-    Args:
-        command: Command info dictionary from is_file_creation_command
-        response: The full response from Q
-
-    Returns:
-        Content for the file, or empty string if none found
-    """
-    if not command["is_file_creation"]:
-        return ""
-
-    # Use the extract_code_blocks function to get all code blocks
-    blocks = extract_code_blocks(response)
-
-    # Get all "other" blocks (non-shell blocks)
-    other_blocks = blocks["other"]
-
-    # Convert block lists to strings
-    content_blocks = ["\n".join(block) for block in other_blocks]
-
-    # If we have code blocks, return the largest one (most likely the file content)
-    if content_blocks:
-        return max(content_blocks, key=len)
-
-    return ""
+# File content extraction is now handled through the WRITE_FILE block pattern
 
 
 def extract_shell_markers_from_response(response: str) -> List[Tuple[str, str]]:
@@ -392,29 +310,32 @@ def remove_special_markers(response: str) -> str:
     pattern = re.compile(r"```WRITE_FILE:(.*?)[\r\n]+(.*?)```", re.DOTALL)
     cleaned = pattern.sub("", cleaned)
     
-    # Remove FETCH_URL markers
-    # Legacy format
-    pattern = re.compile(r"FETCH_URL:(.*?)>>", re.DOTALL)
+    # Remove FETCH_URL markers in code block format
+    pattern = re.compile(r"```" + re.escape(URL_BLOCK_MARKER) + r"[\s\n]+(.*?)[\s\n]*```", re.DOTALL)
     cleaned = pattern.sub("", cleaned)
     
-    # New code block format
-    pattern = re.compile(r"```FETCH_URL:[\s\n]*(.*?)[\s\n]*```", re.DOTALL)
+    # Clean up any empty code blocks that might remain
+    pattern = re.compile(r"```\s*```", re.MULTILINE)
+    cleaned = pattern.sub("", cleaned)
+    
+    # Handle edge case of code blocks with just whitespace
+    pattern = re.compile(r"```\s+```", re.MULTILINE)
     cleaned = pattern.sub("", cleaned)
     
     # Clean up any leftover markers
     leftover_markers = [
-        "<<WRITE_FILE>>", 
-        "<<RUN_SHELL>>",
         "WRITE_FILE:",
         "RUN_SHELL",
-        "FETCH_URL:",
-        "```FETCH_URL:",
+        f"```{URL_BLOCK_MARKER}",
         "```WRITE_FILE:",
         "```RUN_SHELL"
     ]
     
     for marker in leftover_markers:
         cleaned = cleaned.replace(marker, "")
+    
+    # Clean up excessive newlines (more than 2 consecutive newlines)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
     
     return cleaned
 
@@ -423,10 +344,10 @@ def extract_commands_from_response(response: str) -> List[str]:
     """
     Extract commands from Q's response.
     
-    Three ways to extract commands:
-    1. RUN_SHELL markers (preferred method)
-    2. Shell code blocks (legacy method)
-    3. File creation commands (legacy method)
+    Uses RUN_SHELL markers to identify commands within a code block format:
+    ```RUN_SHELL
+    command to execute
+    ```
     
     Filters out any lines that match the WRITE_FILE pattern to avoid treating them as commands.
     """
@@ -442,84 +363,13 @@ def extract_commands_from_response(response: str) -> List[str]:
         return []
     
     commands = []
-    processed_response = response
     
-    # Method 1: Check for RUN_SHELL markers (new preferred method)
+    # Extract commands using RUN_SHELL markers
     shell_markers = extract_shell_markers_from_response(response)
-    if shell_markers:
-        # If we have RUN_SHELL markers, use those commands and skip other methods
-        for command, original_marker in shell_markers:
-            commands.append(command)
-            # Remove the markers from processed_response to avoid duplication
-            processed_response = processed_response.replace(original_marker, "")
-        return commands
-        
-    # Method 2 & 3: Legacy methods - only use if no RUN_SHELL markers
+    for command, _ in shell_markers:
+        commands.append(command)
     
-    # Extract WRITE_FILE markers to avoid treating them as commands
-    file_markers = extract_file_markers_from_response(processed_response)
-    
-    # Remove WRITE_FILE markers from the response before extracting commands
-    for _, _, original_marker in file_markers:
-        processed_response = processed_response.replace(original_marker, "")
-        
-    # Skip processing if this is primarily a file write operation
-    if file_markers and len(processed_response.strip()) < 100:
-        # This is primarily a file write operation with little other content
-        # Skip command extraction entirely
-        return []
-    
-    # Extract all code blocks from the processed response
-    blocks = extract_code_blocks(processed_response)
-
-    # Process shell blocks to get commands
-    legacy_commands = []
-    for block in blocks["shell"]:
-        process_command_block(block, legacy_commands)
-
-    # Process commands to handle file creation
-    processed_commands = []
-    file_creation_commands = []
-
-    # Additional file operation related patterns to filter out
-    filter_patterns = [
-        WRITE_FILE_MARKER_START,       # Start marker
-        "WRITE_FILE",                  # End marker
-        "```WRITE_FILE:",              # Full marker in code block format
-        RUN_SHELL_MARKER_START,        # Shell command start marker
-        RUN_SHELL_MARKER_END,          # Shell command end marker
-        "```RUN_SHELL",                # Full marker in code block format
-        "[File written:",              # Success message
-        "[Failed to write file:",      # Error message
-        "File created",                # Success message alternative
-        "Creating file",               # Process message
-        "Writing file"                 # Process message
-    ]
-
-    for cmd in legacy_commands:
-        # Skip empty commands or those with file operation markers
-        if not cmd.strip() or any(pattern in cmd for pattern in filter_patterns):
-            continue
-            
-        file_info = is_file_creation_command(cmd)
-        if file_info["is_file_creation"]:
-            file_creation_commands.append((cmd, file_info))
-        else:
-            processed_commands.append(cmd)
-
-    # Handle file creation commands by finding content in other blocks
-    for cmd, file_info in file_creation_commands:
-        content = extract_file_content_for_command(file_info, response)
-
-        if content:
-            # Create metadata-enriched command for file creation
-            cmd_with_metadata = f"__FILE_CREATION__{file_info['file_path']}__DELIMITER__{file_info['delimiter']}__CONTENT__{content}"
-            processed_commands.append(cmd_with_metadata)
-        else:
-            # If no content found, keep the original command
-            processed_commands.append(cmd)
-
-    return processed_commands
+    return commands
 
 
 def is_line_continuation(line: str) -> bool:
@@ -548,61 +398,7 @@ def is_line_continuation(line: str) -> bool:
     return backslash_count % 2 == 1
 
 
-def handle_file_creation_command(
-    command: str, console: Console
-) -> Tuple[bool, str, str]:
-    """
-    Handle a special file creation command, extracting metadata and creating the file.
-
-    Args:
-        command: The command string with file creation metadata
-        console: Console for output
-
-    Returns:
-        Tuple of (success, stdout, stderr)
-    """
-    # Extract metadata from the command
-    parts = command.split("__")
-    if len(parts) < 7:
-        return False, "", "Invalid file creation command format"
-
-    # Extract file path and content
-    try:
-        file_path = parts[2]
-        # Skip delimiter in parts[4] as it's not used
-        content = "__".join(parts[6:])  # Join in case content contains "__"
-    except IndexError:
-        return False, "", "Failed to parse file creation command"
-
-    # Show the file details and content to the user
-    console.print(
-        f"\n[bold yellow]Q wants to create a file at:[/bold yellow] {file_path}"
-    )
-    console.print("[bold yellow]Here's the content of the file:[/bold yellow]")
-    console.print(f"```\n{content}\n```")
-
-    # Ask for confirmation
-    response = (
-        input(f"\nCreate file '{file_path}' with this content? [y/N]: ").lower().strip()
-    )
-    if not response.startswith("y"):
-        console.print("[yellow]File creation skipped by user[/yellow]")
-        return False, "", "File creation skipped by user"
-
-    # Create the file
-    try:
-        # Create parent directories if they don't exist
-        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-
-        with open(file_path, "w") as f:
-            f.write(content)
-
-        console.print(f"[green]File created successfully: {file_path}[/green]")
-        return True, f"File created: {file_path}", ""
-    except Exception as e:
-        error_msg = f"Error creating file: {str(e)}"
-        console.print(f"[red]{error_msg}[/red]")
-        return False, "", error_msg
+# File creation is now handled exclusively through WRITE_FILE blocks
 
 
 def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, str]]:
@@ -700,7 +496,9 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
         )
         if not response.startswith("y"):
             error_msg = "File writing skipped by user"
-            console.print(f"[yellow]{error_msg}[/yellow]")
+            # Only show error details in debug mode
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
             # Make sure this error is returned so it can be sent to the model
             return False, "", error_msg
             
@@ -719,25 +517,27 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
         
     except Exception as e:
         error_msg = f"Error writing file: {str(e)}"
-        console.print(f"[red]{error_msg}[/red]")
+        # Only show error details in debug mode
         if DEBUG:
-            console.print(f"[red]DEBUG: File write error: {str(e)}[/red]")
+            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
         # Make sure this detailed error is returned so it can be sent to the model
         return False, "", error_msg
         
         
-def process_file_writes(response: str, console: Console) -> Tuple[str, List[Dict[str, Any]]]:
+def process_file_writes(response: str, console: Console, show_errors: bool = True) -> Tuple[str, List[Dict[str, Any]], bool]:
     """
     Process a response from the model, handling any file writing markers.
     
     Args:
         response: The model's response text
         console: Console for output
+        show_errors: Whether to display error messages to the user
         
     Returns:
         Tuple containing:
         - Processed response with file writing markers replaced
         - List of dictionaries with file writing results
+        - Boolean indicating if any errors occurred
     """
     # Extract all file writing markers
     if DEBUG:
@@ -747,17 +547,22 @@ def process_file_writes(response: str, console: Console) -> Tuple[str, List[Dict
     if not file_matches:
         if DEBUG:
             console.print("[yellow]DEBUG: No file writing markers found[/yellow]")
-        return response, []
+        return response, [], False
     
     if DEBUG:
         console.print(f"[yellow]DEBUG: Found {len(file_matches)} file writing markers[/yellow]")
     
     processed_response = response
     file_results = []
+    has_error = False
     
     for file_path, content, original_marker in file_matches:
         success, stdout, stderr = write_file_from_marker(file_path, content, console)
         
+        # Track if any operations failed
+        if not success:
+            has_error = True
+            
         result = {
             "file_path": file_path,
             "success": success,
@@ -783,8 +588,10 @@ def process_file_writes(response: str, console: Console) -> Tuple[str, List[Dict
         else:
             # Normal replacement as fallback
             processed_response = processed_response.replace(original_marker, replacement)
+    
+    # We no longer show errors here - they're handled at the higher level in conversation.py
         
-    return processed_response, file_results
+    return processed_response, file_results, has_error
 
 
 def process_command_block(block_lines: List[str], commands: List[str]):

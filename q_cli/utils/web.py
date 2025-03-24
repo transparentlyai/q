@@ -7,18 +7,18 @@ from rich.console import Console
 from bs4 import BeautifulSoup
 from q_cli.utils.constants import DEBUG
 
-# Define the special formats for web content fetching
-URL_MARKER_START = "FETCH_URL:"
-URL_MARKER_END = ">>"
+# Define the special format for web content fetching
+URL_BLOCK_MARKER = "FETCH_URL"  # Code block format
 
 
 def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]]:
     """
     Extract URLs that are marked for fetching in the model's response.
     
-    Formats supported: 
-    - FETCH_URL: https://example.com>> (legacy format)
-    - ```FETCH_URL: https://example.com``` (new code block format)
+    Format supported: 
+    - ```FETCH_URL
+      https://example.com
+      ``` (code block format)
     
     Args:
         response: The model's response text
@@ -28,19 +28,10 @@ def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]
     """
     matches = []
     
-    # Pattern 1: Legacy format with markers (still supported)
-    legacy_pattern = re.compile(f"{re.escape(URL_MARKER_START)}(.*?){re.escape(URL_MARKER_END)}")
-    
-    for match in legacy_pattern.finditer(response):
-        full_match = match.group(0)  # The entire marker
-        url = match.group(1).strip()  # Just the URL part
-        position = match.start()
-        matches.append((full_match, url, position, False))
-    
-    # Pattern 2: New code block format
-    # This pattern matches ```FETCH_URL: url```
-    # We need to be more careful with this pattern as it might include whitespace and newlines
-    code_block_pattern = re.compile(r"```FETCH_URL:[\s\n]*(.*?)[\s\n]*```", re.DOTALL)
+    # Pattern: Code block format
+    # This pattern matches ```FETCH_URL\nurl``` including the code block markers
+    # We need to be careful with this pattern as it might include whitespace and newlines
+    code_block_pattern = re.compile(r"```" + re.escape(URL_BLOCK_MARKER) + r"[\s\n]+(.*?)[\s\n]*```", re.DOTALL)
     
     for match in code_block_pattern.finditer(response):
         full_match = match.group(0)  # The entire code block
@@ -72,8 +63,9 @@ def fetch_url_content(url: str, console: Console, for_model: bool = False) -> Op
         The content of the URL, or None if there was an error
     """
     try:
-        console.print(f"[info]Fetching content from {url}...[/info]")
+        # Only show debug info if in DEBUG mode
         if DEBUG:
+            console.print(f"[info]Fetching content from {url}...[/info]")
             console.print(f"[yellow]DEBUG: Requesting URL {url}[/yellow]")
         response = requests.get(url, timeout=10)
         response.raise_for_status()  # Raise exception for HTTP errors
@@ -127,37 +119,43 @@ def fetch_url_content(url: str, console: Console, for_model: bool = False) -> Op
             
     except requests.RequestException as e:
         error_msg = f"Error fetching URL {url}: {str(e)}"
-        console.print(f"[error]{error_msg}[/error]")
+        # Only show debug info
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
         return f"[Failed to fetch: {error_msg}]" if for_model else None
 
 
 def process_urls_in_response(
     response: str, 
-    console: Console
-) -> Tuple[str, Dict[str, str]]:
+    console: Console,
+    show_errors: bool = True
+) -> Tuple[str, Dict[str, str], bool]:
     """
     Process a response from the model, fetching any URLs.
     
-    - For URLs (<<FETCH_URL:...>>), replace markers with content in the response
+    - For URLs, replace markers with content in the response
     
     Args:
         response: The model's response text
         console: Console for output
+        show_errors: Whether to display error messages to the user
     
     Returns:
         Tuple containing:
         - Processed response with URL content for user display
-        - Dictionary of URL content fetched for model context (for backward compatibility)
+        - Dictionary of URL content fetched for model context
+        - Boolean indicating if any errors occurred
     """
     # Extract all URL markers
     url_matches = extract_urls_from_response(response)
     
     if not url_matches:
-        return response, {}
+        return response, {}, False
     
-    # Dictionary to hold content fetched for model (kept for backward compatibility)
+    # Dictionary to hold content fetched for model
     model_url_content = {}
     processed_response = response
+    has_error = False
     
     # Process in reverse order to avoid position changes
     for marker, url, position, _ in sorted(
@@ -169,23 +167,33 @@ def process_urls_in_response(
         content_for_model = fetch_url_content(url, console, for_model=True)
         
         if content_for_user and content_for_model:
-            # Insert content indicator for user display (simply remove the marker)
-            # We don't want to insert the actual content in the response
+            # Remove the code block completely from the response
             processed_response = processed_response.replace(marker, "", 1)
             
-            # Display a simple confirmation message to the user
-            console.print(content_for_user)
+            # Only display a confirmation message in DEBUG mode
+            if DEBUG:
+                console.print(content_for_user)
             # Save content for model context
             model_url_content[url] = content_for_model
         else:
-            # If fetching failed, retain the error message in the response for the model
-            error_message = f"[Failed to fetch content from {url}]"
-            processed_response = processed_response.replace(marker, error_message, 1)
+            # If fetching failed, track the error
+            has_error = True
             
-            # Also display the error to the user
-            console.print(f"[error]{error_message}[/error]")
+            # Remove the code block completely from the response
+            processed_response = processed_response.replace(marker, "", 1)
             
             # Store the error in the model_url_content dictionary so it will be sent to the model
             model_url_content[url] = f"Error fetching content from {url}. The URL could not be accessed or returned an error."
     
-    return processed_response, model_url_content
+    # We no longer show errors here - they're handled at the higher level in conversation.py
+    
+    # Clean up any resulting empty lines from multiple consecutive newlines
+    processed_response = re.sub(r'\n{3,}', '\n\n', processed_response)
+    
+    # Clean up any empty code blocks that might remain after URL processing
+    processed_response = re.sub(r'```\s*```', '', processed_response)
+    
+    # Handle edge case of code blocks with just whitespace
+    processed_response = re.sub(r'```\s+```', '', processed_response)
+    
+    return processed_response, model_url_content, has_error
