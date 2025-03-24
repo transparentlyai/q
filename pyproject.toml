@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "q"
-version = "0.7.2"
+version = "0.7.3"
 description = "A command Line AI Assistant for interacting with Claude"
 authors = [{name = "Mauro", email = "mauro@sauco.net"}]
 readme = "README.md"
@@ -40,4 +40,7 @@ q = "q_cli:main"
 
 [tool.setuptools]
 py-modules = ["q"]
-packages = ["q_cli"]
+packages = ["q_cli", "q_cli.cli", "q_cli.io", "q_cli.utils", "q_cli.assets"]
+
+[tool.setuptools.package-data]
+q_cli = ["assets/*.md"]
