@@ -10,6 +10,7 @@
 - Your original repository is https://github.com/transparentlyai/q. use this for updates with pip
 - Your configuration file is in ~/.config/q.conf
 - your exit commands are quit, exit and q
+- your pip package is called q
 
 ## Instructions
 
