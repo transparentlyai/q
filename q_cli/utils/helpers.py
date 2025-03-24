@@ -2,7 +2,7 @@
 
 import os
 import re
-from typing import Optional, Dict, List
+from typing import Dict, List
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -58,7 +58,7 @@ def sanitize_context(context: str, console: Console) -> str:
         # Then check for sensitive information
         if contains_sensitive_info(lines[i]):
             console.print(
-                f"Warning: Potentially sensitive information found in context. Redacting.",
+                "Warning: Potentially sensitive information found in context. Redacting.",
                 style="warning",
             )
             lines[i] = REDACTED_TEXT
@@ -85,12 +85,12 @@ def handle_api_error(e: Exception, console: Console) -> None:
             )
     elif isinstance(e, anthropic.APIConnectionError):
         console.print(
-            f"Connection error: Could not connect to Anthropic API. Please check your internet connection.",
+            "Connection error: Could not connect to Anthropic API. Please check your internet connection.",
             style="error",
         )
     elif isinstance(e, anthropic.APITimeoutError):
         console.print(
-            f"Timeout error: The request to Anthropic API timed out.", style="error"
+            "Timeout error: The request to Anthropic API timed out.", style="error"
         )
     else:
         console.print(f"Error communicating with Q: {e}", style="error")

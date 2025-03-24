@@ -3,17 +3,13 @@
 import os
 import sys
 import signal
-import threading
-from typing import Optional, List
+from typing import Optional
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
 from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
-from prompt_toolkit.filters import Condition
-from prompt_toolkit.application.current import get_app
-from prompt_toolkit.keys import Keys
 from rich.console import Console
 
 from q_cli.utils.constants import HISTORY_PATH, EXIT_COMMANDS

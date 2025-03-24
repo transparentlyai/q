@@ -1,9 +1,10 @@
 """Command permission management for q_cli."""
 
 import json
+import logging
 import re
 import shlex
-from typing import Dict, List, Set, Tuple, Optional
+from typing import Dict, List, Set, Optional
 
 
 class CommandPermissionManager:
@@ -195,9 +196,9 @@ def parse_command_list(command_list_str: str) -> List[str]:
             return json.loads(command_list_str)
         except json.JSONDecodeError as e:
             # Log an error but return empty list
-            print(f"Error parsing command list JSON: {e}")
+            logging.warning(f"Error parsing command list JSON: {e}")
             return []
     else:
         # Not a valid JSON array format
-        print(f"Invalid command list format. Must be a JSON array: {command_list_str}")
+        logging.warning(f"Invalid command list format. Must be a JSON array: {command_list_str}")
         return []

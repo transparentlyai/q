@@ -9,7 +9,7 @@ from rich.console import Console
 
 from q_cli.utils.constants import SAVE_COMMAND_PREFIX
 from q_cli.utils.helpers import handle_api_error
-from q_cli.io.input import get_input, confirm_context
+from q_cli.io.input import get_input
 from q_cli.io.output import save_response_to_file
 from q_cli.utils.helpers import format_markdown
 from q_cli.utils.commands import (
@@ -213,6 +213,34 @@ def process_response_with_urls(
     return processed_response
 
 
+def handle_file_creation_and_format_result(command: str, console: Console) -> str:
+    """
+    Handle a file creation command and format the result for display.
+    
+    Args:
+        command: The file creation command
+        console: Console for output
+        
+    Returns:
+        Formatted result string
+    """
+    # Handle the file creation command
+    success, stdout, stderr = handle_file_creation_command(command, console)
+
+    # Get the original command for display purposes
+    original_cmd = command.split("__")[2]  # Extract file path as the "command"
+    if not original_cmd:
+        original_cmd = "Create file"
+
+    # Format and store the results
+    if success:
+        result = f"Exit Code: 0\n\nOutput:\n```\n{stdout}\n```"
+    else:
+        result = f"Exit Code: 1\n\nErrors:\n```\n{stderr}\n```"
+
+    return f"Command: cat > {original_cmd}\n{result}"
+
+
 def process_commands(
     commands: List[str],
     console: Console,
@@ -245,21 +273,7 @@ def process_commands(
 
         # Check if this is a special file creation command
         if command.startswith("__FILE_CREATION__"):
-            # Handle the file creation command specially
-            success, stdout, stderr = handle_file_creation_command(command, console)
-
-            # Get the original command for display purposes
-            original_cmd = command.split("__")[2]  # Extract file path as the "command"
-            if not original_cmd:
-                original_cmd = "Create file"
-
-            # Format and store the results
-            if success:
-                result = f"Exit Code: 0\n\nOutput:\n```\n{stdout}\n```"
-            else:
-                result = f"Exit Code: 1\n\nErrors:\n```\n{stderr}\n```"
-
-            return f"Command: cat > {original_cmd}\n{result}"
+            return handle_file_creation_and_format_result(command, console)
 
         # Regular command - ask for confirmation before executing
         execute, remember = ask_command_confirmation(
@@ -287,7 +301,7 @@ def process_commands(
     if permission_manager:
         for command in commands:
             if command.strip() and not command.startswith("__FILE_CREATION__"):
-                cmd_type = permission_manager.extract_command_type(command)
+                # Check if permission is needed without storing the command type
                 if permission_manager.needs_permission(command):
                     all_approved = False
                     break
@@ -328,21 +342,8 @@ def process_commands(
 
         # Check if this is a special file creation command
         if command.startswith("__FILE_CREATION__"):
-            # Handle the file creation command specially
-            success, stdout, stderr = handle_file_creation_command(command, console)
-
-            # Get the original command for display purposes
-            original_cmd = command.split("__")[2]  # Extract file path as the "command"
-            if not original_cmd:
-                original_cmd = "Create file"
-
-            # Format and store the results
-            if success:
-                result = f"Exit Code: 0\n\nOutput:\n```\n{stdout}\n```"
-            else:
-                result = f"Exit Code: 1\n\nErrors:\n```\n{stderr}\n```"
-
-            results.append(f"Command: cat > {original_cmd}\n{result}")
+            result = handle_file_creation_and_format_result(command, console)
+            results.append(result)
             continue
 
         # Check if we need to ask for permission

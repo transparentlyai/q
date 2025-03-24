@@ -2,13 +2,9 @@
 
 import os
 import subprocess
-import shlex
 import re
-import tempfile
-from typing import Tuple, List, Optional, Dict, Any
+from typing import Tuple, List, Dict, Any
 from rich.console import Console
-
-from q_cli.utils.permissions import CommandPermissionManager
 
 # Define the special formats for file writing
 WRITE_FILE_MARKER_START = "<<WRITE_FILE:"
@@ -110,7 +106,7 @@ def ask_command_confirmation(
     # Check for heredoc pattern before anything else
     heredoc_match = re.search(r'<<\s*[\'"]*([^\'"\s<]*)[\'"]*', command)
     if heredoc_match:
-        console.print(f"\n[bold yellow]Q suggested a heredoc command:[/bold yellow]")
+        console.print("\n[bold yellow]Q suggested a heredoc command:[/bold yellow]")
         console.print(f"[bold cyan]{command}[/bold cyan]")
         console.print("[yellow]Heredoc commands cannot be executed directly.[/yellow]")
         console.print(
@@ -130,11 +126,11 @@ def ask_command_confirmation(
         return False, False
 
     # Ask for user confirmation
-    console.print(f"\n[bold yellow]Q wants to run this command:[/bold yellow]")
+    console.print("\n[bold yellow]Q wants to run this command:[/bold yellow]")
     console.print(f"[bold cyan]{command}[/bold cyan]")
 
     options = "[y/a/N] (y=yes, a=always, N=no): "
-    response = input(f"\nExecute this command? {options}").lower().strip()
+    response = input("\nExecute this command? " + options).lower().strip()
 
     if response.startswith("a"):
         # "Always" option - remember for the session
@@ -174,7 +170,7 @@ def ask_execution_plan_confirmation(
 
         # Skip special file creation commands for now
         if command.startswith("__FILE_CREATION__"):
-            executable_commands.append(f"Create file (special command)")
+            executable_commands.append("Create file (special command)")
             command_indices.append(i)
             continue
 
@@ -426,10 +422,10 @@ def handle_file_creation_command(
     if len(parts) < 7:
         return False, "", "Invalid file creation command format"
 
-    # Extract file path, delimiter, and content
+    # Extract file path and content
     try:
         file_path = parts[2]
-        delimiter = parts[4]
+        # Skip delimiter in parts[4] as it's not used
         content = "__".join(parts[6:])  # Join in case content contains "__"
     except IndexError:
         return False, "", "Failed to parse file creation command"
@@ -491,11 +487,6 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
         content = match.group(2)
         original_marker = match.group(0)
         matches.append((file_path, content, original_marker))
-    
-    # Debug logging
-    print(f"Found {len(matches)} file writing markers")
-    for i, (path, _, _) in enumerate(matches):
-        print(f"  {i+1}. File path: {path}")
     
     return matches
 
@@ -567,17 +558,11 @@ def process_file_writes(response: str, console: Console) -> Tuple[str, List[Dict
         - Processed response with file writing markers replaced
         - List of dictionaries with file writing results
     """
-    # Debug output
-    console.print("[dim]Checking for file writing markers...[/dim]", end="")
-    
     # Extract all file writing markers
     file_matches = extract_file_markers_from_response(response)
     
     if not file_matches:
-        console.print("[dim]No file writing markers found.[/dim]")
         return response, []
-        
-    console.print(f"[dim]Found {len(file_matches)} file writing markers.[/dim]")
     
     processed_response = response
     file_results = []

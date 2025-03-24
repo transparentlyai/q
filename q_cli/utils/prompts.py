@@ -1,7 +1,7 @@
 """Prompt management for q_cli."""
 
 import os
-from typing import Dict, Optional
+from typing import Optional
 
 from q_cli.utils.constants import PROMPTS_DIR
 
