@@ -7,7 +7,7 @@ import anthropic
 from prompt_toolkit import PromptSession
 from rich.console import Console
 
-from q_cli.utils.constants import SAVE_COMMAND_PREFIX
+from q_cli.utils.constants import SAVE_COMMAND_PREFIX, DEBUG
 from q_cli.utils.helpers import handle_api_error
 from q_cli.io.input import get_input
 from q_cli.io.output import save_response_to_file
@@ -19,6 +19,8 @@ from q_cli.utils.commands import (
     format_command_output,
     handle_file_creation_command,
     process_file_writes,
+    is_file_creation_command,
+    WRITE_FILE_MARKER_START,
 )
 from q_cli.utils.permissions import CommandPermissionManager
 from q_cli.utils.prompts import get_command_result_prompt
@@ -79,16 +81,42 @@ def run_conversation(
 
                 # Get response
                 response = message.content[0].text
+                
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Received model response ({len(response)} chars)[/yellow]")
+                    console.print(f"[red]DEBUG RESPONSE: {response}[/red]")
 
-                # Process response, handle URLs, and update conversation
-                process_response_with_urls(response, args, console, conversation)
+                # Process response, handle URLs, file writes, and update conversation
+                processed_response = process_response_with_urls(response, args, console, conversation, client, system_prompt)
 
                 # Check for command suggestions in the response
+                # Note: extract_commands_from_response will ignore WRITE_FILE markers
                 if not getattr(args, "no_execute", False):
-                    commands = extract_commands_from_response(response)
-                    if commands:
+                    # Filter out any file operation result messages from command processing
+                    command_response = processed_response
+                    
+                    # Skip file operation result messages and RUN_SHELL markers
+                    file_op_patterns = [
+                        "[File written:",
+                        "[Failed to write file:",
+                        "RUN_SHELL",
+                        "```RUN_SHELL"
+                    ]
+                    
+                    # Create a more targeted extract_commands call that ignores file operation messages
+                    commands = extract_commands_from_response(command_response)
+                    
+                    # Additional filtering step for safety
+                    filtered_commands = []
+                    for cmd in commands:
+                        # Skip if it looks like a file operation message
+                        if any(pattern in cmd for pattern in file_op_patterns):
+                            continue
+                        filtered_commands.append(cmd)
+                    
+                    if filtered_commands:
                         command_results = process_commands(
-                            commands, console, permission_manager
+                            filtered_commands, console, permission_manager
                         )
                         if command_results:
                             # Add the command results to the conversation
@@ -109,10 +137,14 @@ def run_conversation(
 
                             # Get Q's analysis
                             analysis_response = analysis.content[0].text
+                            
+                            if DEBUG:
+                                console.print(f"[yellow]DEBUG: Received command analysis response ({len(analysis_response)} chars)[/yellow]")
+                                console.print(f"[red]DEBUG RESPONSE: {analysis_response}[/red]")
 
                             # Process analysis response, handle URLs, and update conversation
                             process_response_with_urls(
-                                analysis_response, args, console, conversation
+                                analysis_response, args, console, conversation, client, system_prompt
                             )
 
                 # If not in interactive mode, exit after first response
@@ -132,7 +164,7 @@ def run_conversation(
         pass
     finally:
         # prompt_toolkit's FileHistory automatically saves history
-        if os.environ.get("Q_DEBUG"):
+        if os.environ.get("Q_DEBUG") or DEBUG:
             console.print(
                 f"[info]History saved to {prompt_session.history.filename}[/info]"
             )
@@ -140,8 +172,9 @@ def run_conversation(
 
 
 def process_response_with_urls(
-    response: str, args, console: Console, conversation: List[Dict[str, str]]
-) -> None:
+    response: str, args, console: Console, conversation: List[Dict[str, str]], 
+    client=None, system_prompt=None
+) -> str:
     """
     Process a response from the model, handle any URLs and file writes, and update the conversation.
 
@@ -150,6 +183,11 @@ def process_response_with_urls(
         args: Command line arguments
         console: Console for output
         conversation: Current conversation history
+        client: Optional Anthropic client for callbacks
+        system_prompt: Optional system prompt for callbacks
+        
+    Returns:
+        The processed response after handling URLs and file writes
     """
     model_url_content = {}
     processed_response = response
@@ -160,19 +198,26 @@ def process_response_with_urls(
             processed_response, console
         )
     
-    # Process any file writing markers in the response if file writing is enabled
-    if not getattr(args, "no_file_write", False):
-        processed_response, file_results = process_file_writes(processed_response, console)
-    else:
-        file_results = []
-
-    # Print formatted response
+    # Clean special markers from response before displaying to user
+    from q_cli.utils.commands import remove_special_markers
+    display_response = remove_special_markers(processed_response)
+    
+    # Print formatted response first, before handling file writes
     console.print("")  # Add empty line before response
+    
     if not args.no_md:
-        console.print(format_markdown(processed_response))
+        console.print(format_markdown(display_response))
     else:
-        console.print(processed_response)
+        console.print(display_response)
     console.print("")  # Add empty line after response
+    
+    # Process any file writing markers in the response if file writing is enabled
+    file_results = []
+    if not getattr(args, "no_file_write", False):
+        # Check if there are any file write markers before showing the processing message
+        if WRITE_FILE_MARKER_START in processed_response:
+            console.print("[info]Processing file operations...[/info]")
+        processed_response, file_results = process_file_writes(processed_response, console)
 
     # Add the original (unprocessed) response to conversation history
     # This ensures URLs are preserved for context in follow-up questions
@@ -193,6 +238,45 @@ def process_response_with_urls(
                 "based on your request. Here's what I found:\n\n" + web_content
             )
             conversation.append({"role": "user", "content": web_context_message})
+            
+            # Make an API call to tell the model about the web content
+            if client and system_prompt and not getattr(args, "no_web", False):
+                if DEBUG:
+                    console.print("[yellow]DEBUG: Sending web fetch results to model...[/yellow]")
+                # Use an explicit message to indicate we're processing web content
+                console.print("[info]Processing web content...[/info]")
+                # Use the status for API call, but with a different message to avoid repetition
+                with console.status("[info]Calling API with web content...[/info]"):
+                    try:
+                        web_result_response = client.messages.create(
+                            model=args.model,
+                            max_tokens=args.max_tokens,
+                            temperature=0,
+                            system=system_prompt,
+                            messages=conversation,
+                        )
+                        
+                        # Add the model's response to conversation
+                        web_ack_response = web_result_response.content[0].text
+                        conversation.append({"role": "assistant", "content": web_ack_response})
+                        
+                        if DEBUG:
+                            console.print(f"[green]DEBUG: Received web content response ({len(web_ack_response)} chars)[/green]")
+                            console.print(f"[red]DEBUG RESPONSE: {web_ack_response}[/red]")
+                            
+                        # Update processed_response to include the model's response
+                        processed_response = web_ack_response
+                        
+                        # Display the model's response to the user
+                        console.print("")  # Add empty line before response
+                        if not args.no_md:
+                            console.print(format_markdown(web_ack_response))
+                        else:
+                            console.print(web_ack_response)
+                        console.print("")  # Add empty line after response
+                    except Exception as e:
+                        if DEBUG:
+                            console.print(f"[red]DEBUG: Error sending web results to model: {str(e)}[/red]")
     
     # If we have file writing results, create a follow-up message with that information
     if file_results:
@@ -209,6 +293,45 @@ def process_response_with_urls(
                 "\n".join(file_messages)
             )
             conversation.append({"role": "user", "content": file_context_message})
+            
+            # Make an API call to tell the model about the file write results
+            if client and system_prompt and not getattr(args, "no_file_write", False):
+                if DEBUG:
+                    console.print("[yellow]DEBUG: Sending file operation results to model...[/yellow]")
+                # Use an explicit message to indicate we're processing file results
+                console.print("[info]Processing file operation results...[/info]")
+                # Use the status for API call, but with a different message to avoid repetition
+                with console.status("[info]Calling API with file operation results...[/info]"):
+                    try:
+                        file_result_response = client.messages.create(
+                            model=args.model,
+                            max_tokens=args.max_tokens,
+                            temperature=0,
+                            system=system_prompt,
+                            messages=conversation,
+                        )
+                        
+                        # Add the model's acknowledgment to conversation
+                        file_ack_response = file_result_response.content[0].text
+                        conversation.append({"role": "assistant", "content": file_ack_response})
+                        
+                        if DEBUG:
+                            console.print(f"[green]DEBUG: Received file operations response ({len(file_ack_response)} chars)[/green]")
+                            console.print(f"[red]DEBUG RESPONSE: {file_ack_response}[/red]")
+                            
+                        # Update processed_response to include the model's acknowledgment
+                        processed_response = file_ack_response
+                        
+                        # Display the model's response to the user
+                        console.print("")  # Add empty line before response
+                        if not args.no_md:
+                            console.print(format_markdown(file_ack_response))
+                        else:
+                            console.print(file_ack_response)
+                        console.print("")  # Add empty line after response
+                    except Exception as e:
+                        if DEBUG:
+                            console.print(f"[red]DEBUG: Error sending file results to model: {str(e)}[/red]")
 
     return processed_response
 
@@ -263,92 +386,39 @@ def process_commands(
     if not commands:
         return None
 
-    # If only one command, use the standard confirmation flow
-    if len(commands) == 1:
-        command = commands[0]
-
-        # Skip empty commands
-        if not command.strip():
-            return None
-
-        # Check if this is a special file creation command
-        if command.startswith("__FILE_CREATION__"):
-            return handle_file_creation_and_format_result(command, console)
-
-        # Regular command - ask for confirmation before executing
-        execute, remember = ask_command_confirmation(
-            command, console, permission_manager
-        )
-
-        if not execute:
-            console.print("[yellow]Command execution skipped by user[/yellow]")
-            return None
-
-        # Remember this command type if requested
-        if remember and permission_manager:
-            permission_manager.approve_command_type(command)
-
-        # Execute the command
-        console.print(f"[bold green]Executing:[/bold green] {command}")
-        return_code, stdout, stderr = execute_command(command, console)
-
-        # Format and store the results
-        result = format_command_output(return_code, stdout, stderr)
-        return f"Command: {command}\n{result}"
-
-    # For multiple commands, check if all commands are pre-approved
-    all_approved = True
-    if permission_manager:
-        for command in commands:
-            if command.strip() and not command.startswith("__FILE_CREATION__"):
-                # Check if permission is needed without storing the command type
-                if permission_manager.needs_permission(command):
-                    all_approved = False
-                    break
-    else:
-        # If no permission manager, assume not all approved
-        all_approved = False
-
-    # If all commands are pre-approved, execute all without asking
-    if all_approved:
-        console.print(
-            "\n[bold green]All commands are pre-approved, executing automatically.[/bold green]"
-        )
-        execute_plan = True
-        command_indices = list(range(len(commands)))
-        execute_one_by_one = False
-    else:
-        # Otherwise, present the execution plan and ask for confirmation
-        from q_cli.utils.commands import ask_execution_plan_confirmation
-
-        execute_plan, command_indices, execute_all_at_once = (
-            ask_execution_plan_confirmation(commands, console, permission_manager)
-        )
-
-        if not execute_plan:
-            console.print("[yellow]Command execution plan skipped by user[/yellow]")
-            return None
-
-        # If the user selected 'all', we don't need to ask for confirmation per command
-        execute_one_by_one = not execute_all_at_once
-
-    # Execute the commands
-    for idx in command_indices:
-        command = commands[idx]
-
-        # Skip empty commands
-        if not command.strip():
+    # Process commands individually
+    for command in commands:
+        # Skip empty commands or commands with WRITE_FILE markers
+        if not command.strip() or WRITE_FILE_MARKER_START in command:
             continue
 
-        # Check if this is a special file creation command
+        # Check if this is a special file creation command (legacy method)
         if command.startswith("__FILE_CREATION__"):
             result = handle_file_creation_and_format_result(command, console)
             results.append(result)
             continue
+            
+        # Check if this is a file creation command using cat/tee
+        file_info = is_file_creation_command(command)
+        if file_info["is_file_creation"]:
+            console.print(
+                f"\n[yellow]File creation via command line is deprecated. Using the WRITE_FILE mechanism is preferred.[/yellow]"
+            )
+            console.print(
+                f"[yellow]To create files, use the <<WRITE_FILE:path/to/file>>content<<WRITE_FILE>> format.[/yellow]"
+            )
+            # Skip the command to avoid line-by-line file creation
+            continue
 
-        # Check if we need to ask for permission
-        if execute_one_by_one:
-            # Ask for confirmation for individual commands
+        # Check if the command is prohibited
+        if permission_manager and permission_manager.is_command_prohibited(command):
+            console.print(
+                f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]"
+            )
+            continue
+
+        # Ask for confirmation if needed
+        if permission_manager and permission_manager.needs_permission(command):
             execute, remember = ask_command_confirmation(
                 command, console, permission_manager
             )
@@ -361,12 +431,8 @@ def process_commands(
             if remember and permission_manager:
                 permission_manager.approve_command_type(command)
         else:
-            # All commands approved at once, but still check for prohibited commands
-            if permission_manager and permission_manager.is_command_prohibited(command):
-                console.print(
-                    f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]"
-                )
-                continue
+            # Command is pre-approved
+            console.print(f"\n[green]Command '{command}' is pre-approved.[/green]")
 
         # Execute the command
         console.print(f"[bold green]Executing:[/bold green] {command}")

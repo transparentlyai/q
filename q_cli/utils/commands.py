@@ -5,10 +5,13 @@ import subprocess
 import re
 from typing import Tuple, List, Dict, Any
 from rich.console import Console
+from q_cli.utils.constants import DEBUG
 
-# Define the special formats for file writing
-WRITE_FILE_MARKER_START = "<<WRITE_FILE:"
-WRITE_FILE_MARKER_END = ">>"
+# Define the special formats for file writing and command execution
+WRITE_FILE_MARKER_START = "WRITE_FILE:"
+WRITE_FILE_MARKER_END = "WRITE_FILE"
+RUN_SHELL_MARKER_START = "RUN_SHELL"
+RUN_SHELL_MARKER_END = "RUN_SHELL"
 
 # List of potentially dangerous commands to block
 BLOCKED_COMMANDS = [
@@ -39,13 +42,21 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
     Returns:
         Tuple containing (return_code, stdout, stderr)
     """
+    # Debug output
+    if DEBUG:
+        console.print(f"[yellow]DEBUG: Executing command: {command}[/yellow]")
+        
     # Check for dangerous commands
     if is_dangerous_command(command):
+        if DEBUG:
+            console.print(f"[red]DEBUG: Command blocked as dangerous: {command}[/red]")
         return (-1, "", "This command has been blocked for security reasons.")
 
     # Check if this is a heredoc command
     heredoc_match = re.search(r'<<\s*[\'"]*([^\'"\s<]*)[\'"]*', command)
     if heredoc_match:
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Heredoc command detected: {command}[/yellow]")
         console.print(
             "[yellow]Heredoc commands (with <<EOF) are not directly supported.[/yellow]"
         )
@@ -54,6 +65,8 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
 
     try:
         # Execute the command and capture output
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Starting subprocess for: {command}[/yellow]")
         process = subprocess.Popen(
             command,
             shell=True,
@@ -66,11 +79,22 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
         stdout, stderr = process.communicate(timeout=30)  # 30-second timeout
         return_code = process.returncode
 
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Command completed with return code: {return_code}[/yellow]")
+            if stdout and len(stdout) > 0:
+                console.print(f"[yellow]DEBUG: Command stdout length: {len(stdout)} bytes[/yellow]")
+            if stderr and len(stderr) > 0:
+                console.print(f"[yellow]DEBUG: Command stderr length: {len(stderr)} bytes[/yellow]")
+                
         return (return_code, stdout, stderr)
 
     except subprocess.TimeoutExpired:
+        if DEBUG:
+            console.print(f"[red]DEBUG: Command timed out: {command}[/red]")
         return (-1, "", "Command timed out after 30 seconds")
     except Exception as e:
+        if DEBUG:
+            console.print(f"[red]DEBUG: Command error: {str(e)}[/red]")
         return (-1, "", f"Error executing command: {str(e)}")
 
 
@@ -139,83 +163,17 @@ def ask_command_confirmation(
     return response.startswith("y"), False
 
 
+# This function was removed as part of the simplified command execution flow
+# Individual commands are now processed directly without a batch execution plan
 def ask_execution_plan_confirmation(
     commands: List[str], console: Console, permission_manager=None
 ) -> Tuple[bool, List[int], bool]:
     """
-    Present the full execution plan and ask for user confirmation.
-
-    Args:
-        commands: List of commands to execute
-        console: Console for output
-        permission_manager: Optional permission manager for tracking approvals
-
-    Returns:
-        Tuple containing:
-        - Whether to execute any commands (True/False)
-        - List of indices of commands to execute
-        - Whether all commands are approved at once (True for 'a', False for 's' or 'n')
+    DEPRECATED: This function is no longer used.
+    Commands are now individually processed and approved.
     """
-    if not commands:
-        return False, [], False
-
-    # Filter out prohibited commands and special file creation commands
-    executable_commands = []
-    command_indices = []
-
-    for i, command in enumerate(commands):
-        # Skip empty commands
-        if not command.strip():
-            continue
-
-        # Skip special file creation commands for now
-        if command.startswith("__FILE_CREATION__"):
-            executable_commands.append("Create file (special command)")
-            command_indices.append(i)
-            continue
-
-        # Skip prohibited commands
-        if permission_manager and permission_manager.is_command_prohibited(command):
-            console.print(
-                f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]"
-            )
-            continue
-
-        # Include all other commands
-        executable_commands.append(command)
-        command_indices.append(i)
-
-    if not executable_commands:
-        console.print("\n[yellow]No executable commands in the plan.[/yellow]")
-        return False, [], False
-
-    # Present the execution plan
-    console.print("\n[bold blue]Command Execution Plan:[/bold blue]")
-    # Print the first command
-    if executable_commands:
-        console.print(f"\n[bold]1.[/bold] [cyan]{executable_commands[0]}[/cyan]")
-        # Print the rest without extra newlines
-        for i, cmd in enumerate(executable_commands[1:], start=2):
-            console.print(f"[bold]{i}.[/bold] [cyan]{cmd}[/cyan]")
-
-    # Ask if we should execute the commands
-    console.print(
-        "\n[bold yellow]Do you approve executing these commands?[/bold yellow]"
-    )
-    options = "[s/a/n] (s=some, a=all, n=no): "
-    response = input(f"\nApprove commands? {options}").lower().strip()
-
-    if response.startswith("s"):
-        # Let user choose commands one by one
-        return True, command_indices, False
-    elif response.startswith("a"):
-        # Execute all commands at once without asking for confirmation on each command
-        # Return a special marker that we don't need to ask permission individually
-        # This will be handled by our caller
-        return True, command_indices, True
-    else:
-        # Don't execute any commands
-        return False, [], False
+    # Return empty values that will not be used
+    return False, [], False
 
 
 def is_file_creation_command(command: str) -> Dict[str, Any]:
@@ -268,6 +226,7 @@ def is_file_creation_command(command: str) -> Dict[str, Any]:
 def extract_code_blocks(response: str) -> Dict[str, List[str]]:
     """
     Extract all code blocks from a response, categorized by block type.
+    Specially handles WRITE_FILE blocks to avoid treating them as commands.
 
     Args:
         response: The response text
@@ -277,12 +236,42 @@ def extract_code_blocks(response: str) -> Dict[str, List[str]]:
     """
     blocks = {"shell": [], "other": []}
 
+    # First, check if there are any WRITE_FILE markers in the response
+    has_write_file = WRITE_FILE_MARKER_START in response
+    
     lines = response.split("\n")
     in_code_block = False
     current_type = ""
     current_block = []
+    in_write_file_block = False  # Track if we're inside a write file block
 
     for line in lines:
+        # Handle ending of blocks
+        if in_write_file_block and line.strip() == "```":
+            in_write_file_block = False
+            continue
+            
+        # Check for special code blocks that we need to skip entirely
+        if not in_code_block and line.strip().startswith("```"):
+            block_type = line.strip()[3:].lower()
+            if block_type.startswith("write_file:") or block_type == "run_shell":
+                # Skip these special blocks entirely
+                in_write_file_block = True
+                continue
+                
+        # Check for WRITE_FILE markers
+        if has_write_file and WRITE_FILE_MARKER_START in line:
+            in_write_file_block = True
+            continue
+            
+        if has_write_file and "WRITE_FILE" in line:
+            in_write_file_block = False
+            continue
+            
+        # Skip lines that are part of a WRITE_FILE block
+        if in_write_file_block:
+            continue
+
         if line.strip().startswith("```") and not in_code_block:
             # Start of a code block
             block_type = line.strip()[3:].lower()
@@ -297,7 +286,12 @@ def extract_code_blocks(response: str) -> Dict[str, List[str]]:
             # End of a code block
             in_code_block = False
             if current_block:  # Only add non-empty blocks
-                blocks[current_type].append(current_block)
+                # Extra check to avoid WRITE_FILE markers in shell blocks
+                if current_type == "shell" and any(WRITE_FILE_MARKER_START in line for line in current_block):
+                    # Skip this block or convert to "other" type if it contains WRITE_FILE markers
+                    blocks["other"].append(current_block)
+                else:
+                    blocks[current_type].append(current_block)
             current_block = []
             continue
 
@@ -337,26 +331,168 @@ def extract_file_content_for_command(command: Dict[str, Any], response: str) -> 
     return ""
 
 
+def extract_shell_markers_from_response(response: str) -> List[Tuple[str, str]]:
+    """
+    Extract shell command markers from the model's response.
+    
+    Format: 
+    - ```RUN_SHELL
+      command
+      ```
+    
+    Args:
+        response: The model's response text
+    
+    Returns:
+        List of tuples containing (command, original_marker)
+    """
+    # Regular expression to match the shell command format
+    pattern = re.compile(
+        r"```RUN_SHELL\s*(.*?)```",
+        re.DOTALL
+    )
+    
+    matches = []
+    
+    for match in pattern.finditer(response):
+        command = match.group(1).strip()
+        original_marker = match.group(0)
+        
+        # Check if this match is inside a nested code block by counting ``` before this position
+        position = match.start()
+        text_before = response[:position]
+        code_block_markers = text_before.count("```")
+        
+        # If even number of ``` markers before our match, we're at the right level
+        # If odd number of ``` markers, we might be inside another code block
+        is_inside_nested_code_block = code_block_markers % 2 == 1
+        
+        # We accept markers as long as they're not inside another code block
+        if not is_inside_nested_code_block:
+            matches.append((command, original_marker))
+    
+    return matches
+
+
+def remove_special_markers(response: str) -> str:
+    """
+    Remove all special command markers from the model's response.
+    
+    Args:
+        response: The raw response from the model
+        
+    Returns:
+        Response with all special markers removed
+    """
+    # Remove RUN_SHELL markers
+    pattern = re.compile(r"```RUN_SHELL\s*(.*?)```", re.DOTALL)
+    cleaned = pattern.sub("", response)
+    
+    # Remove WRITE_FILE markers
+    pattern = re.compile(r"```WRITE_FILE:(.*?)[\r\n]+(.*?)```", re.DOTALL)
+    cleaned = pattern.sub("", cleaned)
+    
+    # Remove FETCH_URL markers
+    pattern = re.compile(r"FETCH_URL:(.*?)>>", re.DOTALL)
+    cleaned = pattern.sub("", cleaned)
+    
+    # Clean up any leftover markers
+    leftover_markers = [
+        "<<WRITE_FILE>>", 
+        "<<RUN_SHELL>>",
+        "WRITE_FILE:",
+        "RUN_SHELL",
+        "FETCH_URL:"
+    ]
+    
+    for marker in leftover_markers:
+        cleaned = cleaned.replace(marker, "")
+    
+    return cleaned
+
+
 def extract_commands_from_response(response: str) -> List[str]:
     """
     Extract commands from Q's response.
-
-    Looks for commands in shell/bash code blocks and handles file creation commands
-    by finding content in other code blocks.
+    
+    Three ways to extract commands:
+    1. RUN_SHELL markers (preferred method)
+    2. Shell code blocks (legacy method)
+    3. File creation commands (legacy method)
+    
+    Filters out any lines that match the WRITE_FILE pattern to avoid treating them as commands.
     """
-    # Extract all code blocks from the response
-    blocks = extract_code_blocks(response)
+    # First check if this response contains file operation results
+    # If so, completely skip command extraction for safety
+    file_op_indicators = [
+        "[File written:",
+        "[Failed to write file:"
+    ]
+    
+    if any(indicator in response for indicator in file_op_indicators):
+        # This response includes file operation results - don't extract commands
+        return []
+    
+    commands = []
+    processed_response = response
+    
+    # Method 1: Check for RUN_SHELL markers (new preferred method)
+    shell_markers = extract_shell_markers_from_response(response)
+    if shell_markers:
+        # If we have RUN_SHELL markers, use those commands and skip other methods
+        for command, original_marker in shell_markers:
+            commands.append(command)
+            # Remove the markers from processed_response to avoid duplication
+            processed_response = processed_response.replace(original_marker, "")
+        return commands
+        
+    # Method 2 & 3: Legacy methods - only use if no RUN_SHELL markers
+    
+    # Extract WRITE_FILE markers to avoid treating them as commands
+    file_markers = extract_file_markers_from_response(processed_response)
+    
+    # Remove WRITE_FILE markers from the response before extracting commands
+    for _, _, original_marker in file_markers:
+        processed_response = processed_response.replace(original_marker, "")
+        
+    # Skip processing if this is primarily a file write operation
+    if file_markers and len(processed_response.strip()) < 100:
+        # This is primarily a file write operation with little other content
+        # Skip command extraction entirely
+        return []
+    
+    # Extract all code blocks from the processed response
+    blocks = extract_code_blocks(processed_response)
 
     # Process shell blocks to get commands
-    commands = []
+    legacy_commands = []
     for block in blocks["shell"]:
-        process_command_block(block, commands)
+        process_command_block(block, legacy_commands)
 
     # Process commands to handle file creation
     processed_commands = []
     file_creation_commands = []
 
-    for cmd in commands:
+    # Additional file operation related patterns to filter out
+    filter_patterns = [
+        WRITE_FILE_MARKER_START,       # Start marker
+        "WRITE_FILE",                  # End marker
+        "```WRITE_FILE:",              # Full marker in code block format
+        RUN_SHELL_MARKER_START,        # Shell command start marker
+        RUN_SHELL_MARKER_END,          # Shell command end marker
+        "```RUN_SHELL",                # Full marker in code block format
+        "[File written:",              # Success message
+        "[Failed to write file:",      # Error message
+        "File created",                # Success message alternative
+        "Creating file",               # Process message
+        "Writing file"                 # Process message
+    ]
+
+    for cmd in legacy_commands:
+        # Skip empty commands or those with file operation markers
+        if not cmd.strip() or any(pattern in cmd for pattern in filter_patterns):
+            continue
+            
         file_info = is_file_creation_command(cmd)
         if file_info["is_file_creation"]:
             file_creation_commands.append((cmd, file_info))
@@ -466,7 +602,9 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
     Extract file writing markers from the model's response.
     
     Format: 
-    - <<WRITE_FILE:path/to/file>>content<<WRITE_FILE>>
+    - ```WRITE_FILE:path/to/file
+      content
+      ```
     
     Args:
         response: The model's response text
@@ -476,7 +614,7 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
     """
     # Regular expression to match the file writing format correctly
     pattern = re.compile(
-        r"<<WRITE_FILE:(.*?)>>(.*?)<<WRITE_FILE>>",
+        r"```WRITE_FILE:(.*?)[\r\n]+(.*?)```",
         re.DOTALL
     )
     
@@ -486,7 +624,19 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
         file_path = match.group(1).strip()
         content = match.group(2)
         original_marker = match.group(0)
-        matches.append((file_path, content, original_marker))
+        
+        # Check if this match is inside a nested code block by counting ``` before this position
+        position = match.start()
+        text_before = response[:position]
+        code_block_markers = text_before.count("```")
+        
+        # If even number of ``` markers before our match, we're at the right level
+        # If odd number of ``` markers, we might be inside another code block
+        is_inside_nested_code_block = code_block_markers % 2 == 1
+        
+        # We accept markers as long as they're not inside another code block
+        if not is_inside_nested_code_block:
+            matches.append((file_path, content, original_marker))
     
     return matches
 
@@ -504,22 +654,34 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
         Tuple containing (success, stdout, stderr)
     """
     try:
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Writing file from marker: {file_path}[/yellow]")
+            console.print(f"[yellow]DEBUG: Content length: {len(content)} bytes[/yellow]")
+            
         # Expand the file path (handle ~ and environment variables)
         expanded_path = os.path.expanduser(file_path)
         expanded_path = os.path.expandvars(expanded_path)
         
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Expanded path: {expanded_path}[/yellow]")
+        
         # Make sure the path is relative to the current working directory if not absolute
         if not os.path.isabs(expanded_path):
             expanded_path = os.path.join(os.getcwd(), expanded_path)
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Absolute path: {expanded_path}[/yellow]")
             
         # Ensure the directory exists
         directory = os.path.dirname(expanded_path)
         if directory and not os.path.exists(directory):
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Creating directory: {directory}[/yellow]")
             os.makedirs(directory, exist_ok=True)
             
         # Show the file details and content to the user
+        console.print("")  # Add spacing for better readability
         console.print(
-            f"\n[bold yellow]Q wants to write a file at:[/bold yellow] {expanded_path}"
+            f"[bold yellow]Q wants to write a file at:[/bold yellow] {expanded_path}"
         )
         console.print("[bold yellow]Here's the content of the file:[/bold yellow]")
         console.print(f"```\n{content}\n```")
@@ -533,15 +695,23 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
             return False, "", "File writing skipped by user"
             
         # Write the file
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Writing content to file: {expanded_path}[/yellow]")
         with open(expanded_path, "w") as f:
             f.write(content)
             
-        console.print(f"[green]File written successfully: {expanded_path}[/green]")
+        # Show success message more prominently
+        console.print(f"[bold green]File written successfully: {expanded_path}[/bold green]")
+        console.print("")  # Add empty line after success message
+        if DEBUG:
+            console.print(f"[green]DEBUG: File write successful: {expanded_path}[/green]")
         return True, f"File written: {expanded_path}", ""
         
     except Exception as e:
         error_msg = f"Error writing file: {str(e)}"
         console.print(f"[red]{error_msg}[/red]")
+        if DEBUG:
+            console.print(f"[red]DEBUG: File write error: {str(e)}[/red]")
         return False, "", error_msg
         
         
@@ -559,10 +729,17 @@ def process_file_writes(response: str, console: Console) -> Tuple[str, List[Dict
         - List of dictionaries with file writing results
     """
     # Extract all file writing markers
+    if DEBUG:
+        console.print("[yellow]DEBUG: Looking for file writing markers in response[/yellow]")
     file_matches = extract_file_markers_from_response(response)
     
     if not file_matches:
+        if DEBUG:
+            console.print("[yellow]DEBUG: No file writing markers found[/yellow]")
         return response, []
+    
+    if DEBUG:
+        console.print(f"[yellow]DEBUG: Found {len(file_matches)} file writing markers[/yellow]")
     
     processed_response = response
     file_results = []
@@ -578,13 +755,23 @@ def process_file_writes(response: str, console: Console) -> Tuple[str, List[Dict
         }
         file_results.append(result)
         
-        # Replace the original marker with a note about what happened
+        # Use a clean, user-friendly replacement format that won't be interpreted as commands
+        # but still provides information about the file operation result
         if success:
-            replacement = f"[File written successfully: {file_path}]"
+            replacement = f"[File written: {file_path}]"
         else:
-            replacement = f"[Failed to write file {file_path}: {stderr}]"
+            replacement = f"[Failed to write file: {file_path}]"
             
-        processed_response = processed_response.replace(original_marker, replacement)
+        # Find the original marker in the response
+        marker_start = processed_response.find(original_marker)
+        if marker_start != -1:
+            marker_end = marker_start + len(original_marker)
+            
+            # Simple replacement - keep any text after the marker
+            processed_response = processed_response.replace(original_marker, replacement)
+        else:
+            # Normal replacement as fallback
+            processed_response = processed_response.replace(original_marker, replacement)
         
     return processed_response, file_results
 
@@ -596,6 +783,8 @@ def process_command_block(block_lines: List[str], commands: List[str]):
     Distinguishes between:
     - Backslash as escape character (e.g., `echo \"hello\"`)
     - Backslash as line continuation marker
+
+    Filters out any lines containing WRITE_FILE markers to prevent treating them as commands.
 
     Args:
         block_lines: List of lines from a code block
@@ -610,8 +799,11 @@ def process_command_block(block_lines: List[str], commands: List[str]):
     for i, line in enumerate(block_lines):
         line = line.rstrip()
 
+        # Skip empty lines or lines containing WRITE_FILE markers
         if not line.strip():
-            # Skip empty lines but preserve the current command
+            continue
+        if WRITE_FILE_MARKER_START in line or "<<WRITE_FILE>>" in line:
+            # Skip lines with WRITE_FILE markers entirely
             continue
 
         if in_continuation:
@@ -619,7 +811,7 @@ def process_command_block(block_lines: List[str], commands: List[str]):
             current_command = current_command[:-1].rstrip() + " " + line.lstrip()
         else:
             # Not in continuation mode - if we have a stored command, add it
-            if current_command:
+            if current_command and WRITE_FILE_MARKER_START not in current_command:
                 commands.append(current_command)
             current_command = line
 
@@ -629,8 +821,12 @@ def process_command_block(block_lines: List[str], commands: List[str]):
         # If this is the last line or not a continuation, add the command
         is_last_line = i == len(block_lines) - 1
         if is_last_line and current_command and not in_continuation:
-            commands.append(current_command)
+            # Only add if not a WRITE_FILE marker
+            if WRITE_FILE_MARKER_START not in current_command:
+                commands.append(current_command)
 
     # Add any remaining command that wasn't added yet
-    if current_command and not in_continuation and current_command not in commands:
+    if (current_command and not in_continuation and 
+            current_command not in commands and 
+            WRITE_FILE_MARKER_START not in current_command):
         commands.append(current_command)

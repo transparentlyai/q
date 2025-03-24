@@ -15,7 +15,7 @@ A simple command-line tool for sending questions to Q AI and getting beautifully
 - 🔄 History navigation with up/down arrow keys
 - 🖱️ Terminal scrolling support for navigating long responses
 - 🚪 Easy exit with Ctrl+C, Ctrl+D, or typing "exit"/"quit"
-- 🖥️ Command execution plans - let Q suggest and run comprehensive shell command plans
+- 🖥️ Command execution - let Q run shell commands using special markers
 - 🔒 Command permission system with session-based approvals
 - 🌐 Web fetching - Q can access up-to-date information from the internet and analyze content for better responses
 
@@ -116,21 +116,27 @@ In interactive mode, you can:
   ```
   > save ~/responses/answer.md
   ```
-- Q can suggest complete shell command plans to solve your problems:
-  - It will present the full execution plan upfront 
-  - You can approve all commands at once or approve each one individually
-  - For commands that need permission, you'll be asked to confirm before execution
+- Q can suggest and run shell commands to solve your problems:
+  - Each command is presented individually for your approval
+  - Commands are categorized as approved, restricted, or prohibited
+  - You'll be asked to confirm before executing any command that needs permission
 - Q can fetch content from the web to provide up-to-date information in two ways:
   - Displaying web content directly to you with URL markers
   - Fetching web content as context for Q to analyze and use in responses
-- Q can create files for you automatically:
-  - Q will suggest the file content and name
+- Q can create files for you automatically using the WRITE_FILE mechanism:
+  - Format: `<<WRITE_FILE:path/to/file>>content<<WRITE_FILE>>`
   - You'll be asked to confirm before any file is written
   - The file will be shown to you for review before creating it
+  - This approach is preferred over using shell commands for file creation
+- Q runs shell commands using the RUN_SHELL mechanism:
+  - Format: `<<RUN_SHELL>>command<<RUN_SHELL>>`
+  - You'll be asked to confirm before any command is executed
+  - Multi-line commands can be included inside the markers
 - Use the `--no-empty` flag to disable sending empty inputs (pressing Enter without typing anything)
 - Use the `--no-execute` flag to disable command execution functionality
 - Use the `--no-web` flag to disable web content fetching
 - Use the `--no-file-write` flag to disable file writing functionality
+- For maximum security, you can use all three flags: `--no-execute --no-web --no-file-write`
 
 ### Command Permission System
 

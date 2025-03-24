@@ -5,12 +5,11 @@ import requests
 from typing import Tuple, List, Optional, Dict
 from rich.console import Console
 from bs4 import BeautifulSoup
+from q_cli.utils.constants import DEBUG
 
 # Define the special formats for web content fetching
-URL_MARKER_START = "<<FETCH_URL:"
+URL_MARKER_START = "FETCH_URL:"
 URL_MARKER_END = ">>"
-MODEL_URL_MARKER_START = "<<FETCH_FOR_MODEL:"
-MODEL_URL_MARKER_END = ">>"
 
 
 def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]]:
@@ -18,8 +17,7 @@ def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]
     Extract URLs that are marked for fetching in the model's response.
     
     Format: 
-    - <<FETCH_URL:https://example.com>> (for user display)
-    - <<FETCH_FOR_MODEL:https://example.com>> (for model context)
+    - <<FETCH_URL:https://example.com>> (can appear inside or outside code blocks)
     
     Args:
         response: The model's response text
@@ -27,21 +25,26 @@ def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]
     Returns:
         List of tuples containing (original_marker, url, position, is_for_model)
     """
-    patterns = [
-        (URL_MARKER_START, URL_MARKER_END, False),
-        (MODEL_URL_MARKER_START, MODEL_URL_MARKER_END, True)
-    ]
-    
+    # Create a pattern that matches the URL marker, ignoring code block boundaries
+    pattern = re.compile(f"{re.escape(URL_MARKER_START)}(.*?){re.escape(URL_MARKER_END)}")
     matches = []
     
-    for start_marker, end_marker, is_for_model in patterns:
-        pattern = re.compile(f"{re.escape(start_marker)}(.*?){re.escape(end_marker)}")
+    # First pass: find all matches including those in code blocks
+    for match in pattern.finditer(response):
+        full_match = match.group(0)  # The entire marker
+        url = match.group(1).strip()  # Just the URL part
+        position = match.start()
         
-        for match in pattern.finditer(response):
-            full_match = match.group(0)  # The entire marker
-            url = match.group(1).strip()  # Just the URL part
-            position = match.start()
-            matches.append((full_match, url, position, is_for_model))
+        # Check if this match is inside a code block by counting ``` before this position
+        text_before = response[:position]
+        code_block_markers = text_before.count("```")
+        
+        # If even number of ``` markers, we're outside a code block
+        # If odd number of ``` markers, we're inside a code block
+        is_inside_code_block = code_block_markers % 2 == 1
+        
+        # We now accept markers both inside and outside code blocks
+        matches.append((full_match, url, position, False))
     
     return matches
 
@@ -60,6 +63,8 @@ def fetch_url_content(url: str, console: Console, for_model: bool = False) -> Op
     """
     try:
         console.print(f"[info]Fetching content from {url}...[/info]")
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Requesting URL {url}[/yellow]")
         response = requests.get(url, timeout=10)
         response.raise_for_status()  # Raise exception for HTTP errors
         
@@ -128,8 +133,7 @@ def process_urls_in_response(
     """
     Process a response from the model, fetching any URLs.
     
-    - For user display URLs (<<FETCH_URL:...>>), replace markers with content in the response
-    - For model URLs (<<FETCH_FOR_MODEL:...>>), collect content for model context
+    - For URLs (<<FETCH_URL:...>>), replace markers with content in the response
     
     Args:
         response: The model's response text
@@ -138,7 +142,7 @@ def process_urls_in_response(
     Returns:
         Tuple containing:
         - Processed response with URL content for user display
-        - Dictionary of URL content fetched for the model
+        - Dictionary of URL content fetched for model context (for backward compatibility)
     """
     # Extract all URL markers
     url_matches = extract_urls_from_response(response)
@@ -146,33 +150,28 @@ def process_urls_in_response(
     if not url_matches:
         return response, {}
     
-    # Dictionary to hold content fetched for model
+    # Dictionary to hold content fetched for model (kept for backward compatibility)
     model_url_content = {}
     processed_response = response
     
     # Process in reverse order to avoid position changes
-    for marker, url, position, is_for_model in sorted(
+    for marker, url, position, _ in sorted(
         url_matches, key=lambda x: x[2], reverse=True
     ):
-        content = fetch_url_content(url, console, for_model=is_for_model)
+        # We'll fetch content with different formatting based on whether the model needs it
+        # False for user display, True for model context
+        content_for_user = fetch_url_content(url, console, for_model=False)
+        content_for_model = fetch_url_content(url, console, for_model=True)
         
-        if content:
-            if is_for_model:
-                # For model URLs, save content for later use
-                model_url_content[url] = content
-                # Replace marker with a simple note 
-                processed_response = processed_response.replace(
-                    marker, 
-                    f"[Web content from {url} fetched for additional context]", 
-                    1
-                )
-            else:
-                # For user display URLs, insert content directly
-                processed_response = processed_response.replace(
-                    marker, 
-                    f"\n\n{content}\n\n", 
-                    1
-                )
+        if content_for_user and content_for_model:
+            # Insert content for user display
+            processed_response = processed_response.replace(
+                marker, 
+                f"\n\n{content_for_user}\n\n", 
+                1
+            )
+            # Save content for model context
+            model_url_content[url] = content_for_model
         else:
             # If fetching failed, just remove the marker
             processed_response = processed_response.replace(

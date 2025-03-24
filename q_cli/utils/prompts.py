@@ -26,23 +26,19 @@ def load_prompt(prompt_name: str) -> str:
 
 
 def get_system_prompt(
-    include_command_execution: bool = True, context: Optional[str] = None
+    include_command_execution: bool = False, context: Optional[str] = None
 ) -> str:
     """
     Build the complete system prompt from components.
 
     Args:
-        include_command_execution: Whether to include command execution instructions
+        include_command_execution: Whether to include command execution instructions (deprecated)
         context: Optional context to include
 
     Returns:
         Complete system prompt string
     """
     system_prompt = load_prompt("base_system_prompt")
-
-    if include_command_execution:
-        command_execution_prompt = load_prompt("command_execution_prompt")
-        system_prompt += f"\n\n{command_execution_prompt}"
 
     if context:
         context_template = load_prompt("context_prompt")
