@@ -16,8 +16,9 @@ def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]
     """
     Extract URLs that are marked for fetching in the model's response.
     
-    Format: 
-    - <<FETCH_URL:https://example.com>> (can appear inside or outside code blocks)
+    Formats supported: 
+    - FETCH_URL: https://example.com>> (legacy format)
+    - ```FETCH_URL: https://example.com``` (new code block format)
     
     Args:
         response: The model's response text
@@ -25,26 +26,35 @@ def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]
     Returns:
         List of tuples containing (original_marker, url, position, is_for_model)
     """
-    # Create a pattern that matches the URL marker, ignoring code block boundaries
-    pattern = re.compile(f"{re.escape(URL_MARKER_START)}(.*?){re.escape(URL_MARKER_END)}")
     matches = []
     
-    # First pass: find all matches including those in code blocks
-    for match in pattern.finditer(response):
+    # Pattern 1: Legacy format with markers (still supported)
+    legacy_pattern = re.compile(f"{re.escape(URL_MARKER_START)}(.*?){re.escape(URL_MARKER_END)}")
+    
+    for match in legacy_pattern.finditer(response):
         full_match = match.group(0)  # The entire marker
         url = match.group(1).strip()  # Just the URL part
         position = match.start()
+        matches.append((full_match, url, position, False))
+    
+    # Pattern 2: New code block format
+    # This pattern matches ```FETCH_URL: url```
+    # We need to be more careful with this pattern as it might include whitespace and newlines
+    code_block_pattern = re.compile(r"```FETCH_URL:[\s\n]*(.*?)[\s\n]*```", re.DOTALL)
+    
+    for match in code_block_pattern.finditer(response):
+        full_match = match.group(0)  # The entire code block
+        url = match.group(1).strip()  # Just the URL part
+        position = match.start()
         
-        # Check if this match is inside a code block by counting ``` before this position
+        # Check if this is inside a nested code block
         text_before = response[:position]
         code_block_markers = text_before.count("```")
+        is_nested = code_block_markers % 2 == 1
         
-        # If even number of ``` markers, we're outside a code block
-        # If odd number of ``` markers, we're inside a code block
-        is_inside_code_block = code_block_markers % 2 == 1
-        
-        # We now accept markers both inside and outside code blocks
-        matches.append((full_match, url, position, False))
+        # Only process if it's not nested inside another code block
+        if not is_nested:
+            matches.append((full_match, url, position, False))
     
     return matches
 
@@ -103,22 +113,17 @@ def fetch_url_content(url: str, console: Console, for_model: bool = False) -> Op
                     text = text[:15000] + "\n\n[Content truncated due to length]"
                 return f"Content from {url}:\n{text}"
         else:
-            # For user display, format nicely with markdown
+            # For user display, format nicely with a brief summary instead of raw content
             if 'application/json' in content_type:
-                # Return formatted JSON
-                return f"JSON content from {url}:\n```json\n{response.text}\n```"
+                # For JSON, just indicate it was fetched but don't show raw content
+                return f"[info]Successfully fetched JSON content from {url}[/info]"
             elif 'text/html' in content_type:
-                # For HTML, return a simple version with limited length
-                text = response.text
-                if len(text) > 10000:
-                    text = text[:10000] + "\n\n[Content truncated due to length]"
-                return f"HTML content from {url} (truncated):\n```html\n{text}\n```"
+                # For HTML, just indicate it was fetched but don't show raw content
+                return f"[info]Successfully fetched HTML content from {url}[/info]"
             else:
-                # For other content types, return as-is with limited length
-                text = response.text
-                if len(text) > 10000:
-                    text = text[:10000] + "\n\n[Content truncated due to length]"
-                return f"Content from {url}:\n```\n{text}\n```"
+                # For other content types, just indicate it was fetched
+                content_type_info = content_type.split(';')[0] if content_type else "unknown"
+                return f"[info]Successfully fetched content ({content_type_info}) from {url}[/info]"
             
     except requests.RequestException as e:
         error_msg = f"Error fetching URL {url}: {str(e)}"
@@ -164,20 +169,23 @@ def process_urls_in_response(
         content_for_model = fetch_url_content(url, console, for_model=True)
         
         if content_for_user and content_for_model:
-            # Insert content for user display
-            processed_response = processed_response.replace(
-                marker, 
-                f"\n\n{content_for_user}\n\n", 
-                1
-            )
+            # Insert content indicator for user display (simply remove the marker)
+            # We don't want to insert the actual content in the response
+            processed_response = processed_response.replace(marker, "", 1)
+            
+            # Display a simple confirmation message to the user
+            console.print(content_for_user)
             # Save content for model context
             model_url_content[url] = content_for_model
         else:
-            # If fetching failed, just remove the marker
-            processed_response = processed_response.replace(
-                marker, 
-                f"[Failed to fetch content from {url}]", 
-                1
-            )
+            # If fetching failed, retain the error message in the response for the model
+            error_message = f"[Failed to fetch content from {url}]"
+            processed_response = processed_response.replace(marker, error_message, 1)
+            
+            # Also display the error to the user
+            console.print(f"[error]{error_message}[/error]")
+            
+            # Store the error in the model_url_content dictionary so it will be sent to the model
+            model_url_content[url] = f"Error fetching content from {url}. The URL could not be accessed or returned an error."
     
     return processed_response, model_url_content

@@ -275,8 +275,46 @@ def process_response_with_urls(
                             console.print(web_ack_response)
                         console.print("")  # Add empty line after response
                     except Exception as e:
+                        error_msg = f"Error sending web results to model: {str(e)}"
                         if DEBUG:
-                            console.print(f"[red]DEBUG: Error sending web results to model: {str(e)}[/red]")
+                            console.print(f"[red]DEBUG: {error_msg}[/red]")
+                        
+                        # Add the error as a message to the conversation so model is aware of the failure
+                        error_context_message = f"Error occurred while processing web content: {str(e)}"
+                        conversation.append({"role": "user", "content": error_context_message})
+                        
+                        # Make another API call to get the model's response to the error
+                        try:
+                            console.print("[info]Getting model's response to error...[/info]")
+                            error_response = client.messages.create(
+                                model=args.model,
+                                max_tokens=args.max_tokens,
+                                temperature=0,
+                                system=system_prompt,
+                                messages=conversation,
+                            )
+                            
+                            # Add the model's response to conversation
+                            error_ack_response = error_response.content[0].text
+                            conversation.append({"role": "assistant", "content": error_ack_response})
+                            
+                            if DEBUG:
+                                console.print(f"[green]DEBUG: Received error response ({len(error_ack_response)} chars)[/green]")
+                                console.print(f"[red]DEBUG RESPONSE: {error_ack_response}[/red]")
+                            
+                            # Display the model's response to the user
+                            console.print("")  # Add empty line before response
+                            if not args.no_md:
+                                console.print(format_markdown(error_ack_response))
+                            else:
+                                console.print(error_ack_response)
+                            console.print("")  # Add empty line after response
+                            
+                            # Update processed_response to include the model's response
+                            processed_response = error_ack_response
+                        except Exception as error_call_exception:
+                            if DEBUG:
+                                console.print(f"[red]DEBUG: Error getting model response to error: {str(error_call_exception)}[/red]")
     
     # If we have file writing results, create a follow-up message with that information
     if file_results:
@@ -330,8 +368,46 @@ def process_response_with_urls(
                             console.print(file_ack_response)
                         console.print("")  # Add empty line after response
                     except Exception as e:
+                        error_msg = f"Error sending file results to model: {str(e)}"
                         if DEBUG:
-                            console.print(f"[red]DEBUG: Error sending file results to model: {str(e)}[/red]")
+                            console.print(f"[red]DEBUG: {error_msg}[/red]")
+                        
+                        # Add the error as a message to the conversation so model is aware of the failure
+                        error_context_message = f"Error occurred while processing file operations: {str(e)}"
+                        conversation.append({"role": "user", "content": error_context_message})
+                        
+                        # Make another API call to get the model's response to the error
+                        try:
+                            console.print("[info]Getting model's response to error...[/info]")
+                            error_response = client.messages.create(
+                                model=args.model,
+                                max_tokens=args.max_tokens,
+                                temperature=0,
+                                system=system_prompt,
+                                messages=conversation,
+                            )
+                            
+                            # Add the model's response to conversation
+                            error_ack_response = error_response.content[0].text
+                            conversation.append({"role": "assistant", "content": error_ack_response})
+                            
+                            if DEBUG:
+                                console.print(f"[green]DEBUG: Received error response ({len(error_ack_response)} chars)[/green]")
+                                console.print(f"[red]DEBUG RESPONSE: {error_ack_response}[/red]")
+                            
+                            # Display the model's response to the user
+                            console.print("")  # Add empty line before response
+                            if not args.no_md:
+                                console.print(format_markdown(error_ack_response))
+                            else:
+                                console.print(error_ack_response)
+                            console.print("")  # Add empty line after response
+                            
+                            # Update processed_response to include the model's response
+                            processed_response = error_ack_response
+                        except Exception as error_call_exception:
+                            if DEBUG:
+                                console.print(f"[red]DEBUG: Error getting model response to error: {str(error_call_exception)}[/red]")
 
     return processed_response
 
@@ -412,9 +488,10 @@ def process_commands(
 
         # Check if the command is prohibited
         if permission_manager and permission_manager.is_command_prohibited(command):
-            console.print(
-                f"\n[bold red]Command '{command}' is prohibited and cannot be executed.[/bold red]"
-            )
+            error_msg = f"Command '{command}' is prohibited and cannot be executed."
+            console.print(f"\n[bold red]{error_msg}[/bold red]")
+            # Add this error to the results for the model
+            results.append(f"Command: {command}\nError: {error_msg}")
             continue
 
         # Ask for confirmation if needed
@@ -424,7 +501,10 @@ def process_commands(
             )
 
             if not execute:
-                console.print("[yellow]Command execution skipped by user[/yellow]")
+                error_msg = "Command execution skipped by user"
+                console.print(f"[yellow]{error_msg}[/yellow]")
+                # Add this information to the results for the model
+                results.append(f"Command: {command}\nStatus: {error_msg}")
                 continue
 
             # Remember this command type if requested

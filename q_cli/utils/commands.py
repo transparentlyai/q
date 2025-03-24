@@ -393,7 +393,12 @@ def remove_special_markers(response: str) -> str:
     cleaned = pattern.sub("", cleaned)
     
     # Remove FETCH_URL markers
+    # Legacy format
     pattern = re.compile(r"FETCH_URL:(.*?)>>", re.DOTALL)
+    cleaned = pattern.sub("", cleaned)
+    
+    # New code block format
+    pattern = re.compile(r"```FETCH_URL:[\s\n]*(.*?)[\s\n]*```", re.DOTALL)
     cleaned = pattern.sub("", cleaned)
     
     # Clean up any leftover markers
@@ -402,7 +407,10 @@ def remove_special_markers(response: str) -> str:
         "<<RUN_SHELL>>",
         "WRITE_FILE:",
         "RUN_SHELL",
-        "FETCH_URL:"
+        "FETCH_URL:",
+        "```FETCH_URL:",
+        "```WRITE_FILE:",
+        "```RUN_SHELL"
     ]
     
     for marker in leftover_markers:
@@ -691,8 +699,10 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
             input(f"\nWrite file '{expanded_path}' with this content? [y/N]: ").lower().strip()
         )
         if not response.startswith("y"):
-            console.print("[yellow]File writing skipped by user[/yellow]")
-            return False, "", "File writing skipped by user"
+            error_msg = "File writing skipped by user"
+            console.print(f"[yellow]{error_msg}[/yellow]")
+            # Make sure this error is returned so it can be sent to the model
+            return False, "", error_msg
             
         # Write the file
         if DEBUG:
@@ -712,6 +722,7 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
         console.print(f"[red]{error_msg}[/red]")
         if DEBUG:
             console.print(f"[red]DEBUG: File write error: {str(e)}[/red]")
+        # Make sure this detailed error is returned so it can be sent to the model
         return False, "", error_msg
         
         
