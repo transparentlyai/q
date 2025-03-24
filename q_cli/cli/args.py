@@ -1,7 +1,23 @@
 """Command line argument parsing for q_cli."""
 
 import argparse
+import subprocess
+import sys
 from q_cli import __version__
+
+
+def update_command():
+    """Update q to the latest version from GitHub."""
+    try:
+        print("Updating q to the latest version...")
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "--upgrade", 
+            "git+https://github.com/transparentlyai/q.git"
+        ])
+        print("Update completed successfully!")
+    except subprocess.CalledProcessError as e:
+        print(f"Error updating q: {e}")
+    sys.exit(0)
 
 
 def setup_argparse() -> argparse.ArgumentParser:
@@ -87,5 +103,10 @@ def setup_argparse() -> argparse.ArgumentParser:
         action="version",
         version=f"%(prog)s {__version__}",
         help="Show program version and exit",
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Update q to the latest version and exit",
     )
     return parser

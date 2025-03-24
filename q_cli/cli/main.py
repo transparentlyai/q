@@ -31,6 +31,11 @@ def main() -> None:
         sys.argv.append("--interactive")
 
     args = parser.parse_args()
+    
+    # Handle the update command if specified
+    if args.update:
+        from q_cli.cli.args import update_command
+        update_command()
 
     # Initialize console for output
     console = setup_console()
