@@ -24,10 +24,10 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
     context = ""
     context_started = False
 
+    # Get repository root path
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     # Create example config path for reference
-    example_config_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "../../example_config.conf"
-    )
+    example_config_path = os.path.join(repo_root, "example_config.conf")
 
     if os.path.exists(CONFIG_PATH):
         try:
@@ -92,34 +92,11 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                     f"[green]Created config file at {CONFIG_PATH} using example template.[/green]"
                 )
             else:
-                # Create minimal config with default values
-                minimal_config = """# Configuration file for q - AI Command Line Assistant
-# Edit this file to customize behavior
-
-# Anthropic API key (recommended to use environment variable)
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-
-# Model to use (default: claude-3.7-latest)
-MODEL=claude-3.7-latest
-
-# Command permission settings
-# These commands never need permission to run (comma-separated list)
-ALWAYS_APPROVED_COMMANDS=ls,pwd,echo,date,whoami,uptime,uname,hostname,cat
-
-# These commands always require explicit permission
-ALWAYS_RESTRICTED_COMMANDS=sudo,su,chmod,chown,mkfs,dd,systemctl,rm,mv,cp,apt,yum,dnf,pacman,brew,npm,pip
-
-# These commands can never be executed
-PROHIBITED_COMMANDS=rm -rf /,rm -rf /*,mkfs,> /dev/sda,dd if=/dev/zero,:(){:|:&};:,chmod -R 777 /,wget -O- | sh,curl | sh,eval `curl`,shutdown,reboot,halt
-
-# Context section - everything below will be sent with each query
-#CONTEXT
-- You are Q, an AI assistant
-- Be concise in your answers unless asked for detail
-- Format output nicely with Markdown when appropriate
-"""
-                with open(CONFIG_PATH, "w") as f:
-                    f.write(minimal_config)
+                # Use the already defined example_config_path
+                
+                with open(example_config_path, "r") as src, open(CONFIG_PATH, "w") as dest:
+                    dest.write(src.read())
+                
                 console.print(
                     f"[green]Created default config file at {CONFIG_PATH}.[/green]"
                 )
