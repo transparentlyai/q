@@ -1,0 +1,3 @@
+include README.md
+include example_config.conf
+include q_cli/assets/*.md

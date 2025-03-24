@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "q"
-version = "0.7.5"
+version = "0.7.6"
 description = "A command Line AI Assistant for interacting with Claude"
 authors = [{name = "Mauro", email = "mauro@sauco.net"}]
 readme = "README.md"
@@ -44,3 +44,6 @@ packages = ["q_cli", "q_cli.cli", "q_cli.io", "q_cli.utils", "q_cli.assets"]
 
 [tool.setuptools.package-data]
 q_cli = ["assets/*.md"]
+
+[tool.setuptools.data-files]
+"." = ["example_config.conf"]

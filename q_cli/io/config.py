@@ -1,6 +1,7 @@
 """Configuration file handling for q_cli."""
 
 import os
+import sys
 from typing import Dict, Optional, Tuple
 
 from rich.console import Console
@@ -24,10 +25,25 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
     context = ""
     context_started = False
 
-    # Get repository root path
-    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    # Create example config path for reference
-    example_config_path = os.path.join(repo_root, "example_config.conf")
+    # Find example_config.conf in different possible locations
+    # First try the package directory
+    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    repo_root = os.path.dirname(package_dir)
+    
+    # Set up possible locations to find example_config.conf
+    possible_locations = [
+        os.path.join(repo_root, "example_config.conf"),  # Repository root
+        os.path.join(package_dir, "example_config.conf"),  # q_cli package directory
+        os.path.dirname(__file__) + "/../example_config.conf",  # Relative to this file
+        os.path.join(os.path.dirname(sys.executable), "example_config.conf"),  # Next to Python executable
+    ]
+    
+    # Find the first existing config
+    example_config_path = None
+    for path in possible_locations:
+        if os.path.exists(path):
+            example_config_path = path
+            break
 
     if os.path.exists(CONFIG_PATH):
         try:
@@ -83,7 +99,7 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
             os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
 
             # If example config exists, use it as template, otherwise create minimal config
-            if os.path.exists(example_config_path):
+            if example_config_path and os.path.exists(example_config_path):
                 with open(example_config_path, "r") as src, open(
                     CONFIG_PATH, "w"
                 ) as dest:
@@ -92,13 +108,26 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                     f"[green]Created config file at {CONFIG_PATH} using example template.[/green]"
                 )
             else:
-                # Use the already defined example_config_path
-                
-                with open(example_config_path, "r") as src, open(CONFIG_PATH, "w") as dest:
-                    dest.write(src.read())
-                
+                # Create minimal config with default values as fallback
+                minimal_config = """# Configuration file for q - AI Command Line Assistant
+# Edit this file to customize behavior
+
+# Anthropic API key (recommended to use environment variable)
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+MODEL=claude-3.7-latest
+
+# Command permission settings (JSON arrays)
+ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "date", "whoami", "cat"]
+ALWAYS_RESTRICTED_COMMANDS=["sudo", "rm", "mv"]
+PROHIBITED_COMMANDS=["rm -rf /", "shutdown", "reboot"]
+
+#CONTEXT
+- Be concise in your answers unless asked for detail
+"""
+                with open(CONFIG_PATH, "w") as f:
+                    f.write(minimal_config)
                 console.print(
-                    f"[green]Created default config file at {CONFIG_PATH}.[/green]"
+                    f"[green]Created minimal config file at {CONFIG_PATH}.[/green]"
                 )
 
             console.print(
