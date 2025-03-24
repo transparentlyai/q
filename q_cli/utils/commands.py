@@ -5,7 +5,7 @@ import subprocess
 import re
 from typing import Tuple, List, Dict, Any
 from rich.console import Console
-from q_cli.utils.constants import DEBUG
+from q_cli.utils.constants import DEBUG, MAX_FILE_DISPLAY_LENGTH
 
 # Define the special formats for file writing and command execution
 WRITE_FILE_MARKER_START = "WRITE_FILE:"
@@ -470,13 +470,22 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
                 console.print(f"[yellow]DEBUG: Creating directory: {directory}[/yellow]")
             os.makedirs(directory, exist_ok=True)
             
-        # Show the file details and content to the user
+        # Show the file details and truncated content to the user
         console.print("")  # Add spacing for better readability
         console.print(
             f"[bold yellow]Q wants to write a file at:[/bold yellow] {expanded_path}"
         )
-        console.print("[bold yellow]Here's the content of the file:[/bold yellow]")
-        console.print(f"```\n{content}\n```")
+        console.print(f"[bold yellow]Content length:[/bold yellow] {len(content)} bytes")
+        
+        # Truncate content for display if it's too long
+        if len(content) > MAX_FILE_DISPLAY_LENGTH:
+            display_content = content[:MAX_FILE_DISPLAY_LENGTH] + "\n[...content truncated...]"
+            console.print("[bold yellow]Here's a preview of the file content:[/bold yellow]")
+        else:
+            display_content = content
+            console.print("[bold yellow]Here's the content of the file:[/bold yellow]")
+            
+        console.print(f"```\n{display_content}\n```")
         
         # Ask for confirmation
         response = (
