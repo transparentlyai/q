@@ -18,7 +18,6 @@ A simple command-line tool for sending questions to Q AI and getting beautifully
 - 🖥️ Command execution plans - let Q suggest and run comprehensive shell command plans
 - 🔒 Command permission system with session-based approvals
 - 🌐 Web fetching - Q can access up-to-date information from the internet and analyze content for better responses
-- 📝 File creation - Q can create files for you when needed
 
 ## Installation
 
@@ -180,31 +179,4 @@ Q includes a sophisticated command permission system:
 - `--no-command-approval`: Disable command approval system (not recommended)
 - `--version`, `-v`: Show program version and exit
 
-## Development
 
-If you want to contribute to Q, here's how to get started:
-
-1. Clone the repository and install it in development mode:
-   ```bash
-   git clone https://github.com/transparentlyai/q.git
-   cd q
-   pip install -e .
-   ```
-
-2. Run linting and type checking:
-   ```bash
-   flake8 q_cli
-   black q_cli
-   mypy q_cli
-   ```
-
-3. Testing (run after implementing changes):
-   ```bash
-   python -m unittest discover -s tests
-   ```
-
-Note: The project uses pyproject.toml for all package configuration, following modern Python standards.
-
-## License
-
-MIT
