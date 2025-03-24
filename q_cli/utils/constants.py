@@ -21,7 +21,7 @@ PROMPTS_DIR = os.path.join(
 )
 
 # Commands
-EXIT_COMMANDS = ["exit", "quit"]
+EXIT_COMMANDS = ["exit", "quit", "q"]
 SAVE_COMMAND_PREFIX = "save "
 
 # Default permission-related values in JSON format
@@ -36,6 +36,34 @@ DEFAULT_ALWAYS_APPROVED_COMMANDS: list[str] = [
     "uname",
     "hostname",
     "cat",
+    "find",
+    "sed",
+    "chmod",
+    "chown",
+    "chgrp",
+    "ps",
+    "env",
+    "printenv",
+    "export",
+    "cd",
+    "dirs",
+    "realpath",
+    "touch",
+    "mkdir",
+    "cp",
+    "mv",
+    "head",
+    "tail",
+    "wc",
+    "sort",
+    "uniq",
+    "cut",
+    "join",
+    "comm",
+    "diff",
+    "df",
+    "du",
+    "git",
 ]
 
 DEFAULT_ALWAYS_RESTRICTED_COMMANDS: list[str] = [
