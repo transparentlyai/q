@@ -63,10 +63,13 @@ def fetch_url_content(url: str, console: Console, for_model: bool = False) -> Op
         The content of the URL, or None if there was an error
     """
     try:
-        # Only show debug info if in DEBUG mode
+        # Always show a dim fetching message
+        console.print(f"[dim]Fetching {url}[/dim]")
+        
+        # Show additional debug info if in DEBUG mode
         if DEBUG:
-            console.print(f"[info]Fetching content from {url}...[/info]")
             console.print(f"[yellow]DEBUG: Requesting URL {url}[/yellow]")
+            
         response = requests.get(url, timeout=10)
         response.raise_for_status()  # Raise exception for HTTP errors
         
