@@ -90,6 +90,7 @@ def run_conversation(
                     
                     # Process operations in the response
                     operation_results = []
+                    has_operation_error = False
                     
                     # 1. Process URLs if web fetching is enabled
                     url_results = None
@@ -97,6 +98,7 @@ def run_conversation(
                         url_processed_response, url_content, url_has_error = process_urls_in_response(
                             response, console, False
                         )
+                        has_operation_error = has_operation_error or url_has_error
                         
                         if url_content:
                             web_content = "\n\n".join(
@@ -120,6 +122,7 @@ def run_conversation(
                         file_processed_response, file_ops_results, file_has_error = process_file_writes(
                             response, console, False
                         )
+                        has_operation_error = has_operation_error or file_has_error
                         
                         if file_ops_results:
                             file_messages = []
@@ -157,11 +160,16 @@ def run_conversation(
                             command_results_str, cmd_has_error = process_commands(
                                 filtered_commands, console, permission_manager, False
                             )
+                            has_operation_error = has_operation_error or cmd_has_error
                             
                             if command_results_str:
                                 command_results_data = get_command_result_prompt(command_results_str)
                     
-                    # 4. Combine all operation results
+                    # 4. Display error message if any operation failed
+                    if has_operation_error:
+                        console.print("[red]Operation error[/red]")
+                    
+                    # 5. Combine all operation results
                     if url_results:
                         operation_results.append(url_results)
                     if file_results_data:
@@ -169,7 +177,7 @@ def run_conversation(
                     if command_results_data:
                         operation_results.append(command_results_data)
                     
-                    # 5. If we have operation results, add them to conversation as user message
+                    # 6. If we have operation results, add them to conversation as user message
                     if operation_results:
                         combined_results = "\n\n".join(operation_results)
                         conversation.append({"role": "user", "content": combined_results})
