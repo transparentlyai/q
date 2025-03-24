@@ -169,25 +169,77 @@ Q includes a sophisticated command permission system that balances security with
 Q comes with the following default command permissions:
 
 #### Default Approved Commands (auto-approved)
-```
-ls, pwd, echo, date, whoami, uptime, uname, hostname, cat, find, 
-sed, chmod, chown, chgrp, ps, env, printenv, export, cd, dirs, 
-realpath, touch, mkdir, cp, mv, head, tail, wc, sort, uniq, 
-cut, join, comm, diff, df, du, git
-```
+- `ls` - List directory contents
+- `pwd` - Print working directory
+- `echo` - Display a line of text
+- `date` - Display or set date and time
+- `whoami` - Print current user
+- `uptime` - System uptime
+- `uname` - Print system information
+- `hostname` - Print system name
+- `cat` - Concatenate and display files
+- `find` - Search for files
+- `sed` - Stream editor for filtering/transforming text
+- `chmod` - Change file permissions
+- `chown` - Change file owner
+- `chgrp` - Change group ownership
+- `ps` - Report process status
+- `env` - Display environment
+- `printenv` - Print environment variables
+- `export` - Set environment variables
+- `cd` - Change directory
+- `dirs` - Display directory stack
+- `realpath` - Print resolved path
+- `touch` - Change file timestamps
+- `mkdir` - Create directories
+- `cp` - Copy files
+- `mv` - Move files
+- `head` - Output first part of files
+- `tail` - Output last part of files
+- `wc` - Print line, word, and byte counts
+- `sort` - Sort lines of text files
+- `uniq` - Report or filter out repeated lines
+- `cut` - Remove sections from lines
+- `join` - Join lines on a common field
+- `comm` - Compare sorted files
+- `diff` - Compare files
+- `df` - Report file system disk space usage
+- `du` - Estimate file space usage
+- `git` - Version control system
 
 #### Default Restricted Commands (require permission)
-```
-sudo, su, chmod, chown, mkfs, dd, systemctl, rm, mv, cp, apt, 
-yum, dnf, pacman, brew, npm, pip
-```
+- `sudo` - Execute command as another user
+- `su` - Change user ID or become superuser
+- `chmod` - Change file permissions
+- `chown` - Change file owner
+- `mkfs` - Build a Linux filesystem
+- `dd` - Convert and copy a file
+- `systemctl` - Control systemd system
+- `rm` - Remove files or directories
+- `mv` - Move/rename files
+- `cp` - Copy files
+- `apt` - Package management
+- `yum` - Package management
+- `dnf` - Package management
+- `pacman` - Package management
+- `brew` - Package management
+- `npm` - Node.js package management
+- `pip` - Python package management
 
 #### Default Prohibited Commands (never allowed)
-```
-rm -rf /, rm -rf /*, mkfs, > /dev/sda, dd if=/dev/zero, 
-:(){:|:&};:, chmod -R 777 /, wget -O- | sh, curl | sh, 
-eval `curl`, shutdown, reboot, halt
-```
+- `rm -rf /` - Delete entire filesystem
+- `rm -rf /*` - Delete all files in root
+- `mkfs` - Create filesystem (can erase disk)
+- `> /dev/sda` - Erase disk
+- `dd if=/dev/zero` - Zero out device
+- `:(){:|:&};:` - Fork bomb
+- `chmod -R 777 /` - Give everyone full permissions to all files
+- `wget -O- | sh` - Download and execute script
+- `curl | sh` - Download and execute script
+- `eval \`curl\`` - Download and execute script
+- `shutdown` - Shut down system
+- `reboot` - Restart system
+- `halt` - Stop system
 
 You can add your own commands to any of these categories in your configuration file.
 

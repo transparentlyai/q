@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "q"
-version = "0.8.1.3"
+version = "0.8.1.4"
 description = "A command Line AI Assistant for interacting with Claude"
 authors = [{name = "Mauro", email = "mauro@sauco.net"}]
 readme = "README.md"
