@@ -61,6 +61,8 @@ For a complete example of all available configuration options, refer to the [exa
 
 See the [example configuration file](https://github.com/transparentlyai/q/blob/main/q_cli/example_config.conf) for recommended values.
 
+**Note:** Command lists in your configuration file are added to the built-in defaults, not replacing them. This ensures core security features remain active while allowing you to customize permissions.
+
 Environment variables in the config file are expanded using the syntax `$VAR` or `${VAR}`.
 
 Check the anthropic available models here: https://docs.anthropic.com/en/docs/about-claude/models/all-models
@@ -132,16 +134,62 @@ In interactive mode, you can:
 
 ### Command Permission System
 
-Q includes a sophisticated command permission system:
+Q includes a sophisticated command permission system that balances security with convenience:
 
-- **Command Categories**: Commands can be categorized as approved, restricted, or prohibited in your config file
+- **Command Categories**: Commands are classified into three categories:
+  - **Approved Commands**: Automatically executed without asking for permission
+  - **Restricted Commands**: Always require explicit permission before execution
+  - **Prohibited Commands**: Never allowed to execute, regardless of user input
+
+- **Permission Hierarchy**: When determining if a command needs permission, Q follows this priority order:
+  1. If the command is prohibited → Never execute (highest priority)
+  2. If the command is restricted → Always require permission
+  3. If the command was previously approved in this session → Auto-approve
+  4. If the command is in the approved list → Auto-approve
+  5. By default, ask for permission (lowest priority)
+
+- **Default + Configuration**: The command permissions combine both built-in defaults and your configuration:
+  - Default commands are always included for security and functionality
+  - Commands in your config file are added to these defaults, not replacing them
+  - You can add your frequently used commands to the approved list in your config
+
 - **Session-Based Approvals**: When you approve a command once, Q remembers it for the current session
+
 - **Approval Options**: When prompted about executing a command, you can:
   - `y` or `yes`: Execute this one time
   - `a` or `always`: Always execute this command type in the current session
   - `n` or `no`: Don't execute this command
+
 - **Command Pattern Matching**: Commands are matched against patterns, not just exact matches
+
 - **Security First**: Potentially dangerous commands require explicit permission
+
+### Default Permissions
+
+Q comes with the following default command permissions:
+
+#### Default Approved Commands (auto-approved)
+```
+ls, pwd, echo, date, whoami, uptime, uname, hostname, cat, find, 
+sed, chmod, chown, chgrp, ps, env, printenv, export, cd, dirs, 
+realpath, touch, mkdir, cp, mv, head, tail, wc, sort, uniq, 
+cut, join, comm, diff, df, du, git
+```
+
+#### Default Restricted Commands (require permission)
+```
+sudo, su, chmod, chown, mkfs, dd, systemctl, rm, mv, cp, apt, 
+yum, dnf, pacman, brew, npm, pip
+```
+
+#### Default Prohibited Commands (never allowed)
+```
+rm -rf /, rm -rf /*, mkfs, > /dev/sda, dd if=/dev/zero, 
+:(){:|:&};:, chmod -R 777 /, wget -O- | sh, curl | sh, 
+eval `curl`, shutdown, reboot, halt
+```
+
+You can add your own commands to any of these categories in your configuration file.
 
 ## Command-line Options
 
