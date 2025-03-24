@@ -2,22 +2,22 @@
 
 import os
 import sys
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Any
 import anthropic
 from prompt_toolkit import PromptSession
 from rich.console import Console
 
 from q_cli.utils.constants import SAVE_COMMAND_PREFIX, DEBUG, HISTORY_PATH
-from q_cli.utils.helpers import handle_api_error
+from q_cli.utils.helpers import handle_api_error, format_markdown
 from q_cli.io.input import get_input
 from q_cli.io.output import save_response_to_file
-from q_cli.utils.helpers import format_markdown
 from q_cli.utils.commands import (
     extract_commands_from_response,
     ask_command_confirmation,
     execute_command,
     format_command_output,
     process_file_writes,
+    remove_special_markers,
     WRITE_FILE_MARKER_START,
 )
 from q_cli.utils.permissions import CommandPermissionManager
@@ -35,7 +35,7 @@ def run_conversation(
     permission_manager: Optional[CommandPermissionManager] = None,
 ) -> None:
     """
-    Run the conversation loop with Q.
+    Run the continuous conversation loop with Claude.
 
     Args:
         client: Anthropic client
@@ -43,36 +43,21 @@ def run_conversation(
         args: Command line arguments
         prompt_session: PromptSession for input
         console: Console for output
-        initial_question: First question to send to Q
+        initial_question: First question to send to Claude
+        permission_manager: Optional manager for command permissions
     """
-    # Initialize conversation history and input history
+    # Initialize conversation history
     conversation: List[Dict[str, str]] = []
-    input_history: List[str] = []
-    question = initial_question
     
-    # Track if we're in a continuation (prevents duplicate errors)
-    in_continuation = False
-
-    # Process questions (initial and then interactive if enabled)
     try:
-        while question:
-            # Check for exit command before processing
-            if question.strip().lower() in ["exit", "quit"]:
-                sys.exit(0)
-
-            # Add user message to conversation and input history
-            conversation.append({"role": "user", "content": question})
-
-            # Only add non-empty questions that aren't duplicates of the last entry
-            if question.strip() and (
-                not input_history or question != input_history[-1]
-            ):
-                input_history.append(question.strip())
-
-            # Send question to Claude
-            try:
-                # Reset continuation flag for new questions
-                if not in_continuation:
+        # Add initial user question to conversation
+        if initial_question.strip():
+            conversation.append({"role": "user", "content": initial_question})
+            
+            # Main conversation loop - continues until explicit exit
+            while True:
+                try:
+                    # Call Claude API with current conversation
                     with console.status("[info]Thinking...[/info]"):
                         message = client.messages.create(
                             model=args.model,
@@ -81,104 +66,144 @@ def run_conversation(
                             system=system_prompt,
                             messages=conversation,  # type: ignore
                         )
-
-                    # Get response
+                    
+                    # Get Claude's response
                     response = message.content[0].text  # type: ignore
                     
                     if DEBUG:
                         console.print(f"[yellow]DEBUG: Received model response ({len(response)} chars)[/yellow]")
                         console.print(f"[red]DEBUG RESPONSE: {response}[/red]")
-
-                # Process response, handle URLs, file writes, and update conversation
-                # We'll only show errors once in new user messages, not continuations
-                # Create state dictionary to track continuation state changes
-                continuation_state = {'in_continuation': in_continuation}
-                processed_response = process_response_with_urls(
-                    response, args, console, conversation, client, system_prompt, 
-                    show_errors=not in_continuation,
-                    continuation_state=continuation_state
-                )
-                # Update the in_continuation flag based on the state dictionary
-                in_continuation = continuation_state.get('in_continuation', in_continuation)
-
-                # Check for command suggestions in the response
-                if not getattr(args, "no_execute", False):
-                    command_response = processed_response
-                    file_op_patterns = [
-                        "[File written:",
-                        "[Failed to write file:",
-                        "RUN_SHELL",
-                        "```RUN_SHELL"
-                    ]
                     
-                    has_error = False
-                    commands = extract_commands_from_response(command_response)
-                    filtered_commands = []
-                    for cmd in commands:
-                        # Skip if it looks like a file operation message
-                        if any(pattern in cmd for pattern in file_op_patterns):
-                            continue
-                        filtered_commands.append(cmd)
+                    # Add Claude's response to conversation history
+                    conversation.append({"role": "assistant", "content": response})
                     
-                    if filtered_commands:
-                        # Process commands but don't show errors (they'll be shown centrally)
-                        command_results, cmd_has_error = process_commands(
-                            filtered_commands, console, permission_manager, False
+                    # Process response for display (handle URL markers, file write markers)
+                    display_response = remove_special_markers(response)
+                    
+                    # Print formatted response
+                    console.print("")  # Add empty line before response
+                    if not args.no_md:
+                        console.print(format_markdown(display_response))
+                    else:
+                        console.print(display_response)
+                    console.print("")  # Add empty line after response
+                    
+                    # Process operations in the response
+                    operation_results = []
+                    
+                    # 1. Process URLs if web fetching is enabled
+                    url_results = None
+                    if not getattr(args, "no_web", False):
+                        url_processed_response, url_content, url_has_error = process_urls_in_response(
+                            response, console, False
                         )
-                        has_error = has_error or cmd_has_error
                         
-                        if command_results:
-                            # We're now entering continuation mode (prevents duplicate errors)
-                            in_continuation = True
-                            
-                            # Add the command results to the conversation
-                            follow_up = get_command_result_prompt(command_results)
-                            conversation.append({"role": "user", "content": follow_up})
-
-                            # Get Q's analysis of the command results
-                            with console.status(
-                                "[info]Analyzing command results...[/info]"
-                            ):
-                                analysis = client.messages.create(
-                                    model=args.model,
-                                    max_tokens=args.max_tokens,
-                                    temperature=0,
-                                    system=system_prompt,
-                                    messages=conversation,  # type: ignore
-                                )
-
-                            # Get Q's analysis
-                            analysis_response = analysis.content[0].text  # type: ignore
-                            
-                            if DEBUG:
-                                console.print(f"[yellow]DEBUG: Received command analysis response ({len(analysis_response)} chars)[/yellow]")
-                                console.print(f"[red]DEBUG RESPONSE: {analysis_response}[/red]")
-
-                            # Process analysis response, handle URLs, and update conversation
-                            # Create state dictionary to track continuation state changes
-                            continuation_state = {'in_continuation': in_continuation}
-                            process_response_with_urls(
-                                analysis_response, args, console, conversation, client, system_prompt,
-                                continuation_state=continuation_state
+                        if url_content:
+                            web_content = "\n\n".join(
+                                [
+                                    f"Web content fetched from {url}:\n{content}"
+                                    for url, content in url_content.items()
+                                ]
                             )
-                            # Update the in_continuation flag based on the state dictionary
-                            in_continuation = continuation_state.get('in_continuation', in_continuation)
-
-                # If not in interactive mode, exit after first response
-                if args.no_interactive:
-                    break
-
-                # Get next question and handle empty inputs if --no-empty flag is set
-                question = handle_next_input(
-                    args, prompt_session, conversation, console
-                )
+                            
+                            url_results = (
+                                "I've fetched additional information from the web "
+                                "based on your request. Here's what I found:\n\n" + web_content
+                            )
+                    
+                    # 2. Process file operations if enabled
+                    file_results_data = None
+                    if not getattr(args, "no_file_write", False):
+                        if WRITE_FILE_MARKER_START in response:
+                            console.print("[info]Processing file operations...[/info]")
+                            
+                        file_processed_response, file_ops_results, file_has_error = process_file_writes(
+                            response, console, False
+                        )
+                        
+                        if file_ops_results:
+                            file_messages = []
+                            for result in file_ops_results:
+                                if result["success"]:
+                                    file_messages.append(f"Successfully wrote file: {result['file_path']}")
+                                else:
+                                    file_messages.append(f"Failed to write file {result['file_path']}: {result['stderr']}")
+                            
+                            file_results_data = (
+                                "I've processed your file writing requests. Here are the results:\n\n" + 
+                                "\n".join(file_messages)
+                            )
+                    
+                    # 3. Process commands if enabled
+                    command_results_data = None
+                    if not getattr(args, "no_execute", False):
+                        commands = extract_commands_from_response(response)
+                        filtered_commands = []
+                        
+                        # Filter out file operation messages
+                        file_op_patterns = [
+                            "[File written:",
+                            "[Failed to write file:",
+                            "RUN_SHELL",
+                            "```RUN_SHELL"
+                        ]
+                        
+                        for cmd in commands:
+                            if not any(pattern in cmd for pattern in file_op_patterns):
+                                filtered_commands.append(cmd)
+                        
+                        if filtered_commands:
+                            console.print("[info]Processing commands...[/info]")
+                            command_results_str, cmd_has_error = process_commands(
+                                filtered_commands, console, permission_manager, False
+                            )
+                            
+                            if command_results_str:
+                                command_results_data = get_command_result_prompt(command_results_str)
+                    
+                    # 4. Combine all operation results
+                    if url_results:
+                        operation_results.append(url_results)
+                    if file_results_data:
+                        operation_results.append(file_results_data)
+                    if command_results_data:
+                        operation_results.append(command_results_data)
+                    
+                    # 5. If we have operation results, add them to conversation as user message
+                    if operation_results:
+                        combined_results = "\n\n".join(operation_results)
+                        conversation.append({"role": "user", "content": combined_results})
+                        # Continue loop to let Claude process the results
+                        continue
+                    
+                    # If not in interactive mode and no more operations to process, exit loop
+                    if args.no_interactive:
+                        break
+                    
+                    # Get next user input
+                    next_question = handle_next_input(args, prompt_session, conversation, console)
+                    
+                    # Check for exit command
+                    if next_question.strip().lower() in ["exit", "quit"]:
+                        sys.exit(0)
+                    
+                    # Add user input to conversation
+                    if next_question.strip():
+                        conversation.append({"role": "user", "content": next_question})
+                    else:
+                        # If empty input and we require non-empty inputs, get a new input
+                        if args.no_empty:
+                            continue
+                        # Otherwise add the empty input to trigger a Claude response
+                        conversation.append({"role": "user", "content": next_question})
                 
-                # Reset continuation flag for next user input
-                in_continuation = False
-
-            except Exception as e:
-                handle_api_error(e, console)
-
+                except Exception as e:
+                    handle_api_error(e, console)
+                    
+                    # Add error message to conversation
+                    error_message = f"An error occurred: {str(e)}"
+                    conversation.append({"role": "user", "content": error_message})
+    
     except (KeyboardInterrupt, EOFError):
         # Handle Ctrl+C or Ctrl+D gracefully
         pass
@@ -193,276 +218,14 @@ def run_conversation(
         sys.exit(0)
 
 
-def process_response_with_urls(
-    response: str, args, console: Console, conversation: List[Dict[str, str]], 
-    client=None, system_prompt=None, show_errors: bool = True,
-    continuation_state: Optional[Dict[str, Any]] = None
-) -> str:
-    """
-    Process a response from the model, handle any URLs and file writes, and update the conversation.
-
-    Args:
-        response: The model's response text
-        args: Command line arguments
-        console: Console for output
-        conversation: Current conversation history
-        client: Optional Anthropic client for callbacks
-        system_prompt: Optional system prompt for callbacks
-        show_errors: Whether to display error messages (default True)
-        continuation_state: Optional dictionary to track continuation state
-        
-    Returns:
-        The processed response after handling URLs and file writes
-    """
-    model_url_content: Dict[str, str] = {}
-    processed_response = response
-    has_error = False
-    
-    # Process any URLs in the response if web fetching is enabled
-    if not getattr(args, "no_web", False):
-        processed_response, model_url_content, url_has_error = process_urls_in_response(
-            processed_response, console, False  # Always suppress errors, we'll handle them here
-        )
-        has_error = has_error or url_has_error
-    
-    # Clean special markers from response before displaying to user
-    from q_cli.utils.commands import remove_special_markers
-    display_response = remove_special_markers(processed_response)
-    
-    # Print formatted response first, before handling file writes
-    console.print("")  # Add empty line before response
-    
-    if not args.no_md:
-        console.print(format_markdown(display_response))
-    else:
-        console.print(display_response)
-    console.print("")  # Add empty line after response
-    
-    # Process any file writing markers in the response if file writing is enabled
-    file_results: List[Dict[str, Any]] = []
-    if not getattr(args, "no_file_write", False):
-        # Check if there are any file write markers before showing the processing message
-        if WRITE_FILE_MARKER_START in processed_response:
-            console.print("[info]Processing file operations...[/info]")
-        processed_response, file_results, file_has_error = process_file_writes(
-            processed_response, console, False  # Pass False to suppress error messages
-        )
-        has_error = has_error or file_has_error
-    
-    # Add the original (unprocessed) response to conversation history
-    # This ensures URLs are preserved for context in follow-up questions
-    conversation.append({"role": "assistant", "content": response})
-
-    # If we have URL content for the model, create a follow-up message with that content
-    if model_url_content and not getattr(args, "no_web", False):
-        web_content = "\n\n".join(
-            [
-                f"Web content fetched from {url}:\n{content}"
-                for url, content in model_url_content.items()
-            ]
-        )
-
-        if web_content:
-            if continuation_state is not None:
-                continuation_state['in_continuation'] = True
-            
-            web_context_message = (
-                "I've fetched additional information from the web "
-                "based on your request. Here's what I found:\n\n" + web_content
-            )
-            conversation.append({"role": "user", "content": web_context_message})
-            
-            if client and system_prompt and not getattr(args, "no_web", False):
-                if DEBUG:
-                    console.print("[yellow]DEBUG: Sending web fetch results to model...[/yellow]")
-                console.print("[info]Processing web content...[/info]")
-                if has_error and show_errors:
-                    console.print("[red]Operation failed.[/red]")
-                    
-                with console.status("[info]Calling API with web content...[/info]"):
-                    try:
-                        web_result_response = client.messages.create(
-                            model=args.model,
-                            max_tokens=args.max_tokens,
-                            temperature=0,
-                            system=system_prompt,
-                            messages=conversation,
-                        )
-                        
-                        # Add the model's response to conversation
-                        web_ack_response = web_result_response.content[0].text
-                        conversation.append({"role": "assistant", "content": web_ack_response})
-                        
-                        if DEBUG:
-                            console.print(f"[green]DEBUG: Received web content response ({len(web_ack_response)} chars)[/green]")
-                            console.print(f"[red]DEBUG RESPONSE: {web_ack_response}[/red]")
-                            
-                        # Update processed_response to include the model's response
-                        processed_response = web_ack_response
-                        
-                        # Display the model's response to the user
-                        console.print("")  # Add empty line before response
-                        if not args.no_md:
-                            console.print(format_markdown(web_ack_response))
-                        else:
-                            console.print(web_ack_response)
-                        console.print("")  # Add empty line after response
-                    except Exception as e:
-                        error_msg = f"Error sending web results to model: {str(e)}"
-                        if DEBUG:
-                            console.print(f"[red]DEBUG: {error_msg}[/red]")
-                        
-                        # Add the error as a message to the conversation so model is aware of the failure
-                        error_context_message = f"Error occurred while processing web content: {str(e)}"
-                        conversation.append({"role": "user", "content": error_context_message})
-                        
-                        # Make another API call to get the model's response to the error
-                        try:
-                            console.print("[info]Getting model's response to error...[/info]")
-                            error_response = client.messages.create(
-                                model=args.model,
-                                max_tokens=args.max_tokens,
-                                temperature=0,
-                                system=system_prompt,
-                                messages=conversation,
-                            )
-                            
-                            # Add the model's response to conversation
-                            error_ack_response = error_response.content[0].text
-                            conversation.append({"role": "assistant", "content": error_ack_response})
-                            
-                            if DEBUG:
-                                console.print(f"[green]DEBUG: Received error response ({len(error_ack_response)} chars)[/green]")
-                                console.print(f"[red]DEBUG RESPONSE: {error_ack_response}[/red]")
-                            
-                            # Display the model's response to the user
-                            console.print("")  # Add empty line before response
-                            if not args.no_md:
-                                console.print(format_markdown(error_ack_response))
-                            else:
-                                console.print(error_ack_response)
-                            console.print("")  # Add empty line after response
-                            
-                            # Update processed_response to include the model's response
-                            processed_response = error_ack_response
-                        except Exception as error_call_exception:
-                            if DEBUG:
-                                console.print(f"[red]DEBUG: Error getting model response to error: {str(error_call_exception)}[/red]")
-    
-    # If we have file writing results, create a follow-up message with that information
-    if file_results:
-        file_messages = []
-        for result in file_results:
-            if result["success"]:
-                file_messages.append(f"Successfully wrote file: {result['file_path']}")
-            else:
-                file_messages.append(f"Failed to write file {result['file_path']}: {result['stderr']}")
-        
-        if file_messages:
-            # We're now entering continuation mode (prevents duplicate errors)
-            # Set continuation state if provided
-            if continuation_state is not None:
-                continuation_state['in_continuation'] = True
-            
-            file_context_message = (
-                "I've processed your file writing requests. Here are the results:\n\n" + 
-                "\n".join(file_messages)
-            )
-            conversation.append({"role": "user", "content": file_context_message})
-            
-            # Make an API call to tell the model about the file write results
-            if client and system_prompt and not getattr(args, "no_file_write", False):
-                if DEBUG:
-                    console.print("[yellow]DEBUG: Sending file operation results to model...[/yellow]")
-                # Use an explicit message to indicate we're processing file results
-                console.print("[info]Processing file operation results...[/info]")
-                
-                # Now is a good time to show the error message, if needed
-                if has_error and show_errors:
-                    console.print("[red]Operation failed.[/red]")
-                    
-                # Use the status for API call, but with a different message to avoid repetition
-                with console.status("[info]Calling API with file operation results...[/info]"):
-                    try:
-                        file_result_response = client.messages.create(
-                            model=args.model,
-                            max_tokens=args.max_tokens,
-                            temperature=0,
-                            system=system_prompt,
-                            messages=conversation,
-                        )
-                        
-                        # Add the model's acknowledgment to conversation
-                        file_ack_response = file_result_response.content[0].text
-                        conversation.append({"role": "assistant", "content": file_ack_response})
-                        
-                        if DEBUG:
-                            console.print(f"[green]DEBUG: Received file operations response ({len(file_ack_response)} chars)[/green]")
-                            console.print(f"[red]DEBUG RESPONSE: {file_ack_response}[/red]")
-                            
-                        # Update processed_response to include the model's acknowledgment
-                        processed_response = file_ack_response
-                        
-                        # Display the model's response to the user
-                        console.print("")  # Add empty line before response
-                        if not args.no_md:
-                            console.print(format_markdown(file_ack_response))
-                        else:
-                            console.print(file_ack_response)
-                        console.print("")  # Add empty line after response
-                    except Exception as e:
-                        error_msg = f"Error sending file results to model: {str(e)}"
-                        if DEBUG:
-                            console.print(f"[red]DEBUG: {error_msg}[/red]")
-                        
-                        # Add the error as a message to the conversation so model is aware of the failure
-                        error_context_message = f"Error occurred while processing file operations: {str(e)}"
-                        conversation.append({"role": "user", "content": error_context_message})
-                        
-                        # Make another API call to get the model's response to the error
-                        try:
-                            console.print("[info]Getting model's response to error...[/info]")
-                            error_response = client.messages.create(
-                                model=args.model,
-                                max_tokens=args.max_tokens,
-                                temperature=0,
-                                system=system_prompt,
-                                messages=conversation,
-                            )
-                            
-                            # Add the model's response to conversation
-                            error_ack_response = error_response.content[0].text
-                            conversation.append({"role": "assistant", "content": error_ack_response})
-                            
-                            if DEBUG:
-                                console.print(f"[green]DEBUG: Received error response ({len(error_ack_response)} chars)[/green]")
-                                console.print(f"[red]DEBUG RESPONSE: {error_ack_response}[/red]")
-                            
-                            # Display the model's response to the user
-                            console.print("")  # Add empty line before response
-                            if not args.no_md:
-                                console.print(format_markdown(error_ack_response))
-                            else:
-                                console.print(error_ack_response)
-                            console.print("")  # Add empty line after response
-                            
-                            # Update processed_response to include the model's response
-                            processed_response = error_ack_response
-                        except Exception as error_call_exception:
-                            if DEBUG:
-                                console.print(f"[red]DEBUG: Error getting model response to error: {str(error_call_exception)}[/red]")
-
-    return processed_response
-
-
 def process_commands(
     commands: List[str],
     console: Console,
     permission_manager: Optional["CommandPermissionManager"] = None,
     show_errors: bool = True
-) -> Tuple[Optional[str], bool]:
+) -> tuple[Optional[str], bool]:
     """
-    Process and execute commands extracted from Q's response.
+    Process and execute commands extracted from Claude's response.
 
     Args:
         commands: List of commands to execute
@@ -488,9 +251,6 @@ def process_commands(
         if not command.strip() or WRITE_FILE_MARKER_START in command:
             continue
 
-        # Skip any file creation commands that might have been detected
-        # File creation should only happen through WRITE_FILE blocks now
-
         # Check if the command is prohibited
         if permission_manager and permission_manager.is_command_prohibited(command):
             error_msg = f"Command '{command}' is prohibited and cannot be executed."
@@ -511,7 +271,7 @@ def process_commands(
                 error_msg = "Command execution skipped by user"
                 if DEBUG:
                     console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
-                # Add this information to the results for the model
+                # Add this information to the results for Claude
                 results.append(f"Command: {command}\nStatus: {error_msg}")
                 has_error = True
                 continue
@@ -585,6 +345,6 @@ def handle_next_input(
             # Continue to get a new question
             continue
 
-        # If input is not empty or --no-empty flag is not set, proceed
-        if not args.no_empty or question.strip():
-            return question
+        # Return the question regardless of empty or not
+        # The calling function will handle empty inputs based on args.no_empty
+        return question
