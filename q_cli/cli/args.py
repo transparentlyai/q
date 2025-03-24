@@ -77,6 +77,11 @@ def setup_argparse() -> argparse.ArgumentParser:
         help="Disable file writing functionality",
     )
     parser.add_argument(
+        "--file-tree",
+        action="store_true",
+        help="Include file tree of current directory in context",
+    )
+    parser.add_argument(
         "--version",
         "-v",
         action="version",

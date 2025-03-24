@@ -2,11 +2,12 @@
 
 import os
 import sys
-from typing import Dict, Optional, Tuple
+import subprocess
+from typing import Dict, Optional, Tuple, List
 
 from rich.console import Console
 
-from q_cli.utils.constants import CONFIG_PATH, REDACTED_TEXT
+from q_cli.utils.constants import CONFIG_PATH, REDACTED_TEXT, DEBUG, INCLUDE_FILE_TREE, MAX_FILE_TREE_ENTRIES
 from q_cli.utils.helpers import contains_sensitive_info, expand_env_vars
 
 
@@ -122,6 +123,9 @@ ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "date", "whoami", "cat"]
 ALWAYS_RESTRICTED_COMMANDS=["sudo", "rm", "mv"]
 PROHIBITED_COMMANDS=["rm -rf /", "shutdown", "reboot"]
 
+# Display settings
+# INCLUDE_FILE_TREE=true # Uncomment to include file tree in context
+
 #CONTEXT
 - Be concise in your answers unless asked for detail
 """
@@ -212,4 +216,154 @@ def build_context(args, config_context: str, console: Console) -> str:
             f"[info]Combined context length: {len(context)} characters[/info]"
         )
 
+    # Add the current directory file tree to the context if enabled
+    if INCLUDE_FILE_TREE:
+        file_tree = generate_file_tree(console)
+        if file_tree:
+            if context:
+                context += "\n\n"
+            context += "Current directory file structure:\n```\n" + file_tree + "\n```"
+            
+            if DEBUG:
+                console.print("[info]Added file tree to context[/info]")
+
     return context
+
+
+def generate_file_tree(console: Console) -> str:
+    """
+    Generate a tree view of the current directory.
+    
+    Returns:
+        A string representation of the directory tree
+    """
+    try:
+        # Check if 'tree' command is available
+        try:
+            # Try using the tree command first for better formatting
+            # Exclude common directories to avoid clutter
+            tree_cmd = [
+                "tree", "-L", "3", "--noreport", 
+                "-I", "node_modules|venv|__pycache__|.git|.idea|.vscode|dist|build"
+            ]
+            
+            result = subprocess.run(
+                tree_cmd,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                tree_output = result.stdout.strip()
+                if DEBUG:
+                    console.print(f"[info]Generated file tree using 'tree' command[/info]")
+                return tree_output
+        except FileNotFoundError:
+            # Tree command not available, we'll use the fallback method
+            if DEBUG:
+                console.print("[yellow]DEBUG: 'tree' command not found, using fallback method[/yellow]")
+            pass
+        
+        # Fallback to find command
+        cmd = ["find", ".", "-type", "d", "-o", "-type", "f", 
+               "-not", "-path", "*/\\.*", 
+               "-not", "-path", "*/venv/*", 
+               "-not", "-path", "*/node_modules/*",
+               "-not", "-path", "*/__pycache__/*",
+               "-not", "-path", "*/dist/*",
+               "-not", "-path", "*/build/*",
+               "-maxdepth", "3"]
+               
+        # Execute the find command
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        if result.returncode != 0:
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Error generating file tree: {result.stderr}[/yellow]")
+            return ""
+        
+        # Process the output to create a more visually appealing tree
+        lines = result.stdout.strip().split('\n')
+        
+        # Build a tree structure
+        tree = {}
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Remove leading ./ 
+            if line.startswith('./'):
+                line = line[2:]
+            elif line == '.':
+                continue
+                
+            parts = line.split('/')
+            current = tree
+            for part in parts[:-1]:  # Process directories
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+            
+            # Add the leaf (file or directory)
+            leaf = parts[-1]
+            if leaf:  # Skip empty names
+                current[leaf] = {}
+        
+        # Convert the tree structure to text
+        lines = []
+        
+        def _build_tree_text(node, prefix="", is_last=True, lines_list=None):
+            if lines_list is None:
+                lines_list = []
+                
+            items = list(node.items())
+            if not items:
+                return lines_list
+                
+            for i, (name, children) in enumerate(items):
+                is_last_item = i == len(items) - 1
+                
+                # Add the current line
+                if prefix:
+                    line = f"{prefix}{'└─ ' if is_last_item else '├─ '}{name}"
+                else:
+                    line = name
+                lines_list.append(line)
+                
+                # Process children with proper indentation
+                if children:
+                    new_prefix = f"{prefix}{'   ' if is_last_item else '│  '}"
+                    _build_tree_text(children, new_prefix, is_last_item, lines_list)
+                    
+            return lines_list
+        
+        # Generate the tree text
+        tree_lines = _build_tree_text(tree)
+        tree_lines.insert(0, ".")  # Add root
+        
+        # Limit the number of entries if needed
+        if len(tree_lines) > MAX_FILE_TREE_ENTRIES:
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Limiting file tree from {len(tree_lines)} to {MAX_FILE_TREE_ENTRIES} entries[/yellow]")
+            truncated_lines = tree_lines[:MAX_FILE_TREE_ENTRIES]
+            truncated_lines.append(f"... ({len(tree_lines) - MAX_FILE_TREE_ENTRIES} more entries omitted)")
+            tree_lines = truncated_lines
+        
+        tree_text = '\n'.join(tree_lines)
+        
+        if DEBUG:
+            console.print(f"[info]Generated file tree with {len(tree_lines)} entries[/info]")
+            
+        return tree_text
+        
+    except Exception as e:
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Error generating file tree: {str(e)}[/yellow]")
+        return ""

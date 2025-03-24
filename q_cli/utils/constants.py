@@ -18,6 +18,11 @@ HISTORY_PATH = os.path.expanduser("~/.qhistory")
 SENSITIVE_PATTERNS = ["sk-ant", "api_key", "apikey", "token", "secret", "key"]
 REDACTED_TEXT = "[REDACTED - Potential sensitive information]"
 
+# Display options
+MAX_FILE_DISPLAY_LENGTH = 500  # Characters to show when previewing file content
+INCLUDE_FILE_TREE = False  # Include file tree of the current directory in context
+MAX_FILE_TREE_ENTRIES = 100  # Maximum number of entries to include in file tree
+
 # Prompts directory
 PROMPTS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

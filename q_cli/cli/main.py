@@ -62,6 +62,22 @@ def main() -> None:
     prompt_session = create_prompt_session(console)
     history = prompt_session.history
 
+    # Check if file tree should be included from args or config
+    include_file_tree = getattr(args, "file_tree", False)
+    
+    # Also check the config file - config vars are all uppercase
+    if not include_file_tree and config_vars.get("INCLUDE_FILE_TREE", "").lower() == "true":
+        include_file_tree = True
+        
+    # Set the constant if needed
+    if include_file_tree:
+        # Import in local scope to avoid circular imports
+        import q_cli.utils.constants as constants
+        constants.INCLUDE_FILE_TREE = True
+        
+        if constants.DEBUG:
+            console.print("[info]File tree will be included in context[/info]")
+        
     # Build and sanitize context from config and files
     context = build_context(args, config_context, console)
     sanitized_context = sanitize_context(context, console)
