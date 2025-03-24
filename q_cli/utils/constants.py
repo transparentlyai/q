@@ -6,7 +6,8 @@ import os
 DEBUG = os.environ.get("Q_DEBUG", "false").lower() == "true"
 
 # Model Constants
-DEFAULT_MODEL = "claude-3.7-latest"  # Keep model name as is for API compatibility
+# Keep model name as is for API compatibility
+DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 DEFAULT_MAX_TOKENS = 4096
 
 # File Paths
@@ -72,14 +73,10 @@ DEFAULT_ALWAYS_APPROVED_COMMANDS: list[str] = [
 DEFAULT_ALWAYS_RESTRICTED_COMMANDS: list[str] = [
     "sudo",
     "su",
-    "chmod",
-    "chown",
     "mkfs",
     "dd",
     "systemctl",
     "rm",
-    "mv",
-    "cp",
     "apt",
     "yum",
     "dnf",
