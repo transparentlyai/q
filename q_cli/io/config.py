@@ -32,10 +32,11 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
     
     # Set up possible locations to find example_config.conf
     possible_locations = [
-        os.path.join(repo_root, "example_config.conf"),  # Repository root
         os.path.join(package_dir, "example_config.conf"),  # q_cli package directory
-        os.path.dirname(__file__) + "/../example_config.conf",  # Relative to this file
+        os.path.join(os.path.dirname(__file__), "..", "example_config.conf"),  # Relative to this file
         os.path.join(os.path.dirname(sys.executable), "example_config.conf"),  # Next to Python executable
+        # For backwards compatibility, checks repo root last
+        os.path.join(repo_root, "example_config.conf"),  # Repository root
     ]
     
     # Find the first existing config

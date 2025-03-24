@@ -43,7 +43,4 @@ py-modules = ["q"]
 packages = ["q_cli", "q_cli.cli", "q_cli.io", "q_cli.utils", "q_cli.assets"]
 
 [tool.setuptools.package-data]
-q_cli = ["assets/*.md"]
-
-[tool.setuptools.data-files]
-"." = ["example_config.conf"]
+q_cli = ["assets/*.md", "example_config.conf"]

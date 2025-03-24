@@ -39,45 +39,27 @@ q update yourself
 
 ## Configuration
 
-Create a config file at `~/.config/q.conf` with the following format:
+The first time you run Q, it will automatically create a configuration file at `~/.config/q.conf` with sensible defaults. You don't need to manually create this file. The configuration includes:
 
-```
-# Configuration variables (in KEY=value format)
-# Environment variables can be used with $VAR or ${VAR} syntax
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-MODEL=claude-3.7-latest
-MAX_TOKENS=4096
+- API key configuration (from environment variables)
+- Default model settings
+- Command permission settings
+- Example context section
 
-# Command permission settings
-# Command lists must be specified in JSON array format
-# IMPORTANT: JSON arrays must be on a single line
-ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "date", "whoami", "uptime", "uname", "hostname", "cat", "find"]
+You can customize this file at any time to change Q's behavior. No need to restart Q - changes will be applied the next time you run a command.
 
-# These commands always require explicit permission
-ALWAYS_RESTRICTED_COMMANDS=["sudo", "su", "chmod", "chown", "mkfs", "dd", "systemctl", "rm", "mv", "cp", "apt", "yum", "dnf", "pacman", "brew", "npm", "pip"]
-
-# These commands can never be executed
-PROHIBITED_COMMANDS=["rm -rf /", "rm -rf /*", "mkfs", "> /dev/sda", "dd if=/dev/zero", ":(){:|:&};:", "chmod -R 777 /", "wget -O- | sh", "curl | sh", "eval `curl`", "shutdown", "reboot", "halt"]
-
-# Optional context section - everything after #CONTEXT is sent with every query
-# Environment variables are also expanded in the context section
-#CONTEXT
-- my name is Mauro
-- The environment is Linux nixos
-- be brief unless asked otherwise
-- My home directory is $HOME
-```
-
-An example configuration file is provided in the repository as `example_config.conf`.
+For a complete example of all available configuration options, refer to the [example configuration file](https://github.com/transparentlyai/q/blob/main/q_cli/example_config.conf) in the repository.
 
 ### Supported Configuration Variables
 
 - `ANTHROPIC_API_KEY`: Your Anthropic API key (should start with `sk-ant-api-`)
 - `MODEL`: Default model to use (e.g., "claude-3-opus-20240229", "claude-3-haiku-20240307")
 - `MAX_TOKENS`: Maximum number of tokens in the response (default: 4096)
-- `ALWAYS_APPROVED_COMMANDS`: List of commands that will always be executed without asking for permission (JSON array format recommended)
-- `ALWAYS_RESTRICTED_COMMANDS`: List of commands that will always require explicit permission (JSON array format recommended)
-- `PROHIBITED_COMMANDS`: List of commands that will never be executed (JSON array format recommended)
+- `ALWAYS_APPROVED_COMMANDS`: List of commands that will always be executed without asking for permission (JSON array format)
+- `ALWAYS_RESTRICTED_COMMANDS`: List of commands that will always require explicit permission (JSON array format)
+- `PROHIBITED_COMMANDS`: List of commands that will never be executed (JSON array format)
+
+See the [example configuration file](https://github.com/transparentlyai/q/blob/main/q_cli/example_config.conf) for recommended values.
 
 Environment variables in the config file are expanded using the syntax `$VAR` or `${VAR}`.
 
