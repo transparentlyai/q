@@ -10,6 +10,10 @@ from rich.console import Console
 
 from q_cli.utils.permissions import CommandPermissionManager
 
+# Define the special formats for file writing
+WRITE_FILE_MARKER_START = "<<WRITE_FILE:"
+WRITE_FILE_MARKER_END = ">>"
+
 # List of potentially dangerous commands to block
 BLOCKED_COMMANDS = [
     "rm -rf /",
@@ -459,6 +463,145 @@ def handle_file_creation_command(
         error_msg = f"Error creating file: {str(e)}"
         console.print(f"[red]{error_msg}[/red]")
         return False, "", error_msg
+
+
+def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, str]]:
+    """
+    Extract file writing markers from the model's response.
+    
+    Format: 
+    - <<WRITE_FILE:path/to/file>>content<<WRITE_FILE>>
+    
+    Args:
+        response: The model's response text
+    
+    Returns:
+        List of tuples containing (file_path, content, original_marker)
+    """
+    # Regular expression to match the file writing format correctly
+    pattern = re.compile(
+        r"<<WRITE_FILE:(.*?)>>(.*?)<<WRITE_FILE>>",
+        re.DOTALL
+    )
+    
+    matches = []
+    
+    for match in pattern.finditer(response):
+        file_path = match.group(1).strip()
+        content = match.group(2)
+        original_marker = match.group(0)
+        matches.append((file_path, content, original_marker))
+    
+    # Debug logging
+    print(f"Found {len(matches)} file writing markers")
+    for i, (path, _, _) in enumerate(matches):
+        print(f"  {i+1}. File path: {path}")
+    
+    return matches
+
+
+def write_file_from_marker(file_path: str, content: str, console: Console) -> Tuple[bool, str, str]:
+    """
+    Write content to a file based on a file writing marker.
+    
+    Args:
+        file_path: Path where the file should be written
+        content: Content to write to the file
+        console: Console for output
+        
+    Returns:
+        Tuple containing (success, stdout, stderr)
+    """
+    try:
+        # Expand the file path (handle ~ and environment variables)
+        expanded_path = os.path.expanduser(file_path)
+        expanded_path = os.path.expandvars(expanded_path)
+        
+        # Make sure the path is relative to the current working directory if not absolute
+        if not os.path.isabs(expanded_path):
+            expanded_path = os.path.join(os.getcwd(), expanded_path)
+            
+        # Ensure the directory exists
+        directory = os.path.dirname(expanded_path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+            
+        # Show the file details and content to the user
+        console.print(
+            f"\n[bold yellow]Q wants to write a file at:[/bold yellow] {expanded_path}"
+        )
+        console.print("[bold yellow]Here's the content of the file:[/bold yellow]")
+        console.print(f"```\n{content}\n```")
+        
+        # Ask for confirmation
+        response = (
+            input(f"\nWrite file '{expanded_path}' with this content? [y/N]: ").lower().strip()
+        )
+        if not response.startswith("y"):
+            console.print("[yellow]File writing skipped by user[/yellow]")
+            return False, "", "File writing skipped by user"
+            
+        # Write the file
+        with open(expanded_path, "w") as f:
+            f.write(content)
+            
+        console.print(f"[green]File written successfully: {expanded_path}[/green]")
+        return True, f"File written: {expanded_path}", ""
+        
+    except Exception as e:
+        error_msg = f"Error writing file: {str(e)}"
+        console.print(f"[red]{error_msg}[/red]")
+        return False, "", error_msg
+        
+        
+def process_file_writes(response: str, console: Console) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Process a response from the model, handling any file writing markers.
+    
+    Args:
+        response: The model's response text
+        console: Console for output
+        
+    Returns:
+        Tuple containing:
+        - Processed response with file writing markers replaced
+        - List of dictionaries with file writing results
+    """
+    # Debug output
+    console.print("[dim]Checking for file writing markers...[/dim]", end="")
+    
+    # Extract all file writing markers
+    file_matches = extract_file_markers_from_response(response)
+    
+    if not file_matches:
+        console.print("[dim]No file writing markers found.[/dim]")
+        return response, []
+        
+    console.print(f"[dim]Found {len(file_matches)} file writing markers.[/dim]")
+    
+    processed_response = response
+    file_results = []
+    
+    for file_path, content, original_marker in file_matches:
+        success, stdout, stderr = write_file_from_marker(file_path, content, console)
+        
+        result = {
+            "file_path": file_path,
+            "success": success,
+            "stdout": stdout,
+            "stderr": stderr
+        }
+        file_results.append(result)
+        
+        # Replace the original marker with a note about what happened
+        if success:
+            replacement = f"[File written successfully: {file_path}]"
+        else:
+            replacement = f"[Failed to write file {file_path}: {stderr}]"
+            
+        processed_response = processed_response.replace(original_marker, replacement)
+        
+    return processed_response, file_results
 
 
 def process_command_block(block_lines: List[str], commands: List[str]):

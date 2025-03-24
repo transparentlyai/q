@@ -18,6 +18,7 @@ from q_cli.utils.commands import (
     execute_command,
     format_command_output,
     handle_file_creation_command,
+    process_file_writes,
 )
 from q_cli.utils.permissions import CommandPermissionManager
 from q_cli.utils.prompts import get_command_result_prompt
@@ -142,7 +143,7 @@ def process_response_with_urls(
     response: str, args, console: Console, conversation: List[Dict[str, str]]
 ) -> None:
     """
-    Process a response from the model, handle any URLs, and update the conversation.
+    Process a response from the model, handle any URLs and file writes, and update the conversation.
 
     Args:
         response: The model's response text
@@ -151,14 +152,19 @@ def process_response_with_urls(
         conversation: Current conversation history
     """
     model_url_content = {}
-
+    processed_response = response
+    
     # Process any URLs in the response if web fetching is enabled
     if not getattr(args, "no_web", False):
         processed_response, model_url_content = process_urls_in_response(
-            response, console
+            processed_response, console
         )
+    
+    # Process any file writing markers in the response if file writing is enabled
+    if not getattr(args, "no_file_write", False):
+        processed_response, file_results = process_file_writes(processed_response, console)
     else:
-        processed_response = response
+        file_results = []
 
     # Print formatted response
     console.print("")  # Add empty line before response
@@ -187,6 +193,22 @@ def process_response_with_urls(
                 "based on your request. Here's what I found:\n\n" + web_content
             )
             conversation.append({"role": "user", "content": web_context_message})
+    
+    # If we have file writing results, create a follow-up message with that information
+    if file_results:
+        file_messages = []
+        for result in file_results:
+            if result["success"]:
+                file_messages.append(f"Successfully wrote file: {result['file_path']}")
+            else:
+                file_messages.append(f"Failed to write file {result['file_path']}: {result['stderr']}")
+        
+        if file_messages:
+            file_context_message = (
+                "I've processed your file writing requests. Here are the results:\n\n" + 
+                "\n".join(file_messages)
+            )
+            conversation.append({"role": "user", "content": file_context_message})
 
     return processed_response
 

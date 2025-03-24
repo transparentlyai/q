@@ -18,6 +18,7 @@ A simple command-line tool for sending questions to Q AI and getting beautifully
 - 🖥️ Command execution plans - let Q suggest and run comprehensive shell command plans
 - 🔒 Command permission system with session-based approvals
 - 🌐 Web fetching - Q can access up-to-date information from the internet and analyze content for better responses
+- 📝 File creation - Q can create files for you when needed
 
 ## Installation
 
@@ -139,9 +140,14 @@ In interactive mode, you can:
 - Q can fetch content from the web to provide up-to-date information in two ways:
   - Displaying web content directly to you with URL markers
   - Fetching web content as context for Q to analyze and use in responses
+- Q can create files for you automatically:
+  - Q will suggest the file content and name
+  - You'll be asked to confirm before any file is written
+  - The file will be shown to you for review before creating it
 - Use the `--no-empty` flag to disable sending empty inputs (pressing Enter without typing anything)
 - Use the `--no-execute` flag to disable command execution functionality
 - Use the `--no-web` flag to disable web content fetching
+- Use the `--no-file-write` flag to disable file writing functionality
 
 ### Command Permission System
 
@@ -170,6 +176,7 @@ Q includes a sophisticated command permission system:
 - `--no-empty`, `-e`: Disable sending empty inputs in interactive mode
 - `--no-execute`: Disable command execution functionality 
 - `--no-web`: Disable web content fetching functionality
+- `--no-file-write`: Disable file writing functionality 
 - `--no-command-approval`: Disable command approval system (not recommended)
 - `--version`, `-v`: Show program version and exit
 

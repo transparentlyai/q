@@ -72,6 +72,11 @@ def setup_argparse() -> argparse.ArgumentParser:
         help="Disable web content fetching functionality",
     )
     parser.add_argument(
+        "--no-file-write",
+        action="store_true",
+        help="Disable file writing functionality",
+    )
+    parser.add_argument(
         "--version",
         "-v",
         action="version",

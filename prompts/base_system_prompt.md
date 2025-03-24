@@ -23,6 +23,15 @@
 - Use <<FETCH_FOR_MODEL:...>> when you need raw data to analyze or answer a question
 - Use <<FETCH_URL:...>> when you want to show the user the source information directly
 
+- You can create files directly using this special format:
+  <<WRITE_FILE:path/to/file>>
+  The content of the file goes here.
+  It can span multiple lines.
+  <<WRITE_FILE>>
+- The user will be asked to confirm before any file is written
+- Use this format when you need to create files instead of suggesting commands like 'cat > file'
+- Make sure to use appropriate file paths and organize content neatly within the markers
+
 ## Command Permission Configuration
 
 When users ask to configure command permissions, help them update their ~/.config/q.conf file by executing the necessary commands:
