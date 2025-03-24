@@ -49,85 +49,6 @@ def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]
     
     return matches
 
-
-def fetch_url_content(url: str, console: Console, for_model: bool = False) -> Optional[str]:
-    """
-    Fetch content from a URL.
-    
-    Args:
-        url: The URL to fetch
-        console: Console for output
-        for_model: Whether the content is meant for the model (True) or user display (False)
-    
-    Returns:
-        The content of the URL, or None if there was an error
-    """
-    try:
-        # Always show a dim fetching message
-        console.print(f"[dim]Fetching {url}[/dim]")
-        
-        # Show additional debug info if in DEBUG mode
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: Requesting URL {url}[/yellow]")
-            
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()  # Raise exception for HTTP errors
-        
-        # Check content type to format appropriately
-        content_type = response.headers.get('Content-Type', '')
-        
-        if for_model:
-            # For model consumption, provide a more processed version
-            if 'text/html' in content_type:
-                # Parse HTML and extract meaningful text
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Remove script and style elements
-                for script in soup(["script", "style"]):
-                    script.extract()
-                    
-                # Get text and clean it up
-                text = soup.get_text(separator='\n')
-                lines = [line.strip() for line in text.splitlines() if line.strip()]
-                text = '\n'.join(lines)
-                
-                # Truncate if too long
-                if len(text) > 15000:
-                    text = text[:15000] + "\n\n[Content truncated due to length]"
-                
-                return f"Content from {url}:\n{text}"
-            
-            elif 'application/json' in content_type:
-                # For JSON, provide the raw JSON for the model
-                return f"JSON from {url}:\n{response.text}"
-            
-            else:
-                # For other content types, return as text
-                text = response.text
-                if len(text) > 15000:
-                    text = text[:15000] + "\n\n[Content truncated due to length]"
-                return f"Content from {url}:\n{text}"
-        else:
-            # For user display, format nicely with a brief summary instead of raw content
-            if 'application/json' in content_type:
-                # For JSON, just indicate it was fetched but don't show raw content
-                return f"[info]Successfully fetched JSON content from {url}[/info]"
-            elif 'text/html' in content_type:
-                # For HTML, just indicate it was fetched but don't show raw content
-                return f"[info]Successfully fetched HTML content from {url}[/info]"
-            else:
-                # For other content types, just indicate it was fetched
-                content_type_info = content_type.split(';')[0] if content_type else "unknown"
-                return f"[info]Successfully fetched content ({content_type_info}) from {url}[/info]"
-            
-    except requests.RequestException as e:
-        error_msg = f"Error fetching URL {url}: {str(e)}"
-        # Only show debug info
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
-        return f"[Failed to fetch: {error_msg}]" if for_model else None
-
-
 def process_urls_in_response(
     response: str, 
     console: Console,
@@ -164,12 +85,61 @@ def process_urls_in_response(
     for marker, url, position, _ in sorted(
         url_matches, key=lambda x: x[2], reverse=True
     ):
-        # We'll fetch content with different formatting based on whether the model needs it
-        # False for user display, True for model context
-        content_for_user = fetch_url_content(url, console, for_model=False)
-        content_for_model = fetch_url_content(url, console, for_model=True)
-        
-        if content_for_user and content_for_model:
+        try:
+            # Show fetching message
+            console.print(f"[dim]Fetching {url}[/dim]")
+            
+            # Show additional debug info if in DEBUG mode
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Requesting URL {url}[/yellow]")
+                
+            # Fetch the URL once
+            response_obj = requests.get(url, timeout=10)
+            response_obj.raise_for_status()  # Raise exception for HTTP errors
+            
+            # Check content type to format appropriately
+            content_type = response_obj.headers.get('Content-Type', '')
+            
+            # Format for user display
+            if 'application/json' in content_type:
+                content_for_user = f"[info]Successfully fetched JSON content from {url}[/info]"
+            elif 'text/html' in content_type:
+                content_for_user = f"[info]Successfully fetched HTML content from {url}[/info]"
+            else:
+                content_type_info = content_type.split(';')[0] if content_type else "unknown"
+                content_for_user = f"[info]Successfully fetched content ({content_type_info}) from {url}[/info]"
+            
+            # Format for model
+            if 'text/html' in content_type:
+                # Parse HTML and extract meaningful text
+                soup = BeautifulSoup(response_obj.text, 'html.parser')
+                
+                # Remove script and style elements
+                for script in soup(["script", "style"]):
+                    script.extract()
+                    
+                # Get text and clean it up
+                text = soup.get_text(separator='\n')
+                lines = [line.strip() for line in text.splitlines() if line.strip()]
+                text = '\n'.join(lines)
+                
+                # Truncate if too long
+                if len(text) > 15000:
+                    text = text[:15000] + "\n\n[Content truncated due to length]"
+                
+                content_for_model = f"Content from {url}:\n{text}"
+            
+            elif 'application/json' in content_type:
+                # For JSON, provide the raw JSON for the model
+                content_for_model = f"JSON from {url}:\n{response_obj.text}"
+            
+            else:
+                # For other content types, return as text
+                text = response_obj.text
+                if len(text) > 15000:
+                    text = text[:15000] + "\n\n[Content truncated due to length]"
+                content_for_model = f"Content from {url}:\n{text}"
+            
             # Remove the code block completely from the response
             processed_response = processed_response.replace(marker, "", 1)
             
@@ -178,9 +148,15 @@ def process_urls_in_response(
                 console.print(content_for_user)
             # Save content for model context
             model_url_content[url] = content_for_model
-        else:
+            
+        except requests.RequestException as e:
             # If fetching failed, track the error
             has_error = True
+            error_msg = f"Error fetching URL {url}: {str(e)}"
+            
+            # Only show debug info
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
             
             # Remove the code block completely from the response
             processed_response = processed_response.replace(marker, "", 1)
