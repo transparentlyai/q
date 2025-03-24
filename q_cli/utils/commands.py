@@ -168,7 +168,7 @@ def ask_command_confirmation(
 # File creation is now handled exclusively through WRITE_FILE blocks
 
 
-def extract_code_blocks(response: str) -> Dict[str, List[str]]:
+def extract_code_blocks(response: str) -> Dict[str, List[List[str]]]:
     """
     Extract all code blocks from a response, categorized by block type.
     Specially handles WRITE_FILE blocks to avoid treating them as commands.
@@ -179,7 +179,7 @@ def extract_code_blocks(response: str) -> Dict[str, List[str]]:
     Returns:
         Dictionary mapping block types (shell, bash, etc.) to lists of blocks
     """
-    blocks = {"shell": [], "other": []}
+    blocks: Dict[str, List[List[str]]] = {"shell": [], "other": []}
 
     # First, check if there are any WRITE_FILE markers in the response
     has_write_file = WRITE_FILE_MARKER_START in response
@@ -187,7 +187,7 @@ def extract_code_blocks(response: str) -> Dict[str, List[str]]:
     lines = response.split("\n")
     in_code_block = False
     current_type = ""
-    current_block = []
+    current_block: List[str] = []
     in_write_file_block = False  # Track if we're inside a write file block
 
     for line in lines:
@@ -581,8 +581,6 @@ def process_file_writes(response: str, console: Console, show_errors: bool = Tru
         # Find the original marker in the response
         marker_start = processed_response.find(original_marker)
         if marker_start != -1:
-            marker_end = marker_start + len(original_marker)
-            
             # Simple replacement - keep any text after the marker
             processed_response = processed_response.replace(original_marker, replacement)
         else:

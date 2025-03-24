@@ -2,12 +2,12 @@
 
 import os
 import sys
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 import anthropic
 from prompt_toolkit import PromptSession
 from rich.console import Console
 
-from q_cli.utils.constants import SAVE_COMMAND_PREFIX, DEBUG
+from q_cli.utils.constants import SAVE_COMMAND_PREFIX, DEBUG, HISTORY_PATH
 from q_cli.utils.helpers import handle_api_error
 from q_cli.io.input import get_input
 from q_cli.io.output import save_response_to_file
@@ -46,8 +46,8 @@ def run_conversation(
         initial_question: First question to send to Q
     """
     # Initialize conversation history and input history
-    conversation = []
-    input_history = []
+    conversation: List[Dict[str, str]] = []
+    input_history: List[str] = []
     question = initial_question
     
     # Track if we're in a continuation (prevents duplicate errors)
@@ -79,11 +79,11 @@ def run_conversation(
                             max_tokens=args.max_tokens,
                             temperature=0,
                             system=system_prompt,
-                            messages=conversation,
+                            messages=conversation,  # type: ignore
                         )
 
                     # Get response
-                    response = message.content[0].text
+                    response = message.content[0].text  # type: ignore
                     
                     if DEBUG:
                         console.print(f"[yellow]DEBUG: Received model response ({len(response)} chars)[/yellow]")
@@ -153,11 +153,11 @@ def run_conversation(
                                     max_tokens=args.max_tokens,
                                     temperature=0,
                                     system=system_prompt,
-                                    messages=conversation,
+                                    messages=conversation,  # type: ignore
                                 )
 
                             # Get Q's analysis
-                            analysis_response = analysis.content[0].text
+                            analysis_response = analysis.content[0].text  # type: ignore
                             
                             if DEBUG:
                                 console.print(f"[yellow]DEBUG: Received command analysis response ({len(analysis_response)} chars)[/yellow]")
@@ -194,8 +194,10 @@ def run_conversation(
     finally:
         # prompt_toolkit's FileHistory automatically saves history
         if os.environ.get("Q_DEBUG") or DEBUG:
+            # Check if history has a filename attribute (FileHistory does)
+            history_file = getattr(prompt_session.history, "filename", HISTORY_PATH)
             console.print(
-                f"[info]History saved to {prompt_session.history.filename}[/info]"
+                f"[info]History saved to {history_file}[/info]"
             )
         sys.exit(0)
 
@@ -203,7 +205,7 @@ def run_conversation(
 def process_response_with_urls(
     response: str, args, console: Console, conversation: List[Dict[str, str]], 
     client=None, system_prompt=None, show_errors: bool = True,
-    continuation_state: dict = None
+    continuation_state: Optional[Dict[str, Any]] = None
 ) -> str:
     """
     Process a response from the model, handle any URLs and file writes, and update the conversation.
@@ -221,7 +223,7 @@ def process_response_with_urls(
     Returns:
         The processed response after handling URLs and file writes
     """
-    model_url_content = {}
+    model_url_content: Dict[str, str] = {}
     processed_response = response
     has_error = False
     
@@ -246,7 +248,7 @@ def process_response_with_urls(
     console.print("")  # Add empty line after response
     
     # Process any file writing markers in the response if file writing is enabled
-    file_results = []
+    file_results: List[Dict[str, Any]] = []
     if not getattr(args, "no_file_write", False):
         # Check if there are any file write markers before showing the processing message
         if WRITE_FILE_MARKER_START in processed_response:

@@ -34,7 +34,7 @@ def create_prompt_session(console: Console) -> PromptSession:
     bindings = create_key_bindings()
 
     # Create prompt session with history and style
-    prompt_session = PromptSession(
+    prompt_session: PromptSession = PromptSession(
         history=history,
         style=prompt_style,
         key_bindings=bindings,
@@ -49,7 +49,7 @@ def create_prompt_session(console: Console) -> PromptSession:
     return prompt_session
 
 
-def create_key_bindings() -> KeyBindings:
+def create_key_bindings():
     """Create custom key bindings for the prompt session."""
     bindings = KeyBindings()
     
@@ -119,7 +119,7 @@ def get_input(prompt: str = "", session: Optional[PromptSession] = None) -> str:
 
 
 def get_initial_question(
-    args, prompt_session: PromptSession, history: FileHistory
+    args, prompt_session: PromptSession, history
 ) -> str:
     """
     Get the initial question from command line, file, or prompt.
