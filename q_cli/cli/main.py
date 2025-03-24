@@ -82,17 +82,11 @@ def main() -> None:
     # Set up permission manager
     permission_manager = CommandPermissionManager.from_config(config_vars)
 
-    # Use default lists if not specified in config
-    if not permission_manager.always_approved_commands:
-        permission_manager.always_approved_commands = set(
-            DEFAULT_ALWAYS_APPROVED_COMMANDS
-        )
-    if not permission_manager.always_restricted_commands:
-        permission_manager.always_restricted_commands = set(
-            DEFAULT_ALWAYS_RESTRICTED_COMMANDS
-        )
-    if not permission_manager.prohibited_commands:
-        permission_manager.prohibited_commands = set(DEFAULT_PROHIBITED_COMMANDS)
+    # Always add default commands to the user-configured ones
+    # This ensures defaults are always included while allowing user customization
+    permission_manager.always_approved_commands.update(DEFAULT_ALWAYS_APPROVED_COMMANDS)
+    permission_manager.always_restricted_commands.update(DEFAULT_ALWAYS_RESTRICTED_COMMANDS)
+    permission_manager.prohibited_commands.update(DEFAULT_PROHIBITED_COMMANDS)
 
     # Get initial question from args, file, or prompt
     try:

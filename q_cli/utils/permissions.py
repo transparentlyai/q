@@ -15,6 +15,17 @@ class CommandPermissionManager:
     - Checking if commands are allowed, prohibited, or need permission
     - Tracking approved command categories for the session
     - Extracting command types from full command strings
+    
+    Permission Priority Order (highest to lowest):
+    1. Prohibited commands - can never be executed
+    2. Always restricted commands - always require explicit permission
+    3. Session approved commands - approved during the current session
+    4. Always approved commands - pre-approved by default
+    5. Default - require permission
+    
+    Note: Default commands from constants.py are always added to user-configured 
+    commands from the config file. This ensures core functionality while allowing
+    user customization.
     """
 
     def __init__(
@@ -120,17 +131,17 @@ class CommandPermissionManager:
         if self.is_command_prohibited(command):
             return False  # Will be blocked before permission check
 
-        # Check if it's always approved
-        if cmd_type in self.always_approved_commands:
-            return False  # No permission needed
-
+        # Always need permission for restricted commands (highest priority after prohibited)
+        if cmd_type in self.always_restricted_commands:
+            return True  # Always need permission
+            
         # Check if it's already approved in this session
         if cmd_type in self.session_approved_commands:
             return False  # Already approved in this session
 
-        # Always need permission for restricted commands
-        if cmd_type in self.always_restricted_commands:
-            return True  # Always need permission
+        # Check if it's always approved
+        if cmd_type in self.always_approved_commands:
+            return False  # No permission needed
 
         # By default, need permission for unrecognized commands
         return True
