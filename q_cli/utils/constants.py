@@ -16,8 +16,8 @@ REDACTED_TEXT = "[REDACTED - Potential sensitive information]"
 
 # Prompts directory
 PROMPTS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "prompts",
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "assets",
 )
 
 # Commands
