@@ -162,12 +162,6 @@ def ask_command_confirmation(
     return response.startswith("y"), False
 
 
-# Individual commands are now processed directly without a batch execution plan
-
-
-# File creation is now handled exclusively through WRITE_FILE blocks
-
-
 def extract_code_blocks(response: str) -> Dict[str, List[List[str]]]:
     """
     Extract all code blocks from a response, categorized by block type.
@@ -244,9 +238,6 @@ def extract_code_blocks(response: str) -> Dict[str, List[List[str]]]:
             current_block.append(line)
 
     return blocks
-
-
-# File content extraction is now handled through the WRITE_FILE block pattern
 
 
 def extract_shell_markers_from_response(response: str) -> List[Tuple[str, str]]:
@@ -396,9 +387,6 @@ def is_line_continuation(line: str) -> bool:
     # If even, the last backslash is escaped
     backslash_count = len(match.group(1))
     return backslash_count % 2 == 1
-
-
-# File creation is now handled exclusively through WRITE_FILE blocks
 
 
 def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, str]]:

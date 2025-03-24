@@ -102,12 +102,8 @@ def run_conversation(
                 in_continuation = continuation_state.get('in_continuation', in_continuation)
 
                 # Check for command suggestions in the response
-                # Note: extract_commands_from_response will ignore WRITE_FILE markers
                 if not getattr(args, "no_execute", False):
-                    # Filter out any file operation result messages from command processing
                     command_response = processed_response
-                    
-                    # Skip file operation result messages and RUN_SHELL markers
                     file_op_patterns = [
                         "[File written:",
                         "[Failed to write file:",
@@ -115,13 +111,8 @@ def run_conversation(
                         "```RUN_SHELL"
                     ]
                     
-                    # Track if we have any errors
                     has_error = False
-                    
-                    # Create a more targeted extract_commands call that ignores file operation messages
                     commands = extract_commands_from_response(command_response)
-                    
-                    # Additional filtering step for safety
                     filtered_commands = []
                     for cmd in commands:
                         # Skip if it looks like a file operation message
@@ -272,8 +263,6 @@ def process_response_with_urls(
         )
 
         if web_content:
-            # We're now entering continuation mode (prevents duplicate errors)
-            # Set continuation state if provided
             if continuation_state is not None:
                 continuation_state['in_continuation'] = True
             
@@ -283,18 +272,13 @@ def process_response_with_urls(
             )
             conversation.append({"role": "user", "content": web_context_message})
             
-            # Make an API call to tell the model about the web content
             if client and system_prompt and not getattr(args, "no_web", False):
                 if DEBUG:
                     console.print("[yellow]DEBUG: Sending web fetch results to model...[/yellow]")
-                # Use an explicit message to indicate we're processing web content
                 console.print("[info]Processing web content...[/info]")
-                
-                # Now is a good time to show the error message, if needed
                 if has_error and show_errors:
                     console.print("[red]Operation failed.[/red]")
                     
-                # Use the status for API call, but with a different message to avoid repetition
                 with console.status("[info]Calling API with web content...[/info]"):
                     try:
                         web_result_response = client.messages.create(
@@ -469,9 +453,6 @@ def process_response_with_urls(
                                 console.print(f"[red]DEBUG: Error getting model response to error: {str(error_call_exception)}[/red]")
 
     return processed_response
-
-
-# File creation is now handled exclusively through WRITE_FILE blocks
 
 
 def process_commands(
