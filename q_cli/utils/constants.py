@@ -3,7 +3,7 @@
 import os
 
 # Environment variables
-DEBUG = os.environ.get("DEBUG", "false").lower() == "true"
+DEBUG = os.environ.get("Q_DEBUG", "false").lower() == "true"
 
 # Model Constants
 DEFAULT_MODEL = "claude-3.7-latest"  # Keep model name as is for API compatibility
