@@ -203,6 +203,8 @@ If you want to contribute to Q, here's how to get started:
    python -m unittest discover -s tests
    ```
 
+Note: The project uses pyproject.toml for all package configuration, following modern Python standards.
+
 ## License
 
 MIT

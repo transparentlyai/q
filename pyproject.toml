@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "q"
 version = "0.6.1"
-description = "A quick AI assistant CLI for asking questions"
+description = "A command Line AI Assistant for interacting with Claude"
 authors = [{name = "Mauro", email = "mauro@sauco.net"}]
 readme = "README.md"
 requires-python = ">=3.7"
@@ -32,8 +32,12 @@ dependencies = [
 ]
 
 [project.scripts]
-q = "q:main"
+q = "q_cli:main"
 
 [project.urls]
 "Homepage" = "https://github.com/transparentlyai/q"
 "Bug Tracker" = "https://github.com/transparentlyai/q/issues"
+
+[tool.setuptools]
+py-modules = ["q"]
+packages = ["q_cli"]
