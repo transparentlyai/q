@@ -4,7 +4,8 @@ import os
 import sys
 import threading
 import time
-from typing import List, Dict, Optional
+import signal
+from typing import List, Dict, Optional, Callable, Any
 import anthropic
 from prompt_toolkit import PromptSession
 from rich.console import Console
@@ -88,6 +89,15 @@ def run_conversation(
                         interrupt_event = threading.Event()
                         timeout_reached = False
                         
+                        # Store original SIGINT handler
+                        original_sigint_handler = signal.getsignal(signal.SIGINT)
+                        
+                        # Create a handler that ignores Ctrl+C until timeout
+                        def ignore_sigint_handler(sig, frame):
+                            # Only show a message if we're still waiting and haven't reached timeout
+                            if not timeout_reached and not interrupt_event.is_set():
+                                console.print("\n[yellow]Please wait for the timeout before cancelling.[/yellow]")
+                        
                         def api_call_thread():
                             nonlocal api_response
                             try:
@@ -109,28 +119,38 @@ def run_conversation(
                         api_thread = threading.Thread(target=api_call_thread)
                         api_thread.daemon = True
                         
-                        with console.status("[info]Thinking...[/info]"):
-                            api_thread.start()
-                            
-                            # Wait for either the API call to complete or timeout
-                            start_time = time.time()
-                            while not interrupt_event.is_set():
-                                elapsed_time = time.time() - start_time
-                                
-                                # Check if we've reached the timeout
-                                if elapsed_time >= RESPONSE_TIMEOUT_SECONDS:
-                                    timeout_reached = True
-                                    console.print(f"\n[yellow]Claude is taking longer than {RESPONSE_TIMEOUT_SECONDS} seconds to respond.[/yellow]")
-                                    console.print("[yellow]Press Ctrl+C to cancel the request, or wait for the response.[/yellow]")
-                                    break
-                                
-                                # Small sleep to prevent CPU spinning
-                                time.sleep(0.1)
-                            
-                            # Continue waiting but now user knows they can cancel
-                            if timeout_reached:
-                                interrupt_event.wait()
+                        # Install the ignore handler to block Ctrl+C until timeout
+                        signal.signal(signal.SIGINT, ignore_sigint_handler)
                         
+                        try:
+                            with console.status("[info]Thinking... (Wait for timeout before cancelling)[/info]"):
+                                api_thread.start()
+                                
+                                # Wait for either the API call to complete or timeout
+                                start_time = time.time()
+                                while not interrupt_event.is_set():
+                                    elapsed_time = time.time() - start_time
+                                    
+                                    # Check if we've reached the timeout
+                                    if elapsed_time >= RESPONSE_TIMEOUT_SECONDS:
+                                        timeout_reached = True
+                                        console.print(f"\n[yellow]Claude is taking longer than {RESPONSE_TIMEOUT_SECONDS} seconds to respond.[/yellow]")
+                                        console.print("[yellow]You can now press Ctrl+C to cancel the request, or wait for the response.[/yellow]")
+                                        
+                                        # Restore original handler to allow Ctrl+C again
+                                        signal.signal(signal.SIGINT, original_sigint_handler)
+                                        break
+                                    
+                                    # Small sleep to prevent CPU spinning
+                                    time.sleep(0.1)
+                                
+                                # Continue waiting but now user knows they can cancel
+                                if timeout_reached:
+                                    interrupt_event.wait()
+                        finally:
+                            # Make sure we restore the original handler
+                            signal.signal(signal.SIGINT, original_sigint_handler)
+                            
                         # Check if we got an exception from the API call
                         if isinstance(api_response, Exception):
                             raise api_response
