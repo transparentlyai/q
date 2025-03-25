@@ -44,5 +44,5 @@ def save_response_to_file(response: str, file_path: str, console: Console) -> bo
             f.write(response)
         return True
     except Exception as e:
-        console.print(f"Error saving file: {e}", style="error")
+        console.print(f"[bold red]Error saving file: {e}[/bold red]")
         return False

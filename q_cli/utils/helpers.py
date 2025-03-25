@@ -158,27 +158,24 @@ def handle_api_error(e: Exception, console: Console) -> None:
     if isinstance(e, anthropic.APIStatusError):
         if e.status_code == 401:
             console.print(
-                "Authentication error: Your API key appears to be invalid. Please check your API key.",
-                style="error",
+                "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
             )
         else:
             console.print(
-                f"Error communicating with Q (Status {e.status_code}): {e.message}",
-                style="error",
+                f"[bold red]Error communicating with Q (Status {e.status_code}): {e.message}[/bold red]"
             )
     elif isinstance(e, anthropic.APIConnectionError):
         console.print(
-            "Connection error: Could not connect to Anthropic API. Please check your internet connection.",
-            style="error",
+            "[bold red]Connection error: Could not connect to Anthropic API. Please check your internet connection.[/bold red]"
         )
     elif isinstance(e, anthropic.APITimeoutError):
         console.print(
-            "Timeout error: The request to Anthropic API timed out.", style="error"
+            "[bold red]Timeout error: The request to Anthropic API timed out.[/bold red]"
         )
     else:
-        console.print(f"Error communicating with Q: {e}", style="error")
+        console.print(f"[bold red]Error communicating with Q: {e}[/bold red]")
 
     if os.environ.get("Q_DEBUG"):
-        console.print(f"Error details: {e}", style="error")
+        console.print(f"[bold red]Error details: {e}[/bold red]")
 
     sys.exit(1)

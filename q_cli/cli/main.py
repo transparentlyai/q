@@ -71,8 +71,7 @@ def main() -> None:
 
     if not api_key:
         console.print(
-            "Error: Anthropic API key not provided. Add to ~/.config/q.conf, set ANTHROPIC_API_KEY environment variable, or use --api-key",
-            style="error",
+            "[bold red]Error: Anthropic API key not provided. Add to ~/.config/q.conf, set ANTHROPIC_API_KEY environment variable, or use --api-key[/bold red]"
         )
         sys.exit(1)
 

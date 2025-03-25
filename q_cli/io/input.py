@@ -284,7 +284,7 @@ def get_initial_question(
         except Exception as e:
             from rich.console import Console
 
-            Console().print(f"Error reading file: {e}", style="error")
+            Console().print(f"[red]Error reading file: {e}[/red]")
             sys.exit(1)
     elif args.question:
         question = " ".join(args.question)
@@ -302,8 +302,7 @@ def get_initial_question(
         from rich.console import Console
 
         Console().print(
-            "Error: No question provided. Use positional arguments or --file",
-            style="error",
+            "[red]Error: No question provided. Use positional arguments or --file[/red]"
         )
         sys.exit(1)
 
