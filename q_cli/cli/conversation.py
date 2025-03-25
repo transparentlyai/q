@@ -241,10 +241,12 @@ def run_conversation(
                                 filtered_commands.append(cmd)
                         
                         if filtered_commands:
-                            with console.status("[info]Processing commands... [Ctrl+C to cancel][/info]"):
-                                command_results_str, cmd_has_error = process_commands(
-                                    filtered_commands, console, permission_manager, False
-                                )
+                            # First get user approval for all commands without showing spinner
+                            # Then process the approved commands with the spinner
+                            console.print("[info]Checking command approvals...[/info]")
+                            command_results_str, cmd_has_error = process_commands(
+                                filtered_commands, console, permission_manager, False
+                            )
                             has_operation_error = has_operation_error or cmd_has_error
                             
                             # Check if any command was cancelled by the user
