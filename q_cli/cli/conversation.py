@@ -196,11 +196,11 @@ def run_conversation(
                     # 2. Process file operations if enabled
                     file_results_data = None
                     if not getattr(args, "no_file_write", False) and not operation_interrupted:
-                        # Using the status spinner for file operations
-                        with console.status("[info]Processing file operations... [Ctrl+C to cancel][/info]") as status:
-                            file_processed_response, file_ops_results, file_has_error = process_file_writes(
-                                response, console, False
-                            )
+                        # Check for file operations - don't use spinner to avoid conflict with approval prompts
+                        console.print("[info]Checking file operations...[/info]")
+                        file_processed_response, file_ops_results, file_has_error = process_file_writes(
+                            response, console, False
+                        )
                         has_operation_error = has_operation_error or file_has_error
                         
                         # Check if any file operations were cancelled by user
