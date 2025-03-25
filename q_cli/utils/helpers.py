@@ -68,6 +68,40 @@ def sanitize_context(context: str, console: Console) -> str:
     return "\n".join(lines)
 
 
+def parse_version(version_str: str) -> List[int]:
+    """
+    Parse a version string into a list of integers.
+    Handles version strings like "0.9.0.64" by splitting on dots.
+    """
+    try:
+        return [int(part) for part in version_str.split('.')]
+    except ValueError:
+        # If conversion fails, fall back to a safe default
+        return [0, 0, 0]
+
+
+def is_newer_version(version1: str, version2: str) -> bool:
+    """
+    Check if version1 is newer than version2.
+    Returns True if version1 > version2, False otherwise.
+    """
+    v1_parts = parse_version(version1)
+    v2_parts = parse_version(version2)
+    
+    # Compare each part in order
+    for i in range(max(len(v1_parts), len(v2_parts))):
+        v1_part = v1_parts[i] if i < len(v1_parts) else 0
+        v2_part = v2_parts[i] if i < len(v2_parts) else 0
+        
+        if v1_part > v2_part:
+            return True
+        elif v1_part < v2_part:
+            return False
+    
+    # If we get here, versions are identical
+    return False
+
+
 def check_for_updates() -> Tuple[bool, str]:
     """
     Check if a newer version of the q tool is available on GitHub.
@@ -89,28 +123,21 @@ def check_for_updates() -> Tuple[bool, str]:
         pattern = r'__version__\s*=\s*["\']([^"\']+)["\']'
         version_match = re.search(pattern, response.text)
         if version_match:
-            latest_version = version_match.group(1)
+            github_version = version_match.group(1)
             current_version = __version__
-
-            # Properly compare version numbers instead of strings
-            latest_parts = [int(x) for x in latest_version.split('.')]
-            current_parts = [int(x) for x in current_version.split('.')]
             
-            # Compare version parts from left to right
-            for i in range(max(len(latest_parts), len(current_parts))):
-                latest_part = latest_parts[i] if i < len(latest_parts) else 0
-                current_part = current_parts[i] if i < len(current_parts) else 0
-                
-                if latest_part > current_part:
-                    return True, latest_version
-                elif current_part > latest_part:
-                    # Current version is newer than remote (unusual but possible during development)
-                    return False, ""
+            # Use console for debug output if available
+            from rich.console import Console
+            Console().print(f"[dim]DEBUG: Current version: {current_version}, GitHub version: {github_version}[/dim]") if DEBUG else None
             
-            # If we get here, versions are identical
-            return False, ""
-    except (requests.RequestException, Exception):
+            # Check if GitHub version is newer
+            if is_newer_version(github_version, current_version):
+                return True, github_version
+    except Exception as e:
         # Silently fail on any error - don't disrupt the user experience
+        if DEBUG:
+            from rich.console import Console
+            Console().print(f"[yellow]DEBUG: Error checking for updates: {str(e)}[/yellow]")
         pass
 
     return False, ""

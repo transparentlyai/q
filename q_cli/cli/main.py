@@ -3,6 +3,7 @@
 import anthropic
 import os
 import sys
+from q_cli import __version__
 
 from q_cli.cli.args import setup_argparse
 from q_cli.io.config import read_config_file, build_context
@@ -41,8 +42,16 @@ def main() -> None:
     console = setup_console()
     
     # Check for updates and notify user if available
-    from q_cli.utils.helpers import check_for_updates
+    from q_cli.utils.helpers import check_for_updates, is_newer_version
     update_available, latest_version = check_for_updates()
+    
+    # Debug version check information
+    if os.environ.get("Q_DEBUG"):
+        console.print(f"[dim]Current version: {__version__}, Latest version from GitHub: {latest_version or 'not found'}[/dim]")
+        if latest_version:
+            is_newer = is_newer_version(latest_version, __version__)
+            console.print(f"[dim]Is GitHub version newer: {is_newer}[/dim]")
+    
     if update_available:
         msg = f"[dim]New version {latest_version} available. Run 'q --update' to update.[/dim]"
         console.print(msg)
