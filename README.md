@@ -30,11 +30,12 @@ pip install git+https://github.com/transparentlyai/q.git
 ### Upgrade to the latest version
 
 ```bash
-pip install --upgrade git+https://github.com/transparentlyai/q.git
+q --update
 ```
-or
+or if your version is too old
+
 ```bash
-q update yourself
+pip install --upgrade git+https://github.com/transparentlyai/q.git
 ```
 
 ## Configuration
