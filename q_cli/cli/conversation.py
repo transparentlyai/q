@@ -81,7 +81,7 @@ def run_conversation(
                     
                     # Call Claude API with current conversation
                     try:
-                        with console.status("[info]Thinking... (Press Ctrl+C to cancel)[/info]"):
+                        with console.status("[info]Thinking...[/info]"):
                             message = client.messages.create(
                                 model=args.model,
                                 max_tokens=args.max_tokens,
@@ -92,8 +92,12 @@ def run_conversation(
                     except KeyboardInterrupt:
                         # Handle Ctrl+C during API call
                         console.print("\n[bold red]Request to Claude interrupted by user[/bold red]")
-                        # Continue the loop to prompt for the next question
-                        # Add a cancellation message for the user
+                        # Send message to model about the interruption
+                        interruption_message = (
+                            "STOP. The operation was cancelled by user. Do not proceed with any "
+                            "additional commands or operations. Wait for new instructions from the user."
+                        )
+                        conversation.append({"role": "user", "content": interruption_message})
                         console.print("\n[info]Ask another question or type 'exit' to quit[/info]")
                         continue
                     
@@ -131,10 +135,19 @@ def run_conversation(
                     # Process operations in the response
                     operation_results = []
                     has_operation_error = False
+                    operation_interrupted = False  # Track if an operation was interrupted
+                    
+                    # If the last message was an interruption, we're already in STOP mode
+                    # So we should not process any more operations
+                    if len(conversation) > 0 and conversation[-1]["role"] == "user":
+                        last_message = conversation[-1]["content"]
+                        if "STOP. The operation was cancelled by user" in last_message:
+                            operation_interrupted = True
+                            console.print("[yellow]Skipping operations due to previous interruption[/yellow]")
                     
                     # 1. Process URLs if web fetching is enabled
                     url_results = None
-                    if not getattr(args, "no_web", False):
+                    if not getattr(args, "no_web", False) and not operation_interrupted:
                         url_processed_response, url_content, url_has_error = process_urls_in_response(
                             response, console, False
                         )
@@ -155,7 +168,7 @@ def run_conversation(
                     
                     # 2. Process file operations if enabled
                     file_results_data = None
-                    if not getattr(args, "no_file_write", False):
+                    if not getattr(args, "no_file_write", False) and not operation_interrupted:
                         if WRITE_FILE_MARKER_START in response:
                             console.print("[info]Processing file operations...[/info]")
                             
@@ -163,6 +176,12 @@ def run_conversation(
                             response, console, False
                         )
                         has_operation_error = has_operation_error or file_has_error
+                        
+                        # Check if any file operations were cancelled by user
+                        for result in file_ops_results:
+                            if "STOP. The operation was cancelled by user" in result.get("stderr", ""):
+                                operation_interrupted = True
+                                break
                         
                         if file_ops_results:
                             file_messages = []
@@ -179,7 +198,7 @@ def run_conversation(
                     
                     # 3. Process commands if enabled
                     command_results_data = None
-                    if not getattr(args, "no_execute", False):
+                    if not getattr(args, "no_execute", False) and not operation_interrupted:
                         commands = extract_commands_from_response(response)
                         filtered_commands = []
                         
@@ -202,6 +221,10 @@ def run_conversation(
                             )
                             has_operation_error = has_operation_error or cmd_has_error
                             
+                            # Check if any command was cancelled by the user
+                            if "STOP. The operation was cancelled by user" in command_results_str:
+                                operation_interrupted = True
+                            
                             if command_results_str:
                                 command_results_data = get_command_result_prompt(command_results_str)
                     
@@ -216,6 +239,11 @@ def run_conversation(
                         operation_results.append(file_results_data)
                     if command_results_data:
                         operation_results.append(command_results_data)
+                        
+                    # If any operation was interrupted, add a clear message to the results
+                    if operation_interrupted:
+                        stop_message = "STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user."
+                        operation_results.append(stop_message)
                     
                     # 6. If we have operation results, add them to conversation as user message
                     if operation_results:

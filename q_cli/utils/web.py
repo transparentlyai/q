@@ -86,8 +86,8 @@ def process_urls_in_response(
         url_matches, key=lambda x: x[2], reverse=True
     ):
         try:
-            # Show fetching message with interrupt hint
-            console.print(f"[dim]Fetching {url} (Press Ctrl+C to cancel)[/dim]")
+            # Show fetching message without interrupt hint
+            console.print(f"[dim]Fetching {url}[/dim]")
             
             # Show additional debug info if in DEBUG mode
             if DEBUG:
@@ -102,7 +102,7 @@ def process_urls_in_response(
                 console.print(f"\n[bold red]URL fetch interrupted by user: {url}[/bold red]")
                 # Add this error to our results and continue with the next URL
                 has_error = True
-                model_url_content[url] = f"Error: URL fetch for {url} was canceled by user"
+                model_url_content[url] = f"STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user."
                 # Skip to the next URL rather than exiting completely
                 processed_response = processed_response.replace(marker, "", 1)
                 continue
