@@ -176,11 +176,8 @@ def run_conversation(
                             )
                         has_operation_error = has_operation_error or file_has_error
                         
-                        # Check if any file operations were cancelled by user
-                        for result in file_ops_results:
-                            if "STOP. The operation was cancelled by user" in result.get("stderr", ""):
-                                operation_interrupted = True
-                                break
+                        # File operations now return an empty string when interrupted
+                        # So we don't need to check for STOP messages
                         
                         if file_ops_results:
                             file_messages = []
@@ -221,8 +218,7 @@ def run_conversation(
                             has_operation_error = has_operation_error or cmd_has_error
                             
                             # Check if any command was cancelled by the user
-                            if "STOP. The operation was cancelled by user" in command_results_str:
-                                operation_interrupted = True
+                            # Now we just track if the operation was interrupted, but don't add STOP messages
                             
                             if command_results_str:
                                 command_results_data = get_command_result_prompt(command_results_str)
@@ -239,10 +235,10 @@ def run_conversation(
                     if command_results_data:
                         operation_results.append(command_results_data)
                         
-                    # If any operation was interrupted, add a clear message to the results
-                    if operation_interrupted:
-                        stop_message = "STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user."
-                        operation_results.append(stop_message)
+                    # Check for any command with the special STOP marker
+                    # We only want to continue if none of our processed operations were interrupted
+                    # The commands, files, and web URLs now return empty strings on interrupt
+                    # So we have to check separately for interruption
                     
                     # 6. If we have operation results, add them to conversation as user message
                     if operation_results:

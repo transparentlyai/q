@@ -99,7 +99,8 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
                     pass  # Already dead or can't be killed
                     
             console.print("\n[bold red]Command interrupted by user[/bold red]")
-            return (-1, "", "STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user.")
+            # Return interrupt code but no STOP message
+            return (-1, "", "")
 
         if DEBUG:
             console.print(f"[yellow]DEBUG: Command completed with return code: {return_code}[/yellow]")
@@ -597,7 +598,7 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
         except KeyboardInterrupt:
             # Handle Ctrl+C during confirmation
             console.print("\n[bold red]File operation interrupted by user[/bold red]")
-            return False, "", "STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user."
+            return False, "", ""
             
         # Write the file
         if DEBUG:
@@ -610,7 +611,7 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
             # Handle Ctrl+C during file writing
             console.print("\n[bold red]File writing interrupted by user[/bold red]")
             console.print("[yellow]Warning: File may be partially written[/yellow]")
-            return False, "", "STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user."
+            return False, "", ""
             
         # Show success message more prominently
         action = "updated" if is_overwrite else "created"

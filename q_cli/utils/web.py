@@ -102,7 +102,8 @@ def process_urls_in_response(
                 console.print(f"\n[bold red]URL fetch interrupted by user: {url}[/bold red]")
                 # Add this error to our results and continue with the next URL
                 has_error = True
-                model_url_content[url] = f"STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user."
+                # Don't add any message for the model
+                model_url_content[url] = ""
                 # Skip to the next URL rather than exiting completely
                 processed_response = processed_response.replace(marker, "", 1)
                 continue
