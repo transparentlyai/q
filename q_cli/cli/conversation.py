@@ -227,9 +227,10 @@ def run_conversation(
                     # 1. Process URLs if web fetching is enabled
                     url_results = None
                     if not getattr(args, "no_web", False) and not operation_interrupted:
-                        url_processed_response, url_content, url_has_error = process_urls_in_response(
-                            response, console, False
-                        )
+                        with console.status("[info]Fetching web content... [Ctrl+C to cancel][/info]"):
+                            url_processed_response, url_content, url_has_error = process_urls_in_response(
+                                response, console, False
+                            )
                         has_operation_error = has_operation_error or url_has_error
                         
                         if url_content:
@@ -248,12 +249,11 @@ def run_conversation(
                     # 2. Process file operations if enabled
                     file_results_data = None
                     if not getattr(args, "no_file_write", False) and not operation_interrupted:
-                        if WRITE_FILE_MARKER_START in response:
-                            console.print("[info]Processing file operations...[/info]")
-                            
-                        file_processed_response, file_ops_results, file_has_error = process_file_writes(
-                            response, console, False
-                        )
+                        # Using the status spinner for file operations
+                        with console.status("[info]Processing file operations... [Ctrl+C to cancel][/info]") as status:
+                            file_processed_response, file_ops_results, file_has_error = process_file_writes(
+                                response, console, False
+                            )
                         has_operation_error = has_operation_error or file_has_error
                         
                         # Check if any file operations were cancelled by user
@@ -294,10 +294,10 @@ def run_conversation(
                                 filtered_commands.append(cmd)
                         
                         if filtered_commands:
-                            console.print("[info]Processing commands...[/info]")
-                            command_results_str, cmd_has_error = process_commands(
-                                filtered_commands, console, permission_manager, False
-                            )
+                            with console.status("[info]Processing commands... [Ctrl+C to cancel][/info]"):
+                                command_results_str, cmd_has_error = process_commands(
+                                    filtered_commands, console, permission_manager, False
+                                )
                             has_operation_error = has_operation_error or cmd_has_error
                             
                             # Check if any command was cancelled by the user
