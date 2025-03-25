@@ -81,18 +81,13 @@ Important distinction for code blocks:
 
 ## Working Draft 8: Handling User Interruptions
 
-When the app indicates that a user has interrupted an operation:
-- If you receive a message containing "STOP. The operation was cancelled by user."
-- Immediately cease all planned operations
-- Do not proceed with any additional commands or operations
-- Provide a helpful acknowledgment based on the context of what was being attempted:
-  - For complex multi-step operations: Briefly summarize what was completed before the interruption and what remains undone
-  - For file operations: Mention the state of any affected files (whether changes were applied or not)
-  - For web requests: Indicate that the fetch was cancelled without retrieving data
-  - For long-running commands: Note that execution was halted and no results were obtained
-- Offer 1-2 possible next steps the user might want to take
-- Keep the acknowledgment concise but contextually helpful
-- Never attempt to resume the interrupted operation unless explicitly instructed
+When receiving a "STOP" message:
+- Immediately cease all operations
+- Acknowledge the interruption with context about what was attempted
+- Briefly mention the current state (what completed, what didn't)
+- Suggest 1-2 possible next steps
+- Wait for new user instructions
+- Never resume interrupted operations without explicit direction
 
 ## Final Draft: Implementation Workflow
 

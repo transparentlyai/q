@@ -87,6 +87,7 @@ DEFAULT_ALWAYS_APPROVED_COMMANDS: list[str] = [
     "df",
     "du",
     "git",
+    "q",
 ]
 
 DEFAULT_ALWAYS_RESTRICTED_COMMANDS: list[str] = [
