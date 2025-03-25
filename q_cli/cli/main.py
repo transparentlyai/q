@@ -39,6 +39,13 @@ def main() -> None:
 
     # Initialize console for output
     console = setup_console()
+    
+    # Check for updates and notify user if available
+    from q_cli.utils.helpers import check_for_updates
+    update_available, latest_version = check_for_updates()
+    if update_available:
+        msg = f"[dim]New version {latest_version} available. Run 'q --update' to update.[/dim]"
+        console.print(msg)
 
     # Get API key and config vars from config file
     config_api_key, config_context, config_vars = read_config_file(console)

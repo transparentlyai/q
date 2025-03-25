@@ -2,12 +2,14 @@
 
 import os
 import re
-from typing import Dict, List
+import requests
+from typing import Dict, List, Tuple
 
 from rich.console import Console
 from rich.markdown import Markdown
 
 from q_cli.utils.constants import SENSITIVE_PATTERNS, REDACTED_TEXT
+from q_cli import __version__
 
 # Type definitions for better code clarity
 Message = Dict[str, str]
@@ -64,6 +66,39 @@ def sanitize_context(context: str, console: Console) -> str:
             lines[i] = REDACTED_TEXT
 
     return "\n".join(lines)
+
+
+def check_for_updates() -> Tuple[bool, str]:
+    """
+    Check if a newer version of the q tool is available on GitHub.
+
+    Returns:
+        Tuple containing:
+        - Boolean indicating if an update is available
+        - Latest version string if update is available, otherwise empty string
+    """
+    try:
+        # Fetch the latest version from GitHub's raw content
+        response = requests.get(
+            "https://raw.githubusercontent.com/transparentlyai/q/main/q_cli/__init__.py",
+            timeout=2  # Short timeout to prevent startup delay
+        )
+        response.raise_for_status()
+
+        # Extract version using regex
+        pattern = r'__version__\s*=\s*["\']([^"\']+)["\']'
+        version_match = re.search(pattern, response.text)
+        if version_match:
+            latest_version = version_match.group(1)
+            current_version = __version__
+
+            if latest_version != current_version:
+                return True, latest_version
+    except (requests.RequestException, Exception):
+        # Silently fail on any error - don't disrupt the user experience
+        pass
+
+    return False, ""
 
 
 def handle_api_error(e: Exception, console: Console) -> None:
