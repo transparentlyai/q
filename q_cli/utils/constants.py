@@ -9,7 +9,6 @@ DEBUG = os.environ.get("Q_DEBUG", "false").lower() == "true"
 # Keep model name as is for API compatibility
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 DEFAULT_MAX_TOKENS = 4096
-RESPONSE_TIMEOUT_SECONDS = 30  # Timeout for waiting on Claude's response
 
 # File Paths
 CONFIG_PATH = os.path.expanduser("~/.config/q.conf")

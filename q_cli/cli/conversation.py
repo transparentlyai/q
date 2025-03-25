@@ -12,8 +12,7 @@ from rich.console import Console
 
 from q_cli.utils.constants import (
     SAVE_COMMAND_PREFIX, DEBUG, HISTORY_PATH,
-    ESSENTIAL_PRIORITY, IMPORTANT_PRIORITY, SUPPLEMENTARY_PRIORITY,
-    RESPONSE_TIMEOUT_SECONDS
+    ESSENTIAL_PRIORITY, IMPORTANT_PRIORITY, SUPPLEMENTARY_PRIORITY
 )
 from q_cli.utils.helpers import handle_api_error, format_markdown
 from q_cli.utils.context import ContextManager
@@ -83,98 +82,19 @@ def run_conversation(
                             console.print("[info]Optimizing context for long conversation[/info]")
                         context_manager.optimize_context()
                     
-                    # Call Claude API with current conversation and timeout monitoring
+                    # Call Claude API with current conversation
                     try:
-                        api_response = None
-                        interrupt_event = threading.Event()
-                        timeout_reached = False
-                        
-                        # Store original SIGINT handler
-                        original_sigint_handler = signal.getsignal(signal.SIGINT)
-                        
-                        # Create a handler that completely ignores Ctrl+C until timeout
-                        def ignore_sigint_handler(sig, frame):
-                            # Do nothing - completely suppress Ctrl+C
-                            pass
-                        
-                        def api_call_thread():
-                            nonlocal api_response
-                            try:
-                                api_response = client.messages.create(
-                                    model=args.model,
-                                    max_tokens=args.max_tokens,
-                                    temperature=0,
-                                    system=current_system_prompt,
-                                    messages=conversation,  # type: ignore
-                                )
-                            except Exception as e:
-                                # Store the exception so we can raise it in the main thread
-                                api_response = e
-                            finally:
-                                # Signal that the API call is complete
-                                interrupt_event.set()
-                        
-                        # Start API call in a separate thread
-                        api_thread = threading.Thread(target=api_call_thread)
-                        api_thread.daemon = True
-                        
-                        # Install the ignore handler to silently block Ctrl+C until timeout
-                        signal.signal(signal.SIGINT, ignore_sigint_handler)
-                        
-                        # Status object that we can update
-                        status = None
-                        
-                        try:
-                            # Start with basic "Thinking..." status
-                            status = console.status("[info]Thinking...[/info]")
-                            status.start()
-                            
-                            # Start the API call thread
-                            api_thread.start()
-                            
-                            # Wait for either the API call to complete or timeout
-                            start_time = time.time()
-                            while not interrupt_event.is_set():
-                                elapsed_time = time.time() - start_time
-                                
-                                # Check if we've reached the timeout
-                                if elapsed_time >= RESPONSE_TIMEOUT_SECONDS and not timeout_reached:
-                                    timeout_reached = True
-                                    
-                                    # Update the status message to show Ctrl+C is now available
-                                    status.update("[info]Thinking... [Ctrl+C to cancel][/info]")
-                                    
-                                    # Quietly inform the user without too much disruption
-                                    console.print(f"\n[yellow]Claude is taking longer than {RESPONSE_TIMEOUT_SECONDS} seconds to respond.[/yellow]")
-                                    
-                                    # Restore original handler to allow Ctrl+C again
-                                    signal.signal(signal.SIGINT, original_sigint_handler)
-                                
-                                # Small sleep to prevent CPU spinning
-                                time.sleep(0.1)
-                            
-                            # Stop the status after the API call completes
-                            status.stop()
-                            
-                        except Exception as e:
-                            # Make sure we stop the status if an exception occurs
-                            if status:
-                                status.stop()
-                            raise e
-                        finally:
-                            # Make sure we restore the original handler
-                            signal.signal(signal.SIGINT, original_sigint_handler)
-                        
-                        # Check if we got an exception from the API call
-                        if isinstance(api_response, Exception):
-                            raise api_response
-                            
-                        # Store the API response
-                        message = api_response
-                            
+                        with console.status("[info]Thinking... [Ctrl+C to cancel][/info]"):
+                            message = client.messages.create(
+                                model=args.model,
+                                max_tokens=args.max_tokens,
+                                temperature=0,
+                                system=current_system_prompt,
+                                messages=conversation,  # type: ignore
+                            )
                     except KeyboardInterrupt:
-                        # Handle Ctrl+C during API call (only happens after timeout)
-                        console.print("\n[bold red]Request to Claude interrupted by user[/bold red]")
+                        # Handle Ctrl+C during API call
+                        console.print("\n[bold red]Request interrupted by user[/bold red]")
                         # Just drop the request and continue back to input
                         # Do NOT send a STOP message to the model
                         console.print("\n[info]Ask another question or type 'exit' to quit[/info]")
