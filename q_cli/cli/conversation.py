@@ -2,6 +2,8 @@
 
 import os
 import sys
+import threading
+import time
 from typing import List, Dict, Optional
 import anthropic
 from prompt_toolkit import PromptSession
@@ -9,7 +11,8 @@ from rich.console import Console
 
 from q_cli.utils.constants import (
     SAVE_COMMAND_PREFIX, DEBUG, HISTORY_PATH,
-    ESSENTIAL_PRIORITY, IMPORTANT_PRIORITY, SUPPLEMENTARY_PRIORITY
+    ESSENTIAL_PRIORITY, IMPORTANT_PRIORITY, SUPPLEMENTARY_PRIORITY,
+    RESPONSE_TIMEOUT_SECONDS
 )
 from q_cli.utils.helpers import handle_api_error, format_markdown
 from q_cli.utils.context import ContextManager
@@ -79,16 +82,62 @@ def run_conversation(
                             console.print("[info]Optimizing context for long conversation[/info]")
                         context_manager.optimize_context()
                     
-                    # Call Claude API with current conversation
+                    # Call Claude API with current conversation and timeout monitoring
                     try:
+                        api_response = None
+                        interrupt_event = threading.Event()
+                        timeout_reached = False
+                        
+                        def api_call_thread():
+                            nonlocal api_response
+                            try:
+                                api_response = client.messages.create(
+                                    model=args.model,
+                                    max_tokens=args.max_tokens,
+                                    temperature=0,
+                                    system=current_system_prompt,
+                                    messages=conversation,  # type: ignore
+                                )
+                            except Exception as e:
+                                # Store the exception so we can raise it in the main thread
+                                api_response = e
+                            finally:
+                                # Signal that the API call is complete
+                                interrupt_event.set()
+                        
+                        # Start API call in a separate thread
+                        api_thread = threading.Thread(target=api_call_thread)
+                        api_thread.daemon = True
+                        
                         with console.status("[info]Thinking...[/info]"):
-                            message = client.messages.create(
-                                model=args.model,
-                                max_tokens=args.max_tokens,
-                                temperature=0,
-                                system=current_system_prompt,
-                                messages=conversation,  # type: ignore
-                            )
+                            api_thread.start()
+                            
+                            # Wait for either the API call to complete or timeout
+                            start_time = time.time()
+                            while not interrupt_event.is_set():
+                                elapsed_time = time.time() - start_time
+                                
+                                # Check if we've reached the timeout
+                                if elapsed_time >= RESPONSE_TIMEOUT_SECONDS:
+                                    timeout_reached = True
+                                    console.print(f"\n[yellow]Claude is taking longer than {RESPONSE_TIMEOUT_SECONDS} seconds to respond.[/yellow]")
+                                    console.print("[yellow]Press Ctrl+C to cancel the request, or wait for the response.[/yellow]")
+                                    break
+                                
+                                # Small sleep to prevent CPU spinning
+                                time.sleep(0.1)
+                            
+                            # Continue waiting but now user knows they can cancel
+                            if timeout_reached:
+                                interrupt_event.wait()
+                        
+                        # Check if we got an exception from the API call
+                        if isinstance(api_response, Exception):
+                            raise api_response
+                            
+                        # Store the API response
+                        message = api_response
+                            
                     except KeyboardInterrupt:
                         # Handle Ctrl+C during API call
                         console.print("\n[bold red]Request to Claude interrupted by user[/bold red]")
