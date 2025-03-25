@@ -98,7 +98,7 @@ def run_conversation(
                         # IMPORTANT: We're just dropping the request and continuing back to input
                         # Do NOT add any messages to the conversation
                         # This effectively starts a fresh conversation turn
-                        console.print("\n[info]Ask another question, press Enter to continue, or type 'exit' to quit[/info]")
+                        console.print("\n[info]Ask another question, type 'continue' to resume, or type 'exit' to quit[/info]")
                         # Force getting a new user input without sending anything to the model
                         next_question = handle_next_input(args, prompt_session, conversation, console)
                         
