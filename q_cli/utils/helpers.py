@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 from rich.console import Console
 from rich.markdown import Markdown
 
-from q_cli.utils.constants import SENSITIVE_PATTERNS, REDACTED_TEXT
+from q_cli.utils.constants import SENSITIVE_PATTERNS, REDACTED_TEXT, DEBUG
 from q_cli import __version__
 
 # Type definitions for better code clarity
@@ -85,6 +85,12 @@ def is_newer_version(version1: str, version2: str) -> bool:
     Check if version1 is newer than version2.
     Returns True if version1 > version2, False otherwise.
     """
+    # Handle empty or None values by treating them as older
+    if not version1:
+        return False
+    if not version2:
+        return True
+        
     v1_parts = parse_version(version1)
     v2_parts = parse_version(version2)
     
