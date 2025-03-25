@@ -7,8 +7,12 @@ import anthropic
 from prompt_toolkit import PromptSession
 from rich.console import Console
 
-from q_cli.utils.constants import SAVE_COMMAND_PREFIX, DEBUG, HISTORY_PATH
+from q_cli.utils.constants import (
+    SAVE_COMMAND_PREFIX, DEBUG, HISTORY_PATH,
+    ESSENTIAL_PRIORITY, IMPORTANT_PRIORITY, SUPPLEMENTARY_PRIORITY
+)
 from q_cli.utils.helpers import handle_api_error, format_markdown
+from q_cli.utils.context import ContextManager
 from q_cli.io.input import get_input
 from q_cli.io.output import save_response_to_file
 from q_cli.utils.commands import (
@@ -33,6 +37,7 @@ def run_conversation(
     console: Console,
     initial_question: str,
     permission_manager: Optional[CommandPermissionManager] = None,
+    context_manager: Optional[ContextManager] = None,
 ) -> None:
     """
     Run the continuous conversation loop with Claude.
@@ -50,20 +55,37 @@ def run_conversation(
     conversation: List[Dict[str, str]] = []
     
     try:
-        # Add initial user question to conversation
+        # Add initial user question to conversation and context manager
         if initial_question.strip():
             conversation.append({"role": "user", "content": initial_question})
+            
+            # Add to context manager if available
+            if context_manager:
+                context_manager.add_context(
+                    f"User question: {initial_question}",
+                    ESSENTIAL_PRIORITY,
+                    "Initial question"
+                )
             
             # Main conversation loop - continues until explicit exit
             while True:
                 try:
+                    # If using context manager, update the conversation tokens
+                    # and check if we need to optimize
+                    current_system_prompt = system_prompt
+                    if context_manager and len(conversation) > 3:
+                        # For longer conversations, optimize the context
+                        if DEBUG:
+                            console.print("[info]Optimizing context for long conversation[/info]")
+                        context_manager.optimize_context()
+                    
                     # Call Claude API with current conversation
                     with console.status("[info]Thinking...[/info]"):
                         message = client.messages.create(
                             model=args.model,
                             max_tokens=args.max_tokens,
                             temperature=0,
-                            system=system_prompt,
+                            system=current_system_prompt,
                             messages=conversation,  # type: ignore
                         )
                     
@@ -74,8 +96,18 @@ def run_conversation(
                         console.print(f"[yellow]DEBUG: Received model response ({len(response)} chars)[/yellow]")
                         console.print(f"[red]DEBUG RESPONSE: {response}[/red]")
                     
-                    # Add Claude's response to conversation history
+                    # Add Claude's response to conversation history and context manager
                     conversation.append({"role": "assistant", "content": response})
+                    
+                    # Add to context manager if available
+                    if context_manager:
+                        # Add only a summary or first part to save tokens
+                        response_summary = response[:500] + "..." if len(response) > 500 else response
+                        context_manager.add_context(
+                            f"Assistant response: {response_summary}",
+                            ESSENTIAL_PRIORITY,
+                            "Assistant response"
+                        )
                     
                     # Process response for display (handle URL markers, file write markers)
                     display_response = remove_special_markers(response)
@@ -195,9 +227,17 @@ def run_conversation(
                     if next_question.strip().lower() in ["exit", "quit"]:
                         sys.exit(0)
                     
-                    # Add user input to conversation
+                    # Add user input to conversation and context manager
                     if next_question.strip():
                         conversation.append({"role": "user", "content": next_question})
+                        
+                        # Add to context manager if available
+                        if context_manager:
+                            context_manager.add_context(
+                                f"User question: {next_question}",
+                                ESSENTIAL_PRIORITY,
+                                "User question"
+                            )
                     else:
                         # If empty input and we require non-empty inputs, get a new input
                         if args.no_empty:

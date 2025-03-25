@@ -98,6 +98,21 @@ def setup_argparse() -> argparse.ArgumentParser:
         help="Include file tree of current directory in context",
     )
     parser.add_argument(
+        "--max-context-tokens",
+        type=int,
+        help="Maximum tokens for context (default: 200000)",
+    )
+    parser.add_argument(
+        "--context-priority-mode",
+        choices=["balanced", "code", "conversation"],
+        help="Context priority mode (balanced, code, conversation)",
+    )
+    parser.add_argument(
+        "--context-stats",
+        action="store_true",
+        help="Show context statistics before sending to model",
+    )
+    parser.add_argument(
         "--version",
         "-v",
         action="version",

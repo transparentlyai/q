@@ -23,6 +23,20 @@ MAX_FILE_DISPLAY_LENGTH = 500  # Characters to show when previewing file content
 INCLUDE_FILE_TREE = False  # Include file tree of the current directory in context
 MAX_FILE_TREE_ENTRIES = 100  # Maximum number of entries to include in file tree
 
+# Context Management
+DEFAULT_MAX_CONTEXT_TOKENS = 200000  # Default maximum tokens for context
+DEFAULT_CONTEXT_PRIORITY_MODE = "balanced"  # Default context priority mode (balanced, code, conversation)
+
+# Context Prioritization
+ESSENTIAL_PRIORITY = "essential"  # Highest priority context (system prompt, recent msgs)
+IMPORTANT_PRIORITY = "important"  # Important context (file structure, key files)
+SUPPLEMENTARY_PRIORITY = "supplementary"  # Lower priority context (can be trimmed)
+
+# Token Allocation (percentage of total context budget)
+ESSENTIAL_TOKEN_ALLOCATION = 0.30  # 30% for essential context
+IMPORTANT_TOKEN_ALLOCATION = 0.40  # 40% for important context
+SUPPLEMENTARY_TOKEN_ALLOCATION = 0.30  # 30% for supplementary context
+
 # Prompts directory
 PROMPTS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

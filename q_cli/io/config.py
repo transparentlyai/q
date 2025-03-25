@@ -7,8 +7,13 @@ from typing import Dict, Optional, Tuple, List
 
 from rich.console import Console
 
-from q_cli.utils.constants import CONFIG_PATH, REDACTED_TEXT, DEBUG, INCLUDE_FILE_TREE, MAX_FILE_TREE_ENTRIES
+from q_cli.utils.constants import (
+    CONFIG_PATH, REDACTED_TEXT, DEBUG, INCLUDE_FILE_TREE, MAX_FILE_TREE_ENTRIES,
+    DEFAULT_MAX_CONTEXT_TOKENS, DEFAULT_CONTEXT_PRIORITY_MODE,
+    ESSENTIAL_PRIORITY, IMPORTANT_PRIORITY, SUPPLEMENTARY_PRIORITY
+)
 from q_cli.utils.helpers import contains_sensitive_info, expand_env_vars
+from q_cli.utils.context import ContextManager
 
 
 def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, str]]:
@@ -179,9 +184,9 @@ def read_context_file(file_path: str, console: Console) -> str:
         return ""
 
 
-def build_context(args, config_context: str, console: Console) -> str:
+def build_context(args, config_context: str, console: Console) -> Tuple[str, ContextManager]:
     """
-    Build the context from config and additional context files.
+    Build the context from config and additional context files using priority-based management.
 
     Args:
         args: Command line arguments
@@ -189,45 +194,69 @@ def build_context(args, config_context: str, console: Console) -> str:
         console: Console instance for output
 
     Returns:
-        Combined context string
+        Tuple containing:
+        - Combined context string
+        - ContextManager instance
     """
-    context = ""
+    # Initialize context manager with args or default values
+    max_tokens = getattr(args, "max_context_tokens", DEFAULT_MAX_CONTEXT_TOKENS)
+    priority_mode = getattr(args, "context_priority_mode", DEFAULT_CONTEXT_PRIORITY_MODE)
+    
+    context_manager = ContextManager(
+        max_tokens=max_tokens,
+        priority_mode=priority_mode,
+        console=console
+    )
 
-    # Add config context if not disabled
+    # Add config context if not disabled (supplementary priority)
     if config_context and not args.no_context:
-        context += config_context + "\n\n"
+        context_manager.add_context(
+            config_context,
+            SUPPLEMENTARY_PRIORITY,
+            "Config file context"
+        )
 
-    # Add context from additional files
+    # Add context from additional files (important priority)
     if args.context_file:
         for file_path in args.context_file:
             file_content = read_context_file(file_path, console)
             if file_content:
-                context += (
-                    f"Content from {os.path.basename(file_path)}:\n{file_content}\n\n"
+                context_manager.add_context(
+                    f"Content from {os.path.basename(file_path)}:\n{file_content}",
+                    IMPORTANT_PRIORITY,
+                    f"File context: {os.path.basename(file_path)}"
                 )
 
-    context = context.strip()
-
-    # Debug output
-    if context and os.environ.get("Q_DEBUG"):
-        console.print(f"[info]Context from config: {bool(config_context)}[/info]")
-        console.print(f"[info]Context files: {args.context_file or []}[/info]")
-        console.print(
-            f"[info]Combined context length: {len(context)} characters[/info]"
-        )
-
-    # Add the current directory file tree to the context if enabled
+    # Add the current directory file tree to the context if enabled (important priority)
     if INCLUDE_FILE_TREE:
         file_tree = generate_file_tree(console)
         if file_tree:
-            if context:
-                context += "\n\n"
-            context += "Current directory file structure:\n```\n" + file_tree + "\n```"
+            context_manager.add_context(
+                "Current directory file structure:\n```\n" + file_tree + "\n```",
+                IMPORTANT_PRIORITY,
+                "File tree"
+            )
             
             if DEBUG:
                 console.print("[info]Added file tree to context[/info]")
 
-    return context
+    # Build the final context string
+    context = context_manager.build_context_string()
+
+    # Show context stats if requested
+    if getattr(args, "context_stats", False):
+        tokens_by_priority = context_manager.get_tokens_by_priority()
+        total_tokens = context_manager.get_total_tokens()
+        
+        console.print("\n[bold]Context Statistics:[/bold]")
+        console.print(f"Total context tokens: {total_tokens}/{max_tokens}")
+        console.print(f"System prompt: {tokens_by_priority['system']} tokens")
+        console.print(f"Essential context: {tokens_by_priority[ESSENTIAL_PRIORITY]} tokens")
+        console.print(f"Important context: {tokens_by_priority[IMPORTANT_PRIORITY]} tokens")
+        console.print(f"Supplementary context: {tokens_by_priority[SUPPLEMENTARY_PRIORITY]} tokens")
+        console.print("")
+
+    return context, context_manager
 
 
 def generate_file_tree(console: Console) -> str:

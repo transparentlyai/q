@@ -91,15 +91,26 @@ def main() -> None:
             console.print("[info]File tree will be included in context[/info]")
         
     # Build and sanitize context from config and files
-    context = build_context(args, config_context, console)
+    context, context_manager = build_context(args, config_context, console)
     sanitized_context = sanitize_context(context, console)
 
     # Set up system prompt with context if available
     include_command_execution = not getattr(args, "no_execute", False)
-    system_prompt = get_system_prompt(
+    base_system_prompt = get_system_prompt(
         include_command_execution=include_command_execution,
-        context=sanitized_context if sanitized_context else None,
+        context=None,  # We'll set context separately
     )
+    
+    # Set system prompt and add conversation context
+    context_manager.set_system_prompt(base_system_prompt)
+    if sanitized_context:
+        # Context is now managed by the ContextManager
+        system_prompt = get_system_prompt(
+            include_command_execution=include_command_execution,
+            context=sanitized_context,
+        )
+    else:
+        system_prompt = base_system_prompt
 
     # If confirm-context is specified, show the context and ask for confirmation
     if args.confirm_context and sanitized_context:
@@ -131,6 +142,7 @@ def main() -> None:
         console,
         question,
         permission_manager,
+        context_manager=context_manager,
     )
 
 
