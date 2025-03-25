@@ -254,8 +254,8 @@ def run_conversation(
                             if command_results_str:
                                 command_results_data = get_command_result_prompt(command_results_str)
                     
-                    # 4. Display error message if any operation failed
-                    if has_operation_error:
+                    # 4. Display error message only if an operation failed (but not if it was interrupted)
+                    if has_operation_error and not operation_interrupted:
                         console.print("[red]Operation error[/red]")
                     
                     # 5. Combine all operation results
