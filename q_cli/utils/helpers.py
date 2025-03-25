@@ -92,8 +92,23 @@ def check_for_updates() -> Tuple[bool, str]:
             latest_version = version_match.group(1)
             current_version = __version__
 
-            if latest_version != current_version:
-                return True, latest_version
+            # Properly compare version numbers instead of strings
+            latest_parts = [int(x) for x in latest_version.split('.')]
+            current_parts = [int(x) for x in current_version.split('.')]
+            
+            # Compare version parts from left to right
+            for i in range(max(len(latest_parts), len(current_parts))):
+                latest_part = latest_parts[i] if i < len(latest_parts) else 0
+                current_part = current_parts[i] if i < len(current_parts) else 0
+                
+                if latest_part > current_part:
+                    return True, latest_version
+                elif current_part > latest_part:
+                    # Current version is newer than remote (unusual but possible during development)
+                    return False, ""
+            
+            # If we get here, versions are identical
+            return False, ""
     except (requests.RequestException, Exception):
         # Silently fail on any error - don't disrupt the user experience
         pass
