@@ -23,73 +23,75 @@ from q_cli.utils.helpers import format_markdown
 class SmartPathCompleter(Completer):
     """
     Path completer that works anywhere in the input text.
-    
+
     This completer scans the text at the current cursor position to find any
     partial path or filename, then offers completions for it.
     """
-    
+
     def __init__(self):
         """Initialize the smart path completer."""
         # Built-in path completer for comparison
         self.path_completer = PathCompleter(expanduser=True)
-        
+
     def get_word_under_cursor(self, document: Document) -> Tuple[str, int]:
         """
         Get the word under cursor and its start position.
-        
+
         Args:
             document: The document being edited
-        
+
         Returns:
             Tuple containing (word, start_position)
         """
         # Get text up to cursor
         text_before_cursor = document.text_before_cursor
-        
+
         # Find potential path fragments that could be completed
         # Look for words that might be files or directories
         # This simpler regex finds anything that doesn't contain whitespace
-        match = re.search(r'[^\s]*$', text_before_cursor)
-        
+        match = re.search(r"[^\s]*$", text_before_cursor)
+
         if match:
             word = match.group(0)
             start_pos = len(text_before_cursor) - len(word)
             return word, start_pos
-        
+
         return "", document.cursor_position
-    
+
     def get_path_completions(self, current_word: str) -> List[Tuple[str, str]]:
         """
         Get possible path completions for the current word.
-        
+
         Args:
             current_word: The word to complete
-            
+
         Returns:
             List of (completion, display_meta) tuples
         """
         # Handle empty input
         if not current_word:
-            return [(f, "") for f in os.listdir('.') if not f.startswith('.')]
-        
+            return [(f, "") for f in os.listdir(".") if not f.startswith(".")]
+
         # Check if it's a path with directory components
-        if '/' in current_word:
+        if "/" in current_word:
             # Get the directory part and the filename part
             directory, filename = os.path.split(current_word)
-            
+
             # Handle special case for current directory
-            if directory == '':
-                directory = '.'
-            
+            if directory == "":
+                directory = "."
+
             # Expand user home if needed
-            if directory.startswith('~'):
+            if directory.startswith("~"):
                 directory = os.path.expanduser(directory)
-            
+
             try:
                 # Get all matching files in that directory
                 if os.path.isdir(directory):
                     matches = []
-                    pattern = f"{directory}/{filename}*" if filename else f"{directory}/*"
+                    pattern = (
+                        f"{directory}/{filename}*" if filename else f"{directory}/*"
+                    )
                     for path in glob.glob(pattern):
                         # Get just the relevant part for completion
                         name = os.path.basename(path)
@@ -100,7 +102,7 @@ class SmartPathCompleter(Completer):
                         else:
                             display_meta = ""
                             completion = os.path.join(directory, name)
-                        
+
                         # Only include files that match the prefix
                         if not filename or name.startswith(filename):
                             matches.append((completion, display_meta))
@@ -110,7 +112,7 @@ class SmartPathCompleter(Completer):
         else:
             # Simple filename matching in current directory
             matches = []
-            for name in os.listdir('.'):
+            for name in os.listdir("."):
                 if name.startswith(current_word):
                     if os.path.isdir(name):
                         # Add trailing slash for directories
@@ -118,35 +120,33 @@ class SmartPathCompleter(Completer):
                     else:
                         matches.append((name, ""))
             return matches
-        
+
         return []
-        
+
     def get_completions(self, document, complete_event):
         """
         Get completions for the current document.
-        
+
         Args:
             document: The current document being edited
             complete_event: The completion event
-            
+
         Yields:
             Completion objects
         """
         # Get the word under cursor and its position
         word, word_start = self.get_word_under_cursor(document)
-        
+
         # Get completions for this word
         completions = self.get_path_completions(word)
-        
+
         # Convert to Completion objects
         for text, display_meta in completions:
             # Calculate the correct start position
             start_position = word_start - document.cursor_position
-            
+
             yield Completion(
-                text,
-                start_position=start_position,
-                display_meta=display_meta
+                text, start_position=start_position, display_meta=display_meta
             )
 
 
@@ -163,10 +163,10 @@ def create_prompt_session(console: Console) -> PromptSession:
 
     # Create history object
     history = FileHistory(HISTORY_PATH)
-    
+
     # Create custom keybindings
     bindings = create_key_bindings()
-    
+
     # Create smart path completer
     smart_completer = SmartPathCompleter()
 
@@ -190,10 +190,10 @@ def create_prompt_session(console: Console) -> PromptSession:
 def create_key_bindings():
     """Create custom key bindings for the prompt session."""
     bindings = KeyBindings()
-    
+
     # Create a separate key binding for ESC to exit immediately
     escape_bindings = KeyBindings()
-    
+
     # Override the Enter key to only accept input when there's text
     @bindings.add("enter")
     def handle_enter(event):
@@ -201,14 +201,14 @@ def create_key_bindings():
         # Only accept input if there's text
         if len(event.current_buffer.text.strip()) > 0:
             event.current_buffer.validate_and_handle()
-    
+
     # Add Escape key to abort/exit with highest priority
     @escape_bindings.add("escape", eager=True)
     def handle_escape(event):
         """Exit the application when Escape is pressed."""
         # Send SIGINT to the current process, which is a cleaner way to exit
         os.kill(os.getpid(), signal.SIGINT)
-    
+
     # Merge the key bindings, with escape_bindings having higher precedence
     return merge_key_bindings([escape_bindings, bindings])
 
@@ -257,9 +257,7 @@ def get_input(prompt: str = "", session: Optional[PromptSession] = None) -> str:
         sys.exit(0)
 
 
-def get_initial_question(
-    args, prompt_session: PromptSession, history
-) -> str:
+def get_initial_question(args, prompt_session: PromptSession, history) -> str:
     """
     Get the initial question from command line, file, or prompt.
 

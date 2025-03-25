@@ -74,7 +74,7 @@ def parse_version(version_str: str) -> List[int]:
     Handles version strings like "0.9.0.64" by splitting on dots.
     """
     try:
-        return [int(part) for part in version_str.split('.')]
+        return [int(part) for part in version_str.split(".")]
     except ValueError:
         # If conversion fails, fall back to a safe default
         return [0, 0, 0]
@@ -90,20 +90,20 @@ def is_newer_version(version1: str, version2: str) -> bool:
         return False
     if not version2:
         return True
-        
+
     v1_parts = parse_version(version1)
     v2_parts = parse_version(version2)
-    
+
     # Compare each part in order
     for i in range(max(len(v1_parts), len(v2_parts))):
         v1_part = v1_parts[i] if i < len(v1_parts) else 0
         v2_part = v2_parts[i] if i < len(v2_parts) else 0
-        
+
         if v1_part > v2_part:
             return True
         elif v1_part < v2_part:
             return False
-    
+
     # If we get here, versions are identical
     return False
 
@@ -121,7 +121,7 @@ def check_for_updates() -> Tuple[bool, str]:
         # Fetch the latest version from GitHub's raw content
         response = requests.get(
             "https://raw.githubusercontent.com/transparentlyai/q/main/q_cli/__init__.py",
-            timeout=2  # Short timeout to prevent startup delay
+            timeout=2,  # Short timeout to prevent startup delay
         )
         response.raise_for_status()
 
@@ -131,11 +131,18 @@ def check_for_updates() -> Tuple[bool, str]:
         if version_match:
             github_version = version_match.group(1)
             current_version = __version__
-            
+
             # Use console for debug output if available
             from rich.console import Console
-            Console().print(f"[dim]DEBUG: Current version: {current_version}, GitHub version: {github_version}[/dim]") if DEBUG else None
-            
+
+            (
+                Console().print(
+                    f"[dim]DEBUG: Current version: {current_version}, GitHub version: {github_version}[/dim]"
+                )
+                if DEBUG
+                else None
+            )
+
             # Check if GitHub version is newer
             if is_newer_version(github_version, current_version):
                 return True, github_version
@@ -143,7 +150,10 @@ def check_for_updates() -> Tuple[bool, str]:
         # Silently fail on any error - don't disrupt the user experience
         if DEBUG:
             from rich.console import Console
-            Console().print(f"[yellow]DEBUG: Error checking for updates: {str(e)}[/yellow]")
+
+            Console().print(
+                f"[yellow]DEBUG: Error checking for updates: {str(e)}[/yellow]"
+            )
         pass
 
     return False, ""

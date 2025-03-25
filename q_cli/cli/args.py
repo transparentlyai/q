@@ -10,10 +10,16 @@ def update_command():
     """Update q to the latest version from GitHub."""
     try:
         print("Updating q to the latest version...")
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install", "--upgrade", 
-            "git+https://github.com/transparentlyai/q.git"
-        ])
+        subprocess.check_call(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "git+https://github.com/transparentlyai/q.git",
+            ]
+        )
         print("Update completed successfully!")
     except subprocess.CalledProcessError as e:
         print(f"Error updating q: {e}")

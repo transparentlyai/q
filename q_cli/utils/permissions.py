@@ -15,15 +15,15 @@ class CommandPermissionManager:
     - Checking if commands are allowed, prohibited, or need permission
     - Tracking approved command categories for the session
     - Extracting command types from full command strings
-    
+
     Permission Priority Order (highest to lowest):
     1. Prohibited commands - can never be executed
     2. Always restricted commands - always require explicit permission
     3. Session approved commands - approved during the current session
     4. Always approved commands - pre-approved by default
     5. Default - require permission
-    
-    Note: Default commands from constants.py are always added to user-configured 
+
+    Note: Default commands from constants.py are always added to user-configured
     commands from the config file. This ensures core functionality while allowing
     user customization.
     """
@@ -134,7 +134,7 @@ class CommandPermissionManager:
         # Always need permission for restricted commands (highest priority after prohibited)
         if cmd_type in self.always_restricted_commands:
             return True  # Always need permission
-            
+
         # Check if it's already approved in this session
         if cmd_type in self.session_approved_commands:
             return False  # Already approved in this session
@@ -211,5 +211,7 @@ def parse_command_list(command_list_str: str) -> List[str]:
             return []
     else:
         # Not a valid JSON array format
-        logging.warning(f"Invalid command list format. Must be a JSON array: {command_list_str}")
+        logging.warning(
+            f"Invalid command list format. Must be a JSON array: {command_list_str}"
+        )
         return []

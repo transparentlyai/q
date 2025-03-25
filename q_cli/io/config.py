@@ -8,9 +8,16 @@ from typing import Dict, Optional, Tuple, List
 from rich.console import Console
 
 from q_cli.utils.constants import (
-    CONFIG_PATH, REDACTED_TEXT, DEBUG, INCLUDE_FILE_TREE, MAX_FILE_TREE_ENTRIES,
-    DEFAULT_MAX_CONTEXT_TOKENS, DEFAULT_CONTEXT_PRIORITY_MODE,
-    ESSENTIAL_PRIORITY, IMPORTANT_PRIORITY, SUPPLEMENTARY_PRIORITY
+    CONFIG_PATH,
+    REDACTED_TEXT,
+    DEBUG,
+    INCLUDE_FILE_TREE,
+    MAX_FILE_TREE_ENTRIES,
+    DEFAULT_MAX_CONTEXT_TOKENS,
+    DEFAULT_CONTEXT_PRIORITY_MODE,
+    ESSENTIAL_PRIORITY,
+    IMPORTANT_PRIORITY,
+    SUPPLEMENTARY_PRIORITY,
 )
 from q_cli.utils.helpers import contains_sensitive_info, expand_env_vars
 from q_cli.utils.context import ContextManager
@@ -35,16 +42,20 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
     # First try the package directory
     package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     repo_root = os.path.dirname(package_dir)
-    
+
     # Set up possible locations to find example_config.conf
     possible_locations = [
         os.path.join(package_dir, "example_config.conf"),  # q_cli package directory
-        os.path.join(os.path.dirname(__file__), "..", "example_config.conf"),  # Relative to this file
-        os.path.join(os.path.dirname(sys.executable), "example_config.conf"),  # Next to Python executable
+        os.path.join(
+            os.path.dirname(__file__), "..", "example_config.conf"
+        ),  # Relative to this file
+        os.path.join(
+            os.path.dirname(sys.executable), "example_config.conf"
+        ),  # Next to Python executable
         # For backwards compatibility, checks repo root last
         os.path.join(repo_root, "example_config.conf"),  # Repository root
     ]
-    
+
     # Find the first existing config
     example_config_path = None
     for path in possible_locations:
@@ -184,7 +195,9 @@ def read_context_file(file_path: str, console: Console) -> str:
         return ""
 
 
-def build_context(args, config_context: str, console: Console) -> Tuple[str, ContextManager]:
+def build_context(
+    args, config_context: str, console: Console
+) -> Tuple[str, ContextManager]:
     """
     Build the context from config and additional context files using priority-based management.
 
@@ -200,20 +213,18 @@ def build_context(args, config_context: str, console: Console) -> Tuple[str, Con
     """
     # Initialize context manager with args or default values
     max_tokens = getattr(args, "max_context_tokens", None)
-    priority_mode = getattr(args, "context_priority_mode", DEFAULT_CONTEXT_PRIORITY_MODE)
-    
+    priority_mode = getattr(
+        args, "context_priority_mode", DEFAULT_CONTEXT_PRIORITY_MODE
+    )
+
     context_manager = ContextManager(
-        max_tokens=max_tokens,
-        priority_mode=priority_mode,
-        console=console
+        max_tokens=max_tokens, priority_mode=priority_mode, console=console
     )
 
     # Add config context if not disabled (supplementary priority)
     if config_context and not args.no_context:
         context_manager.add_context(
-            config_context,
-            SUPPLEMENTARY_PRIORITY,
-            "Config file context"
+            config_context, SUPPLEMENTARY_PRIORITY, "Config file context"
         )
 
     # Add context from additional files (important priority)
@@ -224,7 +235,7 @@ def build_context(args, config_context: str, console: Console) -> Tuple[str, Con
                 context_manager.add_context(
                     f"Content from {os.path.basename(file_path)}:\n{file_content}",
                     IMPORTANT_PRIORITY,
-                    f"File context: {os.path.basename(file_path)}"
+                    f"File context: {os.path.basename(file_path)}",
                 )
 
     # Add the current directory file tree to the context if enabled (important priority)
@@ -234,9 +245,9 @@ def build_context(args, config_context: str, console: Console) -> Tuple[str, Con
             context_manager.add_context(
                 "Current directory file structure:\n```\n" + file_tree + "\n```",
                 IMPORTANT_PRIORITY,
-                "File tree"
+                "File tree",
             )
-            
+
             if DEBUG:
                 console.print("[info]Added file tree to context[/info]")
 
@@ -247,13 +258,19 @@ def build_context(args, config_context: str, console: Console) -> Tuple[str, Con
     if getattr(args, "context_stats", False):
         tokens_by_priority = context_manager.get_tokens_by_priority()
         total_tokens = context_manager.get_total_tokens()
-        
+
         console.print("\n[bold]Context Statistics:[/bold]")
         console.print(f"Total context tokens: {total_tokens}/{max_tokens}")
         console.print(f"System prompt: {tokens_by_priority['system']} tokens")
-        console.print(f"Essential context: {tokens_by_priority[ESSENTIAL_PRIORITY]} tokens")
-        console.print(f"Important context: {tokens_by_priority[IMPORTANT_PRIORITY]} tokens")
-        console.print(f"Supplementary context: {tokens_by_priority[SUPPLEMENTARY_PRIORITY]} tokens")
+        console.print(
+            f"Essential context: {tokens_by_priority[ESSENTIAL_PRIORITY]} tokens"
+        )
+        console.print(
+            f"Important context: {tokens_by_priority[IMPORTANT_PRIORITY]} tokens"
+        )
+        console.print(
+            f"Supplementary context: {tokens_by_priority[SUPPLEMENTARY_PRIORITY]} tokens"
+        )
         console.print("")
 
     return context, context_manager
@@ -262,7 +279,7 @@ def build_context(args, config_context: str, console: Console) -> Tuple[str, Con
 def generate_file_tree(console: Console) -> str:
     """
     Generate a tree view of the current directory.
-    
+
     Returns:
         A string representation of the directory tree
     """
@@ -272,127 +289,158 @@ def generate_file_tree(console: Console) -> str:
             # Try using the tree command first for better formatting
             # Exclude common directories to avoid clutter
             tree_cmd = [
-                "tree", "-L", "3", "--noreport", 
-                "-I", "node_modules|venv|__pycache__|.git|.idea|.vscode|dist|build"
+                "tree",
+                "-L",
+                "3",
+                "--noreport",
+                "-I",
+                "node_modules|venv|__pycache__|.git|.idea|.vscode|dist|build",
             ]
-            
+
             result = subprocess.run(
-                tree_cmd,
-                capture_output=True,
-                text=True,
-                check=False
+                tree_cmd, capture_output=True, text=True, check=False
             )
-            
+
             if result.returncode == 0 and result.stdout.strip():
                 tree_output = result.stdout.strip()
                 if DEBUG:
-                    console.print(f"[info]Generated file tree using 'tree' command[/info]")
+                    console.print(
+                        f"[info]Generated file tree using 'tree' command[/info]"
+                    )
                 return tree_output
         except FileNotFoundError:
             # Tree command not available, we'll use the fallback method
             if DEBUG:
-                console.print("[yellow]DEBUG: 'tree' command not found, using fallback method[/yellow]")
+                console.print(
+                    "[yellow]DEBUG: 'tree' command not found, using fallback method[/yellow]"
+                )
             pass
-        
+
         # Fallback to find command
-        cmd = ["find", ".", "-type", "d", "-o", "-type", "f", 
-               "-not", "-path", "*/\\.*", 
-               "-not", "-path", "*/venv/*", 
-               "-not", "-path", "*/node_modules/*",
-               "-not", "-path", "*/__pycache__/*",
-               "-not", "-path", "*/dist/*",
-               "-not", "-path", "*/build/*",
-               "-maxdepth", "3"]
-               
+        cmd = [
+            "find",
+            ".",
+            "-type",
+            "d",
+            "-o",
+            "-type",
+            "f",
+            "-not",
+            "-path",
+            "*/\\.*",
+            "-not",
+            "-path",
+            "*/venv/*",
+            "-not",
+            "-path",
+            "*/node_modules/*",
+            "-not",
+            "-path",
+            "*/__pycache__/*",
+            "-not",
+            "-path",
+            "*/dist/*",
+            "-not",
+            "-path",
+            "*/build/*",
+            "-maxdepth",
+            "3",
+        ]
+
         # Execute the find command
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
         if result.returncode != 0:
             if DEBUG:
-                console.print(f"[yellow]DEBUG: Error generating file tree: {result.stderr}[/yellow]")
+                console.print(
+                    f"[yellow]DEBUG: Error generating file tree: {result.stderr}[/yellow]"
+                )
             return ""
-        
+
         # Process the output to create a more visually appealing tree
-        lines = result.stdout.strip().split('\n')
-        
+        lines = result.stdout.strip().split("\n")
+
         # Build a tree structure
-        tree = {}
+        tree: dict[str, dict] = {}
         for line in lines:
             line = line.strip()
             if not line:
                 continue
-                
-            # Remove leading ./ 
-            if line.startswith('./'):
+
+            # Remove leading ./
+            if line.startswith("./"):
                 line = line[2:]
-            elif line == '.':
+            elif line == ".":
                 continue
-                
-            parts = line.split('/')
+
+            parts = line.split("/")
             current = tree
             for part in parts[:-1]:  # Process directories
                 if part not in current:
                     current[part] = {}
                 current = current[part]
-            
+
             # Add the leaf (file or directory)
             leaf = parts[-1]
             if leaf:  # Skip empty names
                 current[leaf] = {}
-        
+
         # Convert the tree structure to text
         lines = []
-        
+
         def _build_tree_text(node, prefix="", is_last=True, lines_list=None):
             if lines_list is None:
                 lines_list = []
-                
+
             items = list(node.items())
             if not items:
                 return lines_list
-                
+
             for i, (name, children) in enumerate(items):
                 is_last_item = i == len(items) - 1
-                
+
                 # Add the current line
                 if prefix:
                     line = f"{prefix}{'└─ ' if is_last_item else '├─ '}{name}"
                 else:
                     line = name
                 lines_list.append(line)
-                
+
                 # Process children with proper indentation
                 if children:
                     new_prefix = f"{prefix}{'   ' if is_last_item else '│  '}"
                     _build_tree_text(children, new_prefix, is_last_item, lines_list)
-                    
+
             return lines_list
-        
+
         # Generate the tree text
         tree_lines = _build_tree_text(tree)
         tree_lines.insert(0, ".")  # Add root
-        
+
         # Limit the number of entries if needed
         if len(tree_lines) > MAX_FILE_TREE_ENTRIES:
             if DEBUG:
-                console.print(f"[yellow]DEBUG: Limiting file tree from {len(tree_lines)} to {MAX_FILE_TREE_ENTRIES} entries[/yellow]")
+                console.print(
+                    f"[yellow]DEBUG: Limiting file tree from {len(tree_lines)} to {MAX_FILE_TREE_ENTRIES} entries[/yellow]"
+                )
             truncated_lines = tree_lines[:MAX_FILE_TREE_ENTRIES]
-            truncated_lines.append(f"... ({len(tree_lines) - MAX_FILE_TREE_ENTRIES} more entries omitted)")
+            truncated_lines.append(
+                f"... ({len(tree_lines) - MAX_FILE_TREE_ENTRIES} more entries omitted)"
+            )
             tree_lines = truncated_lines
-        
-        tree_text = '\n'.join(tree_lines)
-        
+
+        tree_text = "\n".join(tree_lines)
+
         if DEBUG:
-            console.print(f"[info]Generated file tree with {len(tree_lines)} entries[/info]")
-            
+            console.print(
+                f"[info]Generated file tree with {len(tree_lines)} entries[/info]"
+            )
+
         return tree_text
-        
+
     except Exception as e:
         if DEBUG:
-            console.print(f"[yellow]DEBUG: Error generating file tree: {str(e)}[/yellow]")
+            console.print(
+                f"[yellow]DEBUG: Error generating file tree: {str(e)}[/yellow]"
+            )
         return ""

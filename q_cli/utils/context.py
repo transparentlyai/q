@@ -55,7 +55,7 @@ class ContextItem:
 class ContextManager:
     """
     Manages context for AI conversations with token counting and prioritization.
-    
+
     This class handles:
     - Token counting for all context items
     - Prioritization of context by importance
@@ -77,28 +77,32 @@ class ContextManager:
             priority_mode: Priority mode (balanced, code, conversation)
             console: Console for output
         """
-        self.max_tokens = max_tokens if max_tokens is not None else DEFAULT_MAX_CONTEXT_TOKENS
+        self.max_tokens = (
+            max_tokens if max_tokens is not None else DEFAULT_MAX_CONTEXT_TOKENS
+        )
         self.priority_mode = priority_mode
         self.console = console or Console()
-        
+
         # Dictionary of context items by priority level
         self.context_items: Dict[str, List[ContextItem]] = {
             ESSENTIAL_PRIORITY: [],
             IMPORTANT_PRIORITY: [],
             SUPPLEMENTARY_PRIORITY: [],
         }
-        
+
         # Token allocations by priority (can be adjusted based on priority_mode)
         self.token_allocations = self._get_token_allocations()
-        
+
         # System prompt (stored separately as it's always included)
         self.system_prompt: Optional[str] = None
-        self.system_prompt_tokens = 0  # Initialize to 0, will be updated when prompt is set
+        self.system_prompt_tokens = (
+            0  # Initialize to 0, will be updated when prompt is set
+        )
 
     def _get_token_allocations(self) -> Dict[str, float]:
         """
         Get token allocations based on priority mode.
-        
+
         Returns:
             Dictionary of token allocations by priority
         """
@@ -108,7 +112,7 @@ class ContextManager:
             IMPORTANT_PRIORITY: IMPORTANT_TOKEN_ALLOCATION,
             SUPPLEMENTARY_PRIORITY: SUPPLEMENTARY_TOKEN_ALLOCATION,
         }
-        
+
         # Adjust based on priority mode
         if self.priority_mode == "code":
             # Favor code context
@@ -118,15 +122,13 @@ class ContextManager:
             # Favor conversation history
             allocations[ESSENTIAL_PRIORITY] = 0.40
             allocations[SUPPLEMENTARY_PRIORITY] = 0.20
-            
+
         return allocations
 
-    def add_context(
-        self, content: str, priority: str, description: str = ""
-    ) -> None:
+    def add_context(self, content: str, priority: str, description: str = "") -> None:
         """
         Add a context item with specified priority.
-        
+
         Args:
             content: The content to add
             priority: Priority level
@@ -134,17 +136,17 @@ class ContextManager:
         """
         if not content:
             return
-            
+
         if priority not in self.context_items:
             if DEBUG:
                 self.console.print(
                     f"[yellow]Invalid priority: {priority}, using supplementary[/yellow]"
                 )
             priority = SUPPLEMENTARY_PRIORITY
-            
+
         item = ContextItem(content, priority, description)
         self.context_items[priority].append(item)
-        
+
         if DEBUG:
             self.console.print(
                 f"[info]Added {description} context: {item.token_count} tokens[/info]"
@@ -153,13 +155,13 @@ class ContextManager:
     def set_system_prompt(self, prompt: str) -> None:
         """
         Set the system prompt (highest priority content).
-        
+
         Args:
             prompt: The system prompt to set
         """
         self.system_prompt = prompt
         self.system_prompt_tokens = num_tokens_from_string(prompt)
-        
+
         if DEBUG:
             self.console.print(
                 f"[info]System prompt: {self.system_prompt_tokens} tokens[/info]"
@@ -168,52 +170,52 @@ class ContextManager:
     def get_total_tokens(self) -> int:
         """
         Get the total number of tokens across all context items.
-        
+
         Returns:
             Total token count
         """
         total = self.system_prompt_tokens
-        
+
         for priority, items in self.context_items.items():
             for item in items:
                 total += item.token_count
-                
+
         return total
 
     def get_tokens_by_priority(self) -> Dict[str, int]:
         """
         Get token counts broken down by priority level.
-        
+
         Returns:
             Dictionary of token counts by priority
         """
         counts = {
             "system": self.system_prompt_tokens,
             ESSENTIAL_PRIORITY: 0,
-            IMPORTANT_PRIORITY: 0, 
+            IMPORTANT_PRIORITY: 0,
             SUPPLEMENTARY_PRIORITY: 0,
         }
-        
+
         for priority, items in self.context_items.items():
             for item in items:
                 counts[priority] += item.token_count
-                
+
         return counts
 
     def get_allocated_tokens(self, priority: str) -> int:
         """
         Get the number of tokens allocated to a priority level.
-        
+
         Args:
             priority: Priority level
-            
+
         Returns:
             Token allocation for the priority level
         """
         # System prompt is always fully allocated
         if priority == "system":
             return self.system_prompt_tokens
-            
+
         # For other priorities, calculate based on percentage allocation
         return int(self.max_tokens * self.token_allocations[priority])
 
@@ -222,36 +224,34 @@ class ContextManager:
     ) -> List[ContextItem]:
         """
         Trim context items to fit within target token count.
-        
+
         Args:
             priority: Priority level to trim
             target_tokens: Target token count
-            
+
         Returns:
             List of trimmed context items
         """
         items = self.context_items[priority]
-        
+
         # Nothing to trim if we're under target
         current_tokens = sum(item.token_count for item in items)
         if current_tokens <= target_tokens:
             return items
-            
+
         # Sort items by token count in descending order
         # For supplementary items, we'll cut the largest ones first
         # For essential/important items, we'll trim from the oldest
         if priority == SUPPLEMENTARY_PRIORITY:
-            sorted_items = sorted(
-                items, key=lambda x: x.token_count, reverse=True
-            )
+            sorted_items = sorted(items, key=lambda x: x.token_count, reverse=True)
         else:
             # Keep the most recent items (assumes items were added in chronological order)
             sorted_items = items.copy()
-            
+
         # Keep adding items until we hit the target
-        result = []
+        result: list[ContextItem] = []
         total_tokens = 0
-        
+
         for item in reversed(sorted_items):
             if total_tokens + item.token_count <= target_tokens:
                 result.insert(0, item)  # Insert at beginning to maintain order
@@ -265,28 +265,27 @@ class ContextManager:
                         keep_ratio = (target_tokens - total_tokens) / item.token_count
                         if keep_ratio > 0.5:  # Only truncate if we can keep most of it
                             truncated_content = truncate_text_to_tokens(
-                                item.content, 
-                                target_tokens - total_tokens
+                                item.content, target_tokens - total_tokens
                             )
                             truncated_item = ContextItem(
                                 truncated_content,
                                 item.priority,
-                                f"{item.description} (truncated)"
+                                f"{item.description} (truncated)",
                             )
                             result.insert(0, truncated_item)
                             total_tokens += truncated_item.token_count
-                            
+
                 if DEBUG:
                     self.console.print(
                         f"[yellow]Dropping {item.description} to fit token limit[/yellow]"
                     )
-                    
+
         if DEBUG and len(result) < len(items):
             dropped = len(items) - len(result)
             self.console.print(
                 f"[yellow]Dropped {dropped} items from {priority} priority[/yellow]"
             )
-            
+
         return result
 
     def optimize_context(self) -> None:
@@ -301,7 +300,7 @@ class ContextManager:
                 self.console.print(
                     f"[yellow]Using default max tokens: {self.max_tokens}[/yellow]"
                 )
-                
+
         token_budget = self.max_tokens - self.system_prompt_tokens
         if token_budget <= 0:
             # System prompt alone exceeds token limit
@@ -310,26 +309,28 @@ class ContextManager:
                     f"[red]Warning: System prompt alone exceeds token limit[/red]"
                 )
             return
-            
+
         # Calculate target tokens for each priority based on allocations
         essential_target = min(
             int(token_budget * self.token_allocations[ESSENTIAL_PRIORITY]),
-            sum(item.token_count for item in self.context_items[ESSENTIAL_PRIORITY])
+            sum(item.token_count for item in self.context_items[ESSENTIAL_PRIORITY]),
         )
-        
+
         # Reclaim unused essential tokens for important
         remaining_budget = token_budget - essential_target
         important_target = min(
             int(remaining_budget * 0.7),  # Give 70% of remaining to important
-            sum(item.token_count for item in self.context_items[IMPORTANT_PRIORITY])
+            sum(item.token_count for item in self.context_items[IMPORTANT_PRIORITY]),
         )
-        
+
         # Give the rest to supplementary
         supplementary_target = min(
             remaining_budget - important_target,
-            sum(item.token_count for item in self.context_items[SUPPLEMENTARY_PRIORITY])
+            sum(
+                item.token_count for item in self.context_items[SUPPLEMENTARY_PRIORITY]
+            ),
         )
-        
+
         # Trim each priority level to fit targets
         self.context_items[ESSENTIAL_PRIORITY] = self._trim_context_items(
             ESSENTIAL_PRIORITY, essential_target
@@ -340,38 +341,40 @@ class ContextManager:
         self.context_items[SUPPLEMENTARY_PRIORITY] = self._trim_context_items(
             SUPPLEMENTARY_PRIORITY, supplementary_target
         )
-        
+
         if DEBUG:
             total_after = sum(
                 sum(item.token_count for item in items)
                 for items in self.context_items.values()
             )
-            self.console.print(
-                f"[info]Optimized context: {total_after} tokens[/info]"
-            )
+            self.console.print(f"[info]Optimized context: {total_after} tokens[/info]")
 
     def build_context_string(self) -> str:
         """
         Build the final context string from all items.
-        
+
         Returns:
             The combined context string
         """
         # Check if we have any context items before optimizing
         total_items = sum(len(items) for items in self.context_items.values())
-        
+
         # Only optimize if we have context to optimize
         if total_items > 0:
             self.optimize_context()
-        
+
         context_parts = []
-        
+
         # Add items from each priority level in order
-        for priority in [ESSENTIAL_PRIORITY, IMPORTANT_PRIORITY, SUPPLEMENTARY_PRIORITY]:
+        for priority in [
+            ESSENTIAL_PRIORITY,
+            IMPORTANT_PRIORITY,
+            SUPPLEMENTARY_PRIORITY,
+        ]:
             for item in self.context_items[priority]:
                 if item.content:
                     context_parts.append(item.content)
-                    
+
         # Join with double newlines
         return "\n\n".join(context_parts)
 
@@ -379,24 +382,24 @@ class ContextManager:
 def truncate_text_to_tokens(text: str, max_tokens: int) -> str:
     """
     Truncate text to fit within max_tokens.
-    
+
     Args:
         text: The text to truncate
         max_tokens: Maximum token count
-        
+
     Returns:
         Truncated text
     """
     if num_tokens_from_string(text) <= max_tokens:
         return text
-        
+
     # For code blocks, preserve the start and end
     if "```" in text:
         # Split by code blocks
-        parts = re.split(r'(```.*?```)', text, flags=re.DOTALL)
+        parts = re.split(r"(```.*?```)", text, flags=re.DOTALL)
         result_parts = []
         tokens_used = 0
-        
+
         # Keep adding parts until we hit the limit
         for part in parts:
             part_tokens = num_tokens_from_string(part)
@@ -414,18 +417,22 @@ def truncate_text_to_tokens(text: str, max_tokens: int) -> str:
                         if len(lines) > 2:
                             opening = lines[0]
                             # Approximate token count for truncated content
-                            content_tokens = remaining - num_tokens_from_string(opening + "\n```")
+                            content_tokens = remaining - num_tokens_from_string(
+                                opening + "\n```"
+                            )
                             if content_tokens > 10:
-                                truncated = truncate_text_to_tokens("\n".join(lines[1:-1]), content_tokens)
+                                truncated = truncate_text_to_tokens(
+                                    "\n".join(lines[1:-1]), content_tokens
+                                )
                                 result_parts.append(f"{opening}\n{truncated}\n```")
                     else:
                         # For regular text, just truncate
                         truncated = simple_truncate(part, remaining)
                         result_parts.append(truncated)
                 break
-                
+
         return "".join(result_parts)
-    
+
     # For plain text, simpler approach
     return simple_truncate(text, max_tokens)
 
@@ -433,29 +440,29 @@ def truncate_text_to_tokens(text: str, max_tokens: int) -> str:
 def simple_truncate(text: str, max_tokens: int) -> str:
     """
     Simple truncation for plain text.
-    
+
     Args:
         text: Text to truncate
         max_tokens: Maximum token count
-        
+
     Returns:
         Truncated text
     """
     encoding = tiktoken.get_encoding("cl100k_base")
     tokens = encoding.encode(text)
-    
+
     if len(tokens) <= max_tokens:
         return text
-        
+
     # Keep first 70% and last 30% if possible
     if max_tokens > 20:
         first_portion = int(max_tokens * 0.7)
         last_portion = max_tokens - first_portion - 3  # 3 tokens for ellipsis
-        
+
         if last_portion > 5:
             first_part = encoding.decode(tokens[:first_portion])
             last_part = encoding.decode(tokens[-last_portion:])
             return f"{first_part}...\n[content truncated]\n...{last_part}"
-    
+
     # Simple truncation if we can't do the above
-    return encoding.decode(tokens[:max_tokens-3]) + "..."
+    return encoding.decode(tokens[: max_tokens - 3]) + "..."

@@ -32,26 +32,30 @@ def main() -> None:
         sys.argv.append("--interactive")
 
     args = parser.parse_args()
-    
+
     # Handle the update command if specified
     if args.update:
         from q_cli.cli.args import update_command
+
         update_command()
 
     # Initialize console for output
     console = setup_console()
-    
+
     # Check for updates and notify user if available
     from q_cli.utils.helpers import check_for_updates, is_newer_version
+
     update_available, latest_version = check_for_updates()
-    
+
     # Debug version check information
     if os.environ.get("Q_DEBUG"):
-        console.print(f"[dim]Current version: {__version__}, Latest version from GitHub: {latest_version or 'not found'}[/dim]")
+        console.print(
+            f"[dim]Current version: {__version__}, Latest version from GitHub: {latest_version or 'not found'}[/dim]"
+        )
         if latest_version:
             is_newer = is_newer_version(latest_version, __version__)
             console.print(f"[dim]Is GitHub version newer: {is_newer}[/dim]")
-    
+
     if update_available:
         msg = f"[dim]New version {latest_version} available. Run 'q --update' to update.[/dim]"
         console.print(msg)
@@ -84,20 +88,24 @@ def main() -> None:
 
     # Check if file tree should be included from args or config
     include_file_tree = getattr(args, "file_tree", False)
-    
+
     # Also check the config file - config vars are all uppercase
-    if not include_file_tree and config_vars.get("INCLUDE_FILE_TREE", "").lower() == "true":
+    if (
+        not include_file_tree
+        and config_vars.get("INCLUDE_FILE_TREE", "").lower() == "true"
+    ):
         include_file_tree = True
-        
+
     # Set the constant if needed
     if include_file_tree:
         # Import in local scope to avoid circular imports
         import q_cli.utils.constants as constants
+
         constants.INCLUDE_FILE_TREE = True
-        
+
         if constants.DEBUG:
             console.print("[info]File tree will be included in context[/info]")
-        
+
     # Build and sanitize context from config and files
     context, context_manager = build_context(args, config_context, console)
     sanitized_context = sanitize_context(context, console)
@@ -108,7 +116,7 @@ def main() -> None:
         include_command_execution=include_command_execution,
         context=None,  # We'll set context separately
     )
-    
+
     # Set system prompt and add conversation context
     if sanitized_context:
         # Context is now managed by the ContextManager
@@ -118,7 +126,7 @@ def main() -> None:
         )
     else:
         system_prompt = base_system_prompt
-        
+
     # Make sure the context manager knows about the system prompt
     context_manager.set_system_prompt(system_prompt)
 
@@ -134,7 +142,9 @@ def main() -> None:
     # Always add default commands to the user-configured ones
     # This ensures defaults are always included while allowing user customization
     permission_manager.always_approved_commands.update(DEFAULT_ALWAYS_APPROVED_COMMANDS)
-    permission_manager.always_restricted_commands.update(DEFAULT_ALWAYS_RESTRICTED_COMMANDS)
+    permission_manager.always_restricted_commands.update(
+        DEFAULT_ALWAYS_RESTRICTED_COMMANDS
+    )
     permission_manager.prohibited_commands.update(DEFAULT_PROHIBITED_COMMANDS)
 
     # Get initial question from args, file, or prompt
