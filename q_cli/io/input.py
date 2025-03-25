@@ -4,12 +4,15 @@ import os
 import sys
 import signal
 from typing import Optional
+import re
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
 from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
+from prompt_toolkit.completion import PathCompleter, Completer, Completion
+from prompt_toolkit.document import Document
 from rich.console import Console
 
 from q_cli.utils.constants import HISTORY_PATH, EXIT_COMMANDS
@@ -18,12 +21,82 @@ from q_cli.utils.helpers import format_markdown
 # No need for global events - we'll use prompt_toolkit's native abort mechanism
 
 
+class InlinePathCompleter(Completer):
+    """Custom completer that enables file path completion anywhere in the text.
+    
+    This completer will locate partial file paths in the current input text
+    and provide completions, rather than just working at the beginning of the text.
+    """
+    
+    def __init__(self, expanduser=True, only_directories=False, min_input_len=1):
+        """Initialize the completer.
+        
+        Args:
+            expanduser: Expand ~ in paths to the user's home directory
+            only_directories: Only complete directories, not files
+            min_input_len: Minimum length of text before completion is attempted
+        """
+        self.expanduser = expanduser
+        self.only_directories = only_directories
+        self.min_input_len = min_input_len
+        # Use built-in PathCompleter for the actual path completion
+        self.path_completer = PathCompleter(
+            expanduser=expanduser,
+            only_directories=only_directories
+        )
+    
+    def get_completions(self, document, complete_event):
+        """Get completions for the current document.
+        
+        This method analyzes the text to find potential file paths to complete.
+        It looks for partial file paths and provides completions for them.
+        """
+        # Get cursor position and text
+        cursor_pos = document.cursor_position
+        text = document.text[:cursor_pos]
+        
+        if not text or len(text) < self.min_input_len:
+            return
+            
+        # Find the partial path closest to the cursor
+        # This regex matches partial paths, including those starting with ~, ./, or /
+        partial_path_match = re.search(r'(^|[\s=\'"])(~{1}|\.{1,2})?[/\\]?([^\'"\s]*)$', text)
+        
+        if partial_path_match:
+            # Get the start position of the match and the partial path
+            partial_path_start = partial_path_match.start(3)
+            path_prefix = partial_path_match.group(2) or ''
+            partial_path = partial_path_match.group(3) or ''
+            
+            # Create a new document with just the path for the path completer
+            path_document = Document(
+                text=f"{path_prefix}{partial_path}", 
+                cursor_position=len(f"{path_prefix}{partial_path}")
+            )
+            
+            # Get completions from the path completer
+            for completion in self.path_completer.get_completions(path_document, complete_event):
+                # Calculate display offset from current cursor position
+                display_meta = completion.display_meta if completion.display_meta else ""
+                
+                # Adjust the position of the completion
+                yield Completion(
+                    completion.text,
+                    start_position=partial_path_start - cursor_pos,
+                    display_meta=display_meta,
+                    display=completion.display,
+                    style=completion.style
+                )
+
+
 def create_prompt_session(console: Console) -> PromptSession:
-    """Create and configure a PromptSession for input handling."""
+    """Create and configure a PromptSession with file path completion."""
     # Define prompt style with orange color
     prompt_style = Style.from_dict(
         {
             "prompt": "#ff8800 bold",  # Orange and bold
+            "completion": "bg:#444444 #ffffff",  # Gray background for completion menu
+            "completion.current": "bg:#008888 #ffffff",  # Highlight selected completion
         }
     )
 
@@ -32,8 +105,15 @@ def create_prompt_session(console: Console) -> PromptSession:
     
     # Create custom keybindings
     bindings = create_key_bindings()
+    
+    # Create inline path completer for file autocompletion anywhere in the input
+    inline_completer = InlinePathCompleter(
+        expanduser=True,  # Expand ~ to home directory
+        min_input_len=1,  # Start completing after at least 1 character
+        only_directories=False,  # Complete both files and directories
+    )
 
-    # Create prompt session with history and style
+    # Create prompt session with history, style, and path completion
     prompt_session: PromptSession = PromptSession(
         history=history,
         style=prompt_style,
@@ -41,6 +121,7 @@ def create_prompt_session(console: Console) -> PromptSession:
         vi_mode=False,  # Use standard emacs-like keybindings
         complete_in_thread=True,  # More responsive completion
         mouse_support=False,  # Disable mouse support to allow normal terminal scrolling
+        completer=inline_completer,  # Enable inline file path completion
     )
 
     if os.environ.get("Q_DEBUG"):
@@ -95,10 +176,11 @@ def get_input(prompt: str = "", session: Optional[PromptSession] = None) -> str:
             # Create HTML-formatted prompt for prompt_toolkit
             formatted_prompt = HTML(f"<prompt>{prompt}</prompt>")
 
-            # Use prompt_toolkit with proper formatting
+            # Use prompt_toolkit with proper formatting and completion
             line = session.prompt(
                 formatted_prompt,
                 enable_history_search=True,  # Enable history navigation (up/down arrows)
+                complete_while_typing=True,  # Show completions while typing
             )
         else:
             # Fallback to input if no session (shouldn't happen)
