@@ -3,115 +3,151 @@
 import os
 import sys
 import signal
-from typing import Optional
+from typing import Optional, List, Tuple
 import re
+import glob
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
 from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
-from prompt_toolkit.completion import PathCompleter, Completer, Completion
+from prompt_toolkit.completion import Completer, Completion, PathCompleter
 from prompt_toolkit.document import Document
 from rich.console import Console
 
 from q_cli.utils.constants import HISTORY_PATH, EXIT_COMMANDS
 from q_cli.utils.helpers import format_markdown
 
-# No need for global events - we'll use prompt_toolkit's native abort mechanism
 
-
-class InlinePathCompleter(Completer):
-    """Custom completer that enables file path completion anywhere in the text.
+class SmartPathCompleter(Completer):
+    """
+    Path completer that works anywhere in the input text.
     
-    This completer will locate partial file paths or words in the current input text
-    and provide completions, working anywhere in the text input.
+    This completer scans the text at the current cursor position to find any
+    partial path or filename, then offers completions for it.
     """
     
-    def __init__(self, expanduser=True, only_directories=False, min_input_len=1):
-        """Initialize the completer.
+    def __init__(self):
+        """Initialize the smart path completer."""
+        # Built-in path completer for comparison
+        self.path_completer = PathCompleter(expanduser=True)
+        
+    def get_word_under_cursor(self, document: Document) -> Tuple[str, int]:
+        """
+        Get the word under cursor and its start position.
         
         Args:
-            expanduser: Expand ~ in paths to the user's home directory
-            only_directories: Only complete directories, not files
-            min_input_len: Minimum length of text before completion is attempted
+            document: The document being edited
+        
+        Returns:
+            Tuple containing (word, start_position)
         """
-        self.expanduser = expanduser
-        self.only_directories = only_directories
-        self.min_input_len = min_input_len
-        # Use built-in PathCompleter for the actual path completion
-        self.path_completer = PathCompleter(
-            expanduser=expanduser,
-            only_directories=only_directories
-        )
+        # Get text up to cursor
+        text_before_cursor = document.text_before_cursor
+        
+        # Find potential path fragments that could be completed
+        # Look for words that might be files or directories
+        # This simpler regex finds anything that doesn't contain whitespace
+        match = re.search(r'[^\s]*$', text_before_cursor)
+        
+        if match:
+            word = match.group(0)
+            start_pos = len(text_before_cursor) - len(word)
+            return word, start_pos
+        
+        return "", document.cursor_position
     
-    def get_completions(self, document, complete_event):
-        """Get completions for the current document.
-        
-        This method analyzes the text to find potential file paths to complete.
-        It looks for partial file paths and provides completions for them.
+    def get_path_completions(self, current_word: str) -> List[Tuple[str, str]]:
         """
-        # Get cursor position and text
-        cursor_pos = document.cursor_position
-        text = document.text[:cursor_pos]
+        Get possible path completions for the current word.
         
-        if not text or len(text) < self.min_input_len:
-            return
+        Args:
+            current_word: The word to complete
             
-        # Find the word or partial path closest to the cursor
-        # First, try to find file path patterns like ~/, ./, or / prefixes
-        path_match = re.search(r'(^|[\s=\'"])(~{1}|\.{1,2})?[/\\]([^\'"\s]*)$', text)
+        Returns:
+            List of (completion, display_meta) tuples
+        """
+        # Handle empty input
+        if not current_word:
+            return [(f, "") for f in os.listdir('.') if not f.startswith('.')]
         
-        # If we don't find a path pattern, look for a word that might be a filename
-        if not path_match:
-            word_match = re.search(r'(^|[\s=\'"])([^\'"\s/\\]*)$', text)
+        # Check if it's a path with directory components
+        if '/' in current_word:
+            # Get the directory part and the filename part
+            directory, filename = os.path.split(current_word)
             
-            if word_match:
-                # Get the start position and the word
-                word_start = word_match.start(2)
-                word = word_match.group(2) or ''
-                
-                if len(word) >= self.min_input_len:
-                    # List files in current directory to see if any match
-                    path_document = Document(text=word, cursor_position=len(word))
-                    
-                    # Check for completions
-                    for completion in self.path_completer.get_completions(path_document, complete_event):
-                        # Only offer completions that start with our word
-                        if completion.text.startswith(word):
-                            yield Completion(
-                                completion.text,
-                                start_position=word_start - cursor_pos,
-                                display_meta=completion.display_meta or "",
-                                display=completion.display,
-                                style=completion.style
-                            )
-                return
+            # Handle special case for current directory
+            if directory == '':
+                directory = '.'
+            
+            # Expand user home if needed
+            if directory.startswith('~'):
+                directory = os.path.expanduser(directory)
+            
+            try:
+                # Get all matching files in that directory
+                if os.path.isdir(directory):
+                    matches = []
+                    pattern = f"{directory}/{filename}*" if filename else f"{directory}/*"
+                    for path in glob.glob(pattern):
+                        # Get just the relevant part for completion
+                        name = os.path.basename(path)
+                        if os.path.isdir(path):
+                            # Add trailing slash for directories
+                            display_meta = "Directory"
+                            completion = f"{os.path.join(directory, name)}/"
+                        else:
+                            display_meta = ""
+                            completion = os.path.join(directory, name)
+                        
+                        # Only include files that match the prefix
+                        if not filename or name.startswith(filename):
+                            matches.append((completion, display_meta))
+                    return matches
+            except (PermissionError, FileNotFoundError):
+                return []
+        else:
+            # Simple filename matching in current directory
+            matches = []
+            for name in os.listdir('.'):
+                if name.startswith(current_word):
+                    if os.path.isdir(name):
+                        # Add trailing slash for directories
+                        matches.append((f"{name}/", "Directory"))
+                    else:
+                        matches.append((name, ""))
+            return matches
         
-        # Handle path completion (if we found a path pattern)
-        if path_match:
-            # Extract path components
-            path_start = path_match.start(2) if path_match.group(2) else path_match.start(3)
-            path_prefix = path_match.group(2) or ''
-            path_suffix = path_match.group(3) or ''
+        return []
+        
+    def get_completions(self, document, complete_event):
+        """
+        Get completions for the current document.
+        
+        Args:
+            document: The current document being edited
+            complete_event: The completion event
             
-            full_path = f"{path_prefix}{path_match.group(3) or ''}"
+        Yields:
+            Completion objects
+        """
+        # Get the word under cursor and its position
+        word, word_start = self.get_word_under_cursor(document)
+        
+        # Get completions for this word
+        completions = self.get_path_completions(word)
+        
+        # Convert to Completion objects
+        for text, display_meta in completions:
+            # Calculate the correct start position
+            start_position = word_start - document.cursor_position
             
-            # Create a new document with just the path for the path completer
-            path_document = Document(
-                text=full_path, 
-                cursor_position=len(full_path)
+            yield Completion(
+                text,
+                start_position=start_position,
+                display_meta=display_meta
             )
-            
-            # Get completions from the path completer
-            for completion in self.path_completer.get_completions(path_document, complete_event):
-                yield Completion(
-                    completion.text,
-                    start_position=path_start - cursor_pos,
-                    display_meta=completion.display_meta or "",
-                    display=completion.display,
-                    style=completion.style
-                )
 
 
 def create_prompt_session(console: Console) -> PromptSession:
@@ -131,12 +167,8 @@ def create_prompt_session(console: Console) -> PromptSession:
     # Create custom keybindings
     bindings = create_key_bindings()
     
-    # Create inline path completer for file autocompletion anywhere in the input
-    inline_completer = InlinePathCompleter(
-        expanduser=True,  # Expand ~ to home directory
-        min_input_len=1,  # Start completing after at least 1 character
-        only_directories=False,  # Complete both files and directories
-    )
+    # Create smart path completer
+    smart_completer = SmartPathCompleter()
 
     # Create prompt session with history, style, and path completion
     prompt_session: PromptSession = PromptSession(
@@ -146,7 +178,7 @@ def create_prompt_session(console: Console) -> PromptSession:
         vi_mode=False,  # Use standard emacs-like keybindings
         complete_in_thread=True,  # More responsive completion
         mouse_support=False,  # Disable mouse support to allow normal terminal scrolling
-        completer=inline_completer,  # Enable inline file path completion
+        completer=smart_completer,  # Use our smart path completer
     )
 
     if os.environ.get("Q_DEBUG"):
