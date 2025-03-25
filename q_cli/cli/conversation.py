@@ -80,14 +80,22 @@ def run_conversation(
                         context_manager.optimize_context()
                     
                     # Call Claude API with current conversation
-                    with console.status("[info]Thinking...[/info]"):
-                        message = client.messages.create(
-                            model=args.model,
-                            max_tokens=args.max_tokens,
-                            temperature=0,
-                            system=current_system_prompt,
-                            messages=conversation,  # type: ignore
-                        )
+                    try:
+                        with console.status("[info]Thinking... (Press Ctrl+C to cancel)[/info]"):
+                            message = client.messages.create(
+                                model=args.model,
+                                max_tokens=args.max_tokens,
+                                temperature=0,
+                                system=current_system_prompt,
+                                messages=conversation,  # type: ignore
+                            )
+                    except KeyboardInterrupt:
+                        # Handle Ctrl+C during API call
+                        console.print("\n[bold red]Request to Claude interrupted by user[/bold red]")
+                        # Continue the loop to prompt for the next question
+                        # Add a cancellation message for the user
+                        console.print("\n[info]Ask another question or type 'exit' to quit[/info]")
+                        continue
                     
                     # Get Claude's response
                     response = message.content[0].text  # type: ignore

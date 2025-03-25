@@ -86,16 +86,26 @@ def process_urls_in_response(
         url_matches, key=lambda x: x[2], reverse=True
     ):
         try:
-            # Show fetching message
-            console.print(f"[dim]Fetching {url}[/dim]")
+            # Show fetching message with interrupt hint
+            console.print(f"[dim]Fetching {url} (Press Ctrl+C to cancel)[/dim]")
             
             # Show additional debug info if in DEBUG mode
             if DEBUG:
                 console.print(f"[yellow]DEBUG: Requesting URL {url}[/yellow]")
-                
-            # Fetch the URL once
-            response_obj = requests.get(url, timeout=10)
-            response_obj.raise_for_status()  # Raise exception for HTTP errors
+            
+            try:    
+                # Fetch the URL once
+                response_obj = requests.get(url, timeout=10)
+                response_obj.raise_for_status()  # Raise exception for HTTP errors
+            except KeyboardInterrupt:
+                # Handle Ctrl+C during URL fetch
+                console.print(f"\n[bold red]URL fetch interrupted by user: {url}[/bold red]")
+                # Add this error to our results and continue with the next URL
+                has_error = True
+                model_url_content[url] = f"Error: URL fetch for {url} was canceled by user"
+                # Skip to the next URL rather than exiting completely
+                processed_response = processed_response.replace(marker, "", 1)
+                continue
             
             # Check content type to format appropriately
             content_type = response_obj.headers.get('Content-Type', '')

@@ -78,9 +78,29 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
             text=True,
         )
 
-        # Get output
-        stdout, stderr = process.communicate(timeout=30)  # 30-second timeout
-        return_code = process.returncode
+        # Print a message indicating the command is running and can be interrupted
+        console.print("[dim]Press Ctrl+C to cancel this operation[/dim]")
+        
+        try:
+            # Get output with timeout
+            stdout, stderr = process.communicate(timeout=30)  # 30-second timeout
+            return_code = process.returncode
+        except KeyboardInterrupt:
+            # Handle Ctrl+C during command execution
+            try:
+                # Try to terminate the process group to kill child processes too
+                process.terminate()
+                process.wait(timeout=2)  # Give it a moment to terminate gracefully
+            except:
+                # If it doesn't terminate, try to kill
+                try:
+                    process.kill()
+                    process.wait(timeout=1)
+                except:
+                    pass  # Already dead or can't be killed
+                    
+            console.print("\n[bold red]Command interrupted by user[/bold red]")
+            return (-1, "", "Command execution cancelled by user")
 
         if DEBUG:
             console.print(f"[yellow]DEBUG: Command completed with return code: {return_code}[/yellow]")
@@ -558,26 +578,41 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
             except Exception:
                 console.print(f"```\n{display_content}\n```")
         
+        # Show interrupt hint
+        console.print("[dim]Press Ctrl+C to cancel this operation[/dim]")
+        
         # Ask for confirmation with appropriate message
         if is_overwrite:
             prompt = f"\nOVERWRITE file '{expanded_path}' with the changes shown above? [y/N]: "
         else:
             prompt = f"\nCreate file '{expanded_path}' with this content? [y/N]: "
             
-        response = input(prompt).lower().strip()
-        if not response.startswith("y"):
-            error_msg = "File writing skipped by user"
-            # Only show error details in debug mode
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
-            # Make sure this error is returned so it can be sent to the model
-            return False, "", error_msg
+        try:
+            response = input(prompt).lower().strip()
+            if not response.startswith("y"):
+                error_msg = "File writing skipped by user"
+                # Only show error details in debug mode
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                # Make sure this error is returned so it can be sent to the model
+                return False, "", error_msg
+        except KeyboardInterrupt:
+            # Handle Ctrl+C during confirmation
+            console.print("\n[bold red]File operation interrupted by user[/bold red]")
+            return False, "", "File operation cancelled by user"
             
         # Write the file
         if DEBUG:
             console.print(f"[yellow]DEBUG: Writing content to file: {expanded_path}[/yellow]")
-        with open(expanded_path, "w") as f:
-            f.write(content)
+        
+        try:
+            with open(expanded_path, "w") as f:
+                f.write(content)
+        except KeyboardInterrupt:
+            # Handle Ctrl+C during file writing
+            console.print("\n[bold red]File writing interrupted by user[/bold red]")
+            console.print("[yellow]Warning: File may be partially written[/yellow]")
+            return False, "", "File writing cancelled by user - file may be incomplete"
             
         # Show success message more prominently
         action = "updated" if is_overwrite else "created"
