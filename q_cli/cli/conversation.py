@@ -95,9 +95,36 @@ def run_conversation(
                     except KeyboardInterrupt:
                         # Handle Ctrl+C during API call
                         console.print("\n[bold red]Request interrupted by user[/bold red]")
-                        # Just drop the request and continue back to input
-                        # Do NOT send a STOP message to the model
+                        # IMPORTANT: We're just dropping the request and continuing back to input
+                        # Do NOT add any messages to the conversation
+                        # This effectively starts a fresh conversation turn
                         console.print("\n[info]Ask another question or type 'exit' to quit[/info]")
+                        # Force getting a new user input without sending anything to the model
+                        next_question = handle_next_input(args, prompt_session, conversation, console)
+                        
+                        # Check for exit command
+                        if next_question.strip().lower() in ["exit", "quit"]:
+                            sys.exit(0)
+                        
+                        # Add user input to conversation and context manager
+                        if next_question.strip():
+                            conversation.append({"role": "user", "content": next_question})
+                            
+                            # Add to context manager if available
+                            if context_manager:
+                                context_manager.add_context(
+                                    f"User question: {next_question}",
+                                    ESSENTIAL_PRIORITY,
+                                    "User question"
+                                )
+                        # If empty input and we require non-empty inputs, get a new input
+                        elif args.no_empty:
+                            continue
+                        # Otherwise add the empty input to trigger a Claude response
+                        else:
+                            conversation.append({"role": "user", "content": next_question})
+                        
+                        # Important! Start a new iteration of the loop without sending anything
                         continue
                     
                     # Get Claude's response

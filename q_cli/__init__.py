@@ -4,7 +4,7 @@ This package provides a simple CLI for interacting with AI,
 with support for conversation history, markdown formatting, and more.
 """
 
-__version__ = "0.9.0.56"
+__version__ = "0.9.0.57"
 
 from q_cli.cli.main import main
 
