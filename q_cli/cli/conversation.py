@@ -254,9 +254,15 @@ def run_conversation(
                             if command_results_str:
                                 command_results_data = get_command_result_prompt(command_results_str)
                     
-                    # 4. Display error message only if an operation failed (but not if it was interrupted)
+                    # 4. Display appropriate message for operation status
                     if has_operation_error and not operation_interrupted:
-                        console.print("[red]Operation error[/red]")
+                        # Check if any commands were rejected by user
+                        operation_rejected = False
+                        if command_results_data and "Command execution skipped by user" in command_results_data:
+                            operation_rejected = True
+                            console.print("[yellow]Operation rejected[/yellow]")
+                        else:
+                            console.print("[red]Operation error[/red]")
                     
                     # 5. Combine all operation results
                     if url_results:
