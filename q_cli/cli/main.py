@@ -102,7 +102,6 @@ def main() -> None:
     )
     
     # Set system prompt and add conversation context
-    context_manager.set_system_prompt(base_system_prompt)
     if sanitized_context:
         # Context is now managed by the ContextManager
         system_prompt = get_system_prompt(
@@ -111,6 +110,9 @@ def main() -> None:
         )
     else:
         system_prompt = base_system_prompt
+        
+    # Make sure the context manager knows about the system prompt
+    context_manager.set_system_prompt(system_prompt)
 
     # If confirm-context is specified, show the context and ask for confirmation
     if args.confirm_context and sanitized_context:

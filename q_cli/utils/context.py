@@ -2,7 +2,7 @@
 
 import os
 import tiktoken
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Dict, List, Optional, Tuple, Union
 import re
 
 from rich.console import Console
@@ -65,7 +65,7 @@ class ContextManager:
 
     def __init__(
         self,
-        max_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
+        max_tokens: Optional[int] = None,
         priority_mode: str = DEFAULT_CONTEXT_PRIORITY_MODE,
         console: Optional[Console] = None,
     ):
@@ -77,7 +77,7 @@ class ContextManager:
             priority_mode: Priority mode (balanced, code, conversation)
             console: Console for output
         """
-        self.max_tokens = max_tokens
+        self.max_tokens = max_tokens if max_tokens is not None else DEFAULT_MAX_CONTEXT_TOKENS
         self.priority_mode = priority_mode
         self.console = console or Console()
         
@@ -93,7 +93,7 @@ class ContextManager:
         
         # System prompt (stored separately as it's always included)
         self.system_prompt: Optional[str] = None
-        self.system_prompt_tokens = 0
+        self.system_prompt_tokens = 0  # Initialize to 0, will be updated when prompt is set
 
     def _get_token_allocations(self) -> Dict[str, float]:
         """
@@ -294,6 +294,14 @@ class ContextManager:
         Optimize context to stay within token limits.
         This trims lower priority content first.
         """
+        # We need both max_tokens and a valid system_prompt_tokens value
+        if self.max_tokens is None:
+            self.max_tokens = DEFAULT_MAX_CONTEXT_TOKENS
+            if DEBUG:
+                self.console.print(
+                    f"[yellow]Using default max tokens: {self.max_tokens}[/yellow]"
+                )
+                
         token_budget = self.max_tokens - self.system_prompt_tokens
         if token_budget <= 0:
             # System prompt alone exceeds token limit
@@ -349,8 +357,12 @@ class ContextManager:
         Returns:
             The combined context string
         """
-        # First optimize to ensure we're within token limits
-        self.optimize_context()
+        # Check if we have any context items before optimizing
+        total_items = sum(len(items) for items in self.context_items.values())
+        
+        # Only optimize if we have context to optimize
+        if total_items > 0:
+            self.optimize_context()
         
         context_parts = []
         

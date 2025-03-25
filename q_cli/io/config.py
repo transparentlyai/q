@@ -199,7 +199,7 @@ def build_context(args, config_context: str, console: Console) -> Tuple[str, Con
         - ContextManager instance
     """
     # Initialize context manager with args or default values
-    max_tokens = getattr(args, "max_context_tokens", DEFAULT_MAX_CONTEXT_TOKENS)
+    max_tokens = getattr(args, "max_context_tokens", None)
     priority_mode = getattr(args, "context_priority_mode", DEFAULT_CONTEXT_PRIORITY_MODE)
     
     context_manager = ContextManager(

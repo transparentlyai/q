@@ -2,7 +2,7 @@
 
 import os
 import sys
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 import anthropic
 from prompt_toolkit import PromptSession
 from rich.console import Console
