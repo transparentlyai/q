@@ -24,8 +24,8 @@ from q_cli.utils.helpers import format_markdown
 class InlinePathCompleter(Completer):
     """Custom completer that enables file path completion anywhere in the text.
     
-    This completer will locate partial file paths in the current input text
-    and provide completions, rather than just working at the beginning of the text.
+    This completer will locate partial file paths or words in the current input text
+    and provide completions, working anywhere in the text input.
     """
     
     def __init__(self, expanduser=True, only_directories=False, min_input_len=1):
@@ -58,32 +58,57 @@ class InlinePathCompleter(Completer):
         if not text or len(text) < self.min_input_len:
             return
             
-        # Find the partial path closest to the cursor
-        # This regex matches partial paths, including those starting with ~, ./, or /
-        partial_path_match = re.search(r'(^|[\s=\'"])(~{1}|\.{1,2})?[/\\]?([^\'"\s]*)$', text)
+        # Find the word or partial path closest to the cursor
+        # First, try to find file path patterns like ~/, ./, or / prefixes
+        path_match = re.search(r'(^|[\s=\'"])(~{1}|\.{1,2})?[/\\]([^\'"\s]*)$', text)
         
-        if partial_path_match:
-            # Get the start position of the match and the partial path
-            partial_path_start = partial_path_match.start(3)
-            path_prefix = partial_path_match.group(2) or ''
-            partial_path = partial_path_match.group(3) or ''
+        # If we don't find a path pattern, look for a word that might be a filename
+        if not path_match:
+            word_match = re.search(r'(^|[\s=\'"])([^\'"\s/\\]*)$', text)
+            
+            if word_match:
+                # Get the start position and the word
+                word_start = word_match.start(2)
+                word = word_match.group(2) or ''
+                
+                if len(word) >= self.min_input_len:
+                    # List files in current directory to see if any match
+                    path_document = Document(text=word, cursor_position=len(word))
+                    
+                    # Check for completions
+                    for completion in self.path_completer.get_completions(path_document, complete_event):
+                        # Only offer completions that start with our word
+                        if completion.text.startswith(word):
+                            yield Completion(
+                                completion.text,
+                                start_position=word_start - cursor_pos,
+                                display_meta=completion.display_meta or "",
+                                display=completion.display,
+                                style=completion.style
+                            )
+                return
+        
+        # Handle path completion (if we found a path pattern)
+        if path_match:
+            # Extract path components
+            path_start = path_match.start(2) if path_match.group(2) else path_match.start(3)
+            path_prefix = path_match.group(2) or ''
+            path_suffix = path_match.group(3) or ''
+            
+            full_path = f"{path_prefix}{path_match.group(3) or ''}"
             
             # Create a new document with just the path for the path completer
             path_document = Document(
-                text=f"{path_prefix}{partial_path}", 
-                cursor_position=len(f"{path_prefix}{partial_path}")
+                text=full_path, 
+                cursor_position=len(full_path)
             )
             
             # Get completions from the path completer
             for completion in self.path_completer.get_completions(path_document, complete_event):
-                # Calculate display offset from current cursor position
-                display_meta = completion.display_meta if completion.display_meta else ""
-                
-                # Adjust the position of the completion
                 yield Completion(
                     completion.text,
-                    start_position=partial_path_start - cursor_pos,
-                    display_meta=display_meta,
+                    start_position=path_start - cursor_pos,
+                    display_meta=completion.display_meta or "",
                     display=completion.display,
                     style=completion.style
                 )
