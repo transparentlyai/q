@@ -3,8 +3,12 @@
 import os
 import subprocess
 import re
+import difflib
 from typing import Tuple, List, Dict, Any
 from rich.console import Console
+from rich.syntax import Syntax
+from rich.table import Table
+from colorama import Fore, Style
 from q_cli.utils.constants import DEBUG, MAX_FILE_DISPLAY_LENGTH
 
 # Define the special formats for file writing and command execution
@@ -433,6 +437,49 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
     return matches
 
 
+def show_diff(old_content: str, new_content: str, console: Console) -> None:
+    """
+    Display a colored diff between old and new content.
+    
+    Args:
+        old_content: Original file content
+        new_content: New content to be written
+        console: Console for output
+    """
+    # Get the diff
+    diff = list(difflib.unified_diff(
+        old_content.splitlines(),
+        new_content.splitlines(),
+        lineterm='',
+        n=3  # Context lines
+    ))
+    
+    if not diff:
+        console.print("[yellow]No changes detected in file content[/yellow]")
+        return
+    
+    # Create a table for the diff display
+    table = Table(title="File Changes", expand=True, box=None)
+    table.add_column("Diff", no_wrap=True)
+    
+    # Add each line with appropriate coloring
+    for line in diff:
+        if line.startswith('+++') or line.startswith('---') or line.startswith('@@'):
+            # Header lines in blue
+            table.add_row(f"[blue]{line}[/blue]")
+        elif line.startswith('+'):
+            # Added lines in green
+            table.add_row(f"[green]{line}[/green]")
+        elif line.startswith('-'):
+            # Removed lines in red
+            table.add_row(f"[red]{line}[/red]")
+        else:
+            # Context lines in normal color
+            table.add_row(line)
+    
+    console.print(table)
+
+
 def write_file_from_marker(file_path: str, content: str, console: Console) -> Tuple[bool, str, str]:
     """
     Write content to a file based on a file writing marker.
@@ -469,28 +516,55 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
             if DEBUG:
                 console.print(f"[yellow]DEBUG: Creating directory: {directory}[/yellow]")
             os.makedirs(directory, exist_ok=True)
+        
+        # Check if file already exists to show diff
+        existing_content = ""
+        is_overwrite = os.path.exists(expanded_path)
+        if is_overwrite:
+            try:
+                with open(expanded_path, 'r') as f:
+                    existing_content = f.read()
+            except Exception as e:
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Could not read existing file: {str(e)}[/yellow]")
             
-        # Show the file details and truncated content to the user
+        # Show the file details to the user
         console.print("")  # Add spacing for better readability
-        console.print(
-            f"[bold yellow]Q wants to write a file at:[/bold yellow] {expanded_path}"
-        )
-        console.print(f"[bold yellow]Content length:[/bold yellow] {len(content)} bytes")
         
-        # Truncate content for display if it's too long
-        if len(content) > MAX_FILE_DISPLAY_LENGTH:
-            display_content = content[:MAX_FILE_DISPLAY_LENGTH] + "\n[...content truncated...]"
-            console.print("[bold yellow]Here's a preview of the file content:[/bold yellow]")
+        if is_overwrite:
+            console.print(f"[bold yellow]Q wants to OVERWRITE an existing file:[/bold yellow] {expanded_path}")
+            console.print("[bold yellow]Here's what will change:[/bold yellow]")
+            show_diff(existing_content, content, console)
         else:
-            display_content = content
-            console.print("[bold yellow]Here's the content of the file:[/bold yellow]")
+            console.print(f"[bold yellow]Q wants to create a new file:[/bold yellow] {expanded_path}")
+            console.print(f"[bold yellow]Content length:[/bold yellow] {len(content)} bytes")
             
-        console.print(f"```\n{display_content}\n```")
+            # Truncate content for display if it's too long
+            if len(content) > MAX_FILE_DISPLAY_LENGTH:
+                display_content = content[:MAX_FILE_DISPLAY_LENGTH] + "\n[...content truncated...]"
+                console.print("[bold yellow]Here's a preview of the file content:[/bold yellow]")
+            else:
+                display_content = content
+                console.print("[bold yellow]Here's the content of the file:[/bold yellow]")
+                
+            # For syntax highlighting, try to detect the language from the file extension
+            try:
+                ext = os.path.splitext(expanded_path)[1].lstrip('.').lower()
+                if ext in ['py', 'js', 'java', 'c', 'cpp', 'go', 'rs', 'sh', 'md', 'html', 'css', 'json']:
+                    syntax = Syntax(display_content, ext, theme="monokai", line_numbers=True)
+                    console.print(syntax)
+                else:
+                    console.print(f"```\n{display_content}\n```")
+            except Exception:
+                console.print(f"```\n{display_content}\n```")
         
-        # Ask for confirmation
-        response = (
-            input(f"\nWrite file '{expanded_path}' with this content? [y/N]: ").lower().strip()
-        )
+        # Ask for confirmation with appropriate message
+        if is_overwrite:
+            prompt = f"\nOVERWRITE file '{expanded_path}' with the changes shown above? [y/N]: "
+        else:
+            prompt = f"\nCreate file '{expanded_path}' with this content? [y/N]: "
+            
+        response = input(prompt).lower().strip()
         if not response.startswith("y"):
             error_msg = "File writing skipped by user"
             # Only show error details in debug mode
@@ -506,11 +580,12 @@ def write_file_from_marker(file_path: str, content: str, console: Console) -> Tu
             f.write(content)
             
         # Show success message more prominently
-        console.print(f"[bold green]File written successfully: {expanded_path}[/bold green]")
+        action = "updated" if is_overwrite else "created"
+        console.print(f"[bold green]File {action} successfully: {expanded_path}[/bold green]")
         console.print("")  # Add empty line after success message
         if DEBUG:
             console.print(f"[green]DEBUG: File write successful: {expanded_path}[/green]")
-        return True, f"File written: {expanded_path}", ""
+        return True, f"File {action}: {expanded_path}", ""
         
     except Exception as e:
         error_msg = f"Error writing file: {str(e)}"
