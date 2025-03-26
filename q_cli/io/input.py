@@ -195,42 +195,39 @@ def create_key_bindings():
     # Create a separate key binding for ESC to exit immediately
     escape_bindings = KeyBindings()
 
-    # Override the Enter key to only accept input when there's text
+    # Handle Enter key for submission
     @bindings.add("enter")
     def handle_enter(event):
         """Submit text when Enter is pressed and there's text."""
-        # Only accept input if there's text
+        # Only process if there's text
         if len(event.current_buffer.text.strip()) > 0:
             # For multiline text, show a hint about Alt+Enter when user first presses Enter
             if "\n" in event.current_buffer.text and not hasattr(event.current_buffer, "_alt_enter_hint_shown"):
-                from prompt_toolkit.formatted_text import FormattedText
-                
                 # Add attribute to track that we've shown the hint
                 event.current_buffer._alt_enter_hint_shown = True
                 
-                # Don't submit yet, just show the hint
-                event.app.set_temp_message(
-                    FormattedText([
-                        ("class:warning", "\nPress Enter again to send, or Alt+Enter for a new line")
-                    ]), 3  # Show for 3 seconds
-                )
+                # Show hint using a more compatible method
+                from rich.console import Console
+                console = Console()
+                console.print("\n[yellow italic]Multiline input detected. Press Enter again to send, or Alt+Enter for a new line[/yellow italic]")
+                
+                # Return without submitting - next Enter will submit
                 return
             
-            # Normal submission
+            # Process the submission
             event.current_buffer.validate_and_handle()
     
-    # Add Alt+Enter to insert a newline for multiline input
+    # Add Alt+Enter for new lines
     @bindings.add("escape", "enter")  # Alt+Enter is sent as escape followed by enter
     def handle_alt_enter(event):
         """Insert a newline when Alt+Enter is pressed."""
         event.current_buffer.insert_text("\n")
     
-    # Support additional ways to insert newlines that different terminals might use
-    for key_combo in ["c-j", "c-m"]:  # Ctrl+J and Ctrl+M are common alternatives
-        @bindings.add(key_combo)
-        def handle_alt_newline(event):
-            """Insert a newline when alternative key combos are pressed."""
-            event.current_buffer.insert_text("\n")
+    # Support Ctrl+J as an alternative for new lines
+    @bindings.add("c-j")  # Ctrl+J is a common alternative for newline
+    def handle_ctrl_j(event):
+        """Insert a newline when Ctrl+J is pressed."""
+        event.current_buffer.insert_text("\n")
 
     # Add double Escape key to abort/exit with high priority
     # Using double escape to avoid conflict with Alt+Enter which starts with escape
