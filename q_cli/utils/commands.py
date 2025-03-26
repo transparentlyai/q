@@ -605,11 +605,9 @@ def write_file_from_marker(
 
         # Ask for confirmation with appropriate message
         if is_overwrite:
-            prompt = f"\nOVERWRITE file '{expanded_path}' with the changes shown above? [y/n/r]: "
-            prompt += "\n(y=yes, n=no, r=rename - create with a different filename): "
+            prompt = f"\nOVERWRITE file '{expanded_path}' with the changes shown above? [y/n/r]: [y=yes, n=no, r=rename] "
         else:
-            prompt = f"\nCreate file '{expanded_path}' with this content? [y/n/r]: "
-            prompt += "\n(y=yes, n=no, r=rename - create with a different filename): "
+            prompt = f"\nCreate file '{expanded_path}' with this content? [y/n/r]: [y=yes, n=no, r=rename] "
 
         try:
             response = input(prompt).lower().strip()

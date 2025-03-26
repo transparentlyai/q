@@ -92,6 +92,7 @@ DEFAULT_ALWAYS_APPROVED_COMMANDS: list[str] = [
     "du",
     "git",
     "q",
+    "xargs",
 ]
 
 DEFAULT_ALWAYS_RESTRICTED_COMMANDS: list[str] = [

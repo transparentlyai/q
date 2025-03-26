@@ -267,5 +267,11 @@ You can add your own commands to any of these categories in your configuration f
 - `--no-file-write`: Disable file writing functionality 
 - `--no-command-approval`: Disable command approval system (not recommended)
 - `--version`, `-v`: Show program version and exit
-
+- `--interactive`: Force interactive mode without a question                                                                                                   
+- `--file-tree`: Include file tree of current directory in context                                                                                             
+- `--max-context-tokens`: Maximum tokens for context (default: 200000)                                                                                         
+- `--context-priority-mode`: Context priority mode (balanced, code, conversation)                                                                              
+- `--context-stats`: Show context statistics before sending to model                                                                                           
+- `--update`: Update q to the latest version and exit                                                                                                          
+- `--dry-run`: Print the full message that would be sent to Claude and exit  
 
