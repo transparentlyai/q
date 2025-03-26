@@ -2,7 +2,8 @@
 
 import re
 import requests
-from typing import Tuple, List, Optional, Dict
+import mimetypes
+from typing import Tuple, List, Optional, Dict, Any
 from rich.console import Console
 from bs4 import BeautifulSoup
 from q_cli.utils.constants import DEBUG
@@ -47,7 +48,7 @@ def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]
 
 def process_urls_in_response(
     response: str, console: Console, show_errors: bool = True
-) -> Tuple[str, Dict[str, str], bool]:
+) -> Tuple[str, Dict[str, str], bool, List[Dict[str, Any]]]:
     """
     Process a response from the model, fetching any URLs.
 
@@ -63,17 +64,19 @@ def process_urls_in_response(
         - Processed response with URL content for user display
         - Dictionary of URL content fetched for model context
         - Boolean indicating if any errors occurred
+        - List of multimodal content items (images, binary files)
     """
     # Extract all URL markers
     url_matches = extract_urls_from_response(response)
 
     if not url_matches:
-        return response, {}, False
+        return response, {}, False, []
 
     # Dictionary to hold content fetched for model
     model_url_content = {}
     processed_response = response
     has_error = False
+    multimodal_content = []
 
     # Process in reverse order to avoid position changes
     for marker, url, position, _ in sorted(
@@ -89,7 +92,7 @@ def process_urls_in_response(
 
             try:
                 # Fetch the URL once
-                response_obj = requests.get(url, timeout=10)
+                response_obj = requests.get(url, timeout=10, stream=True)
                 response_obj.raise_for_status()  # Raise exception for HTTP errors
             except KeyboardInterrupt:
                 # Handle Ctrl+C during URL fetch
@@ -118,14 +121,43 @@ def process_urls_in_response(
                 content_for_user = (
                     f"[info]Successfully fetched HTML content from {url}[/info]"
                 )
+            elif "image/" in content_type:
+                content_for_user = (
+                    f"[info]Successfully fetched image from {url}[/info]"
+                )
             else:
                 content_type_info = (
                     content_type.split(";")[0] if content_type else "unknown"
                 )
                 content_for_user = f"[info]Successfully fetched content ({content_type_info}) from {url}[/info]"
-
-            # Format for model
-            if "text/html" in content_type:
+            
+            # Handle image and binary files differently
+            if "image/" in content_type:
+                # For images, get binary content for multimodal message
+                binary_content = response_obj.content
+                
+                # Create a multimodal image object for Claude
+                import base64
+                image_obj = {
+                    "type": "image", 
+                    "source": {
+                        "type": "base64", 
+                        "media_type": content_type,
+                        "data": base64.b64encode(binary_content).decode('utf-8')
+                    }
+                }
+                
+                # Add to multimodal content list
+                multimodal_content.append(image_obj)
+                
+                # For model's text context, just include basic info
+                content_for_model = f"Image fetched from {url} ({len(binary_content)} bytes, content-type: {content_type})"
+                
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Added image from {url} to multimodal content[/yellow]")
+                
+            # Handle text/HTML content
+            elif "text/html" in content_type:
                 # Parse HTML and extract meaningful text
                 soup = BeautifulSoup(response_obj.text, "html.parser")
 
@@ -148,12 +180,29 @@ def process_urls_in_response(
                 # For JSON, provide the raw JSON for the model
                 content_for_model = f"JSON from {url}:\n{response_obj.text}"
 
+            # Handle binary content that isn't an image
+            elif ("application/" in content_type and "json" not in content_type) or "binary/" in content_type:
+                # For binary files, get the content for multimodal message
+                binary_content = response_obj.content
+                
+                # For model's text context, just include basic info
+                content_for_model = f"Binary content fetched from {url} ({len(binary_content)} bytes, content-type: {content_type})"
+                
+                # No additional multimodal handling for now - we only support images currently
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Binary content from {url} is not an image, not adding to multimodal content[/yellow]")
+            
             else:
                 # For other content types, return as text
-                text = response_obj.text
-                if len(text) > 15000:
-                    text = text[:15000] + "\n\n[Content truncated due to length]"
-                content_for_model = f"Content from {url}:\n{text}"
+                try:
+                    text = response_obj.text
+                    if len(text) > 15000:
+                        text = text[:15000] + "\n\n[Content truncated due to length]"
+                    content_for_model = f"Content from {url}:\n{text}"
+                except UnicodeDecodeError:
+                    # If we can't decode as text, treat as binary
+                    binary_content = response_obj.content
+                    content_for_model = f"Binary content fetched from {url} ({len(binary_content)} bytes, content-type: {content_type})"
 
             # Remove the code block completely from the response
             processed_response = processed_response.replace(marker, "", 1)
@@ -192,4 +241,4 @@ def process_urls_in_response(
     # Handle edge case of code blocks with just whitespace
     processed_response = re.sub(r"```\s+```", "", processed_response)
 
-    return processed_response, model_url_content, has_error
+    return processed_response, model_url_content, has_error, multimodal_content

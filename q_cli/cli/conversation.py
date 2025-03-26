@@ -392,7 +392,7 @@ def process_response_operations(
         - Boolean indicating if any errors occurred
         - List of multimodal content items (images, etc.)
     """
-    # Initialize multimodal_content
+    # Initialize variables
     multimodal_content = []
     operation_results = []
     has_operation_error = False
@@ -407,15 +407,22 @@ def process_response_operations(
             console.print(
                 "[yellow]Skipping operations due to previous interruption[/yellow]"
             )
-
+    
     # 1. Process URLs if web fetching is enabled
     url_results = None
     if not getattr(args, "no_web", False) and not operation_interrupted:
         with console.status("[info]Fetching web content... [Ctrl+C to cancel][/info]"):
-            url_processed_response, url_content, url_has_error = (
+            url_processed_response, url_content, url_has_error, web_multimodal_content = (
                 process_urls_in_response(response, console, False)
             )
         has_operation_error = has_operation_error or url_has_error
+
+        # Add any web multimodal content to our main multimodal content list
+        if web_multimodal_content:
+            multimodal_content.extend(web_multimodal_content)
+            
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Added {len(web_multimodal_content)} multimodal items from web fetching[/yellow]")
 
         if url_content:
             web_content = "\n\n".join(
@@ -432,7 +439,6 @@ def process_response_operations(
 
     # 2. Process file read operations if enabled
     file_read_results_data = None
-    multimodal_content = []
     if not getattr(args, "no_file_read", False) and not operation_interrupted:
         # Check for file read operations
         if DEBUG:
