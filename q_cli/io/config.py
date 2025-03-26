@@ -272,22 +272,22 @@ def build_context(
             if DEBUG:
                 console.print(f"[yellow]Error reading .Q directory: {str(e)}[/yellow]")
 
-    # Check for project.md file in current directory
-    project_md_path = os.path.join(os.getcwd(), "project.md")
-    if os.path.isfile(project_md_path):
+    # Check for project.md file inside the .Q directory
+    project_md_path = os.path.join(q_dir_path, "project.md")
+    if os.path.isdir(q_dir_path) and os.path.isfile(project_md_path):
         try:
             project_content = read_context_file(project_md_path, console)
             if project_content:
                 context_manager.add_context(
-                    f"Project documentation:\n{project_content}",
+                    f"Project Information:\n{project_content}",
                     IMPORTANT_PRIORITY,
                     "project.md content",
                 )
                 if DEBUG:
-                    console.print("[info]Added project.md content to context[/info]")
+                    console.print("[info]Added .Q/project.md content to context[/info]")
         except Exception as e:
             if DEBUG:
-                console.print(f"[yellow]Error reading project.md: {str(e)}[/yellow]")
+                console.print(f"[yellow]Error reading .Q/project.md: {str(e)}[/yellow]")
 
     # Build the final context string
     context = context_manager.build_context_string()
