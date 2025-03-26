@@ -124,14 +124,24 @@ class CommandPermissionManager:
                 elif char == "`" and not in_quotes and not in_double_quotes:
                     in_backtick = not in_backtick
                     # When exiting backtick, we need to extract commands from within
-                    if not in_backtick and current_part.endswith("`"):
-                        # Extract the backtick content
-                        backtick_content = current_part[
-                            current_part.rindex("`") + 1 : -1
-                        ]
-                        # Recursively extract commands from backtick content
-                        backtick_cmds = self.extract_all_command_types(backtick_content)
-                        command_types.extend(backtick_cmds)
+                    if not in_backtick and "`" in current_part:
+                        try:
+                            # Find the last opening backtick
+                            start_idx = current_part.rindex("`")
+
+                            # Extract the backtick content - everything between the opening and current closing backtick
+                            if (
+                                start_idx < len(current_part) - 1
+                            ):  # Make sure there's content inside
+                                backtick_content = current_part[start_idx + 1 :]
+                                # Recursively extract commands from backtick content
+                                backtick_cmds = self.extract_all_command_types(
+                                    backtick_content
+                                )
+                                command_types.extend(backtick_cmds)
+                        except ValueError:
+                            # If rindex fails, ignore this instance
+                            pass
                 # Handle subshell command substitution $(...)
                 elif char == "$" and i + 1 < len(command) and command[i + 1] == "(":
                     in_subshell += 1
@@ -224,12 +234,43 @@ class CommandPermissionManager:
             # If parsing fails, try a simpler approach
             import re
 
-            # Simple regex to find common commands
+            # Try to extract commands from backticks
+            backtick_matches = re.findall(r"`([^`]+)`", command)
+            for backtick in backtick_matches:
+                backtick_content = backtick.strip()
+                if backtick_content:
+                    # Try to get the first word as a command
+                    backtick_cmd = (
+                        backtick_content.split()[0] if backtick_content.split() else ""
+                    )
+                    if backtick_cmd and backtick_cmd not in command_types:
+                        command_types.append(backtick_cmd)
+
+                    # Also check if the backtick content itself contains common dangerous commands
+                    for dangerous_cmd in [
+                        "rm",
+                        "mv",
+                        "cp",
+                        "sudo",
+                        "chmod",
+                        "chown",
+                        "dd",
+                        "mkfs",
+                    ]:
+                        if re.search(r"\b" + dangerous_cmd + r"\b", backtick_content):
+                            if dangerous_cmd not in command_types:
+                                command_types.append(dangerous_cmd)
+
+            # Simple regex to find common dangerous commands
             common_cmds = re.findall(
                 r"\b(rm|mv|cp|sudo|chmod|chown|dd|mkfs|poweroff|halt|shutdown)\b",
                 command,
             )
-            return common_cmds if common_cmds else []
+            for cmd in common_cmds:
+                if cmd not in command_types:
+                    command_types.append(cmd)
+
+            return command_types
 
     def is_command_prohibited(self, command: str) -> bool:
         """
@@ -241,6 +282,14 @@ class CommandPermissionManager:
         Returns:
             True if the command is prohibited, False otherwise
         """
+        # Special check for backtick with prohibited commands
+        for prohibited in self.prohibited_commands:
+            if isinstance(prohibited, str) and not prohibited.startswith("^"):
+                # Check for the prohibited command inside backticks
+                backtick_pattern = r"`[^`]*\b" + re.escape(prohibited) + r"\b[^`]*`"
+                if re.search(backtick_pattern, command):
+                    return True
+
         # Extract all command types from the command string
         cmd_types = self.extract_all_command_types(command)
 
