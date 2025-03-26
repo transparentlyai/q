@@ -1,8 +1,10 @@
 """Web utilities for fetching content from URLs."""
 
 import re
+import os
 import requests
 import mimetypes
+import magic
 from typing import Tuple, List, Optional, Dict, Any
 from rich.console import Console
 from bs4 import BeautifulSoup
@@ -180,29 +182,79 @@ def process_urls_in_response(
                 # For JSON, provide the raw JSON for the model
                 content_for_model = f"JSON from {url}:\n{response_obj.text}"
 
-            # Handle binary content that isn't an image
-            elif ("application/" in content_type and "json" not in content_type) or "binary/" in content_type:
-                # For binary files, get the content for multimodal message
+            # Use python-magic for robust file type detection regardless of content-type header
+            else:
+                # Get the content once
                 binary_content = response_obj.content
                 
-                # For model's text context, just include basic info
-                content_for_model = f"Binary content fetched from {url} ({len(binary_content)} bytes, content-type: {content_type})"
+                # Use python-magic to determine the actual file type from the content
+                mime_type = magic.from_buffer(binary_content, mime=True)
+                file_type = magic.from_buffer(binary_content)
                 
-                # No additional multimodal handling for now - we only support images currently
                 if DEBUG:
-                    console.print(f"[yellow]DEBUG: Binary content from {url} is not an image, not adding to multimodal content[/yellow]")
-            
-            else:
-                # For other content types, return as text
-                try:
-                    text = response_obj.text
-                    if len(text) > 15000:
-                        text = text[:15000] + "\n\n[Content truncated due to length]"
-                    content_for_model = f"Content from {url}:\n{text}"
-                except UnicodeDecodeError:
-                    # If we can't decode as text, treat as binary
-                    binary_content = response_obj.content
-                    content_for_model = f"Binary content fetched from {url} ({len(binary_content)} bytes, content-type: {content_type})"
+                    console.print(f"[yellow]DEBUG: Content-Type header: {content_type}[/yellow]")
+                    console.print(f"[yellow]DEBUG: Magic detected MIME: {mime_type}[/yellow]")
+                    console.print(f"[yellow]DEBUG: Magic detected type: {file_type}[/yellow]")
+                
+                # Check if it's a text file based on mime type
+                is_text = mime_type.startswith('text/') or \
+                    any(t in mime_type for t in ['json', 'xml', 'javascript', 'yaml', 'html'])
+                
+                # Special check for Dockerfiles or other text files with misleading types
+                is_likely_text = "ASCII text" in file_type or "UTF-8 text" in file_type or \
+                    "Unicode text" in file_type or "script" in file_type
+                
+                # Extract path from URL for additional file type hinting
+                from urllib.parse import urlparse
+                path = urlparse(url).path
+                filename = os.path.basename(path)
+                
+                # Special check for Dockerfiles
+                is_dockerfile = filename.lower() == 'dockerfile' or filename.lower().endswith('dockerfile')
+                
+                if is_text or is_likely_text or is_dockerfile:
+                    # Handle as text since magic detected it as text
+                    try:
+                        text = response_obj.text
+                        if len(text) > 15000:
+                            text = text[:15000] + "\n\n[Content truncated due to length]"
+                        content_for_model = f"Content from {url}:\n{text}"
+                        if DEBUG:
+                            console.print(f"[yellow]DEBUG: Magic identified content as text: {file_type}[/yellow]")
+                    except UnicodeDecodeError:
+                        # If we can't decode as text despite magic's guess, treat as binary
+                        content_for_model = f"Binary content fetched from {url} ({len(binary_content)} bytes, detected type: {file_type})"
+                        if DEBUG:
+                            console.print(f"[yellow]DEBUG: Failed to decode as text despite magic detection[/yellow]")
+                
+                # Check if it's an image despite the content-type header
+                elif "image" in mime_type:
+                    # Create a multimodal image object for Claude
+                    import base64
+                    image_obj = {
+                        "type": "image", 
+                        "source": {
+                            "type": "base64", 
+                            "media_type": mime_type,
+                            "data": base64.b64encode(binary_content).decode('utf-8')
+                        }
+                    }
+                    
+                    # Add to multimodal content list
+                    multimodal_content.append(image_obj)
+                    
+                    # For model's text context, just include basic info
+                    content_for_model = f"Image fetched from {url} ({len(binary_content)} bytes, detected type: {file_type})"
+                    
+                    if DEBUG:
+                        console.print(f"[yellow]DEBUG: Magic detected image: {mime_type}[/yellow]")
+                
+                else:
+                    # This is definitely a binary file according to magic
+                    content_for_model = f"Binary content fetched from {url} ({len(binary_content)} bytes, detected type: {file_type})"
+                    
+                    if DEBUG:
+                        console.print(f"[yellow]DEBUG: Magic confirmed binary content: {file_type}[/yellow]")
 
             # Remove the code block completely from the response
             processed_response = processed_response.replace(marker, "", 1)

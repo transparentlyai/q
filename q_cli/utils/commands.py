@@ -561,20 +561,53 @@ def read_file_from_marker(
             console.print(f"[red]{error_msg}[/red]")
             return False, "", error_msg, None, None
 
-        # Get file extension and mime type
-        file_ext = os.path.splitext(expanded_path)[1].lower()
-        mime_type = mimetypes.guess_type(expanded_path)[0]
-        
         # Get file size for information
         file_size = os.path.getsize(expanded_path)
         file_info = f"Read file: {expanded_path} ({file_size} bytes)"
         
-        # Determine if this is a text file or binary file
-        text_extensions = ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.xml', 
-                          '.yml', '.yaml', '.toml', '.ini', '.csv', '.sh', '.bat', '.c', 
-                          '.cpp', '.h', '.java', '.rs', '.go', '.ts', '.jsx', '.tsx']
-        
-        is_text_file = file_ext in text_extensions or (mime_type and mime_type.startswith('text/'))
+        # Use python-magic for robust file type detection
+        try:
+            import magic
+            file_type = magic.from_file(expanded_path)
+            mime_type = magic.from_file(expanded_path, mime=True)
+            
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Magic detected type: {file_type}[/yellow]")
+                console.print(f"[yellow]DEBUG: Magic detected MIME: {mime_type}[/yellow]")
+            
+            # Check if it's a text file based on mime type and description
+            is_text_file = mime_type.startswith('text/') or \
+                any(t in mime_type for t in ['json', 'xml', 'javascript', 'yaml', 'html']) or \
+                "ASCII text" in file_type or "UTF-8 text" in file_type or \
+                "Unicode text" in file_type or "script" in file_type
+                
+            # Special case for Dockerfiles
+            filename = os.path.basename(expanded_path)
+            if filename.lower() == "dockerfile" or filename.lower().endswith("dockerfile"):
+                is_text_file = True
+                
+        except ImportError:
+            # Fallback to extension-based detection if python-magic is not available
+            file_ext = os.path.splitext(expanded_path)[1].lower()
+            mime_type_result = mimetypes.guess_type(expanded_path)[0]
+            mime_type = mime_type_result if mime_type_result is not None else ""
+            
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Magic not available, using extension-based detection[/yellow]")
+                console.print(f"[yellow]DEBUG: Extension: {file_ext}, MIME: {mime_type}[/yellow]")
+            
+            # Determine if this is a text file or binary file based on extension
+            text_extensions = ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.xml', 
+                              '.yml', '.yaml', '.toml', '.ini', '.csv', '.sh', '.bat', '.c', 
+                              '.cpp', '.h', '.java', '.rs', '.go', '.ts', '.jsx', '.tsx',
+                              '.dockerfile', '.gitignore', '.env']
+            
+            is_text_file = file_ext in text_extensions or mime_type.startswith('text/')
+            
+            # Special case for Dockerfiles
+            filename = os.path.basename(expanded_path)
+            if filename.lower() == "dockerfile" or filename.lower().endswith("dockerfile"):
+                is_text_file = True
         
         # Try to read as text first
         try:
@@ -589,9 +622,16 @@ def read_file_from_marker(
                 with open(expanded_path, "rb") as f:
                     binary_content = f.read()
                 
-                # For common image types that Claude can understand
-                image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']
-                if file_ext in image_extensions:
+                # Use magic to detect if this is an image (ensure mime_type is not None)
+                is_image = bool(mime_type and mime_type.startswith('image/'))
+                
+                # Fallback to extension check if magic doesn't identify it as an image
+                if not is_image:
+                    file_ext = os.path.splitext(expanded_path)[1].lower()
+                    image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']
+                    is_image = file_ext in image_extensions
+                
+                if is_image:
                     console.print(f"[bold green]Image file read successfully: {expanded_path}[/bold green]")
                     # Return metadata for multimodal handling
                     return True, file_info, "", "image", binary_content
@@ -604,8 +644,29 @@ def read_file_from_marker(
         except UnicodeDecodeError:
             # Fallback: Read as binary if text read fails
             try:
+                # We thought it was text, but it failed to decode - read as binary
                 with open(expanded_path, "rb") as f:
                     binary_content = f.read()
+                
+                # Double-check with magic if we have it
+                try:
+                    import magic
+                    mime_type = magic.from_buffer(binary_content, mime=True)
+                    file_type = magic.from_buffer(binary_content)
+                    
+                    # Check if it's an image despite the decode error
+                    is_image = bool(mime_type and mime_type.startswith('image/'))
+                    
+                    if is_image:
+                        console.print(f"[bold green]Image file read successfully: {expanded_path}[/bold green]")
+                        return True, file_info, "", "image", binary_content
+                    
+                    if DEBUG:
+                        console.print(f"[yellow]DEBUG: UnicodeDecodeError but magic says: {file_type}[/yellow]")
+                except ImportError:
+                    # No magic available, just continue with binary handling
+                    pass
+                    
                 console.print(f"[bold green]Binary file read successfully: {expanded_path}[/bold green]")
                 return True, file_info, "", "binary", binary_content
             except Exception as e:
