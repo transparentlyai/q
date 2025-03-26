@@ -446,19 +446,43 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
     Returns:
         List of tuples containing (file_path, content, original_marker)
     """
-    # Regular expression to match the file writing format correctly
-    pattern = re.compile(r"```WRITE_FILE:(.*?)[\r\n]+(.*?)```", re.DOTALL)
-
     matches = []
 
-    for match in pattern.finditer(response):
-        file_path = match.group(1).strip()
-        content = match.group(2)
-        original_marker = match.group(0)
+    # Use a more robust approach by finding all WRITE_FILE markers first
+    marker_starts = []
+    start_pattern = "```WRITE_FILE:"
+
+    # Find all potential starting positions
+    start_pos = 0
+    while True:
+        pos = response.find(start_pattern, start_pos)
+        if pos == -1:
+            break
+        marker_starts.append(pos)
+        start_pos = pos + 1
+
+    # Process each potential marker
+    for start_pos in marker_starts:
+        # Find the end of the marker (next ```)
+        end_pos = response.find("```", start_pos + len(start_pattern))
+        if end_pos == -1:
+            continue  # No closing marker found
+
+        # Extract the full marker
+        original_marker = response[start_pos : end_pos + 3]
+
+        # Extract the file path and content
+        first_newline_pos = response.find("\n", start_pos + len(start_pattern))
+
+        if first_newline_pos == -1 or first_newline_pos >= end_pos:
+            continue  # No proper newline between path and content
+
+        file_path = response[start_pos + len(start_pattern) : first_newline_pos].strip()
+        # Content starts after first newline and ends before the closing ```
+        content = response[first_newline_pos + 1 : end_pos]
 
         # Check if this match is inside a nested code block by counting ``` before this position
-        position = match.start()
-        text_before = response[:position]
+        text_before = response[:start_pos]
         code_block_markers = text_before.count("```")
 
         # If even number of ``` markers before our match, we're at the right level
@@ -468,6 +492,25 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
         # We accept markers as long as they're not inside another code block
         if not is_inside_nested_code_block:
             matches.append((file_path, content, original_marker))
+
+    # Also try the regex approach as a fallback
+    if not matches:
+        # Regular expression to match the file writing format correctly
+        pattern = re.compile(r"```WRITE_FILE:(.*?)[\r\n]+(.*?)```", re.DOTALL)
+
+        for match in pattern.finditer(response):
+            file_path = match.group(1).strip()
+            content = match.group(2)
+            original_marker = match.group(0)
+
+            # Check if this match is inside a nested code block
+            position = match.start()
+            text_before = response[:position]
+            code_block_markers = text_before.count("```")
+            is_inside_nested_code_block = code_block_markers % 2 == 1
+
+            if not is_inside_nested_code_block:
+                matches.append((file_path, content, original_marker))
 
     return matches
 
@@ -567,13 +610,28 @@ def write_file_from_marker(
         is_overwrite = os.path.exists(expanded_path)
         if is_overwrite:
             try:
-                with open(expanded_path, "r") as f:
+                with open(expanded_path, "r", encoding="utf-8") as f:
                     existing_content = f.read()
             except Exception as e:
                 if DEBUG:
                     console.print(
                         f"[yellow]DEBUG: Could not read existing file: {str(e)}[/yellow]"
                     )
+
+        # Ensure the content maintains consistent newlines
+        # Normalize line endings to platform-specific newlines
+        if content and "\r\n" in content and os.name != "nt":
+            # Convert Windows line endings to Unix for non-Windows platforms
+            content = content.replace("\r\n", "\n")
+        elif content and "\n" in content and os.name == "nt":
+            # Convert Unix line endings to Windows for Windows platforms
+            if not content.endswith("\r\n") and "\r\n" not in content:
+                content = content.replace("\n", "\r\n")
+
+        if DEBUG:
+            console.print(
+                f"[yellow]DEBUG: Content size after newline normalization: {len(content)} bytes[/yellow]"
+            )
 
         # Show the file details to the user
         console.print("")  # Add spacing for better readability
@@ -658,19 +716,73 @@ def write_file_from_marker(
                 "STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user.",
             )
 
-        # Write the file
+        # Write the file atomically to prevent truncation if interrupted
         if DEBUG:
             console.print(
                 f"[yellow]DEBUG: Writing content to file: {expanded_path}[/yellow]"
             )
+            console.print(
+                f"[yellow]DEBUG: Content length for writing: {len(content)} bytes[/yellow]"
+            )
 
         try:
-            with open(expanded_path, "w") as f:
-                f.write(content)
+            # Write to a temporary file first, then atomically rename to the target
+            import tempfile
+            import shutil
+            import uuid
+
+            # Create a temporary file in the same directory for atomic move
+            temp_dir = os.path.dirname(expanded_path) or "."
+            temp_base = f".{os.path.basename(expanded_path)}.{uuid.uuid4().hex}"
+            temp_path = os.path.join(temp_dir, temp_base)
+
+            try:
+                # Ensure the temp file has the same permissions as the target would
+                # if we're overwriting an existing file
+                if is_overwrite and os.path.exists(expanded_path):
+                    # Copy existing file's permissions, ownership, etc.
+                    shutil.copy2(expanded_path, temp_path)
+                    # Then open for writing (which truncates it)
+                    with open(temp_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                        f.flush()  # Ensure data is written to disk
+                        os.fsync(f.fileno())  # Force flush to disk
+                else:
+                    # No existing file, just create a new one
+                    with open(temp_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                        f.flush()  # Ensure data is written to disk
+                        os.fsync(f.fileno())  # Force flush to disk
+
+                # Double check file was written correctly
+                if os.path.exists(temp_path):
+                    with open(temp_path, "r", encoding="utf-8") as f:
+                        written_content = f.read()
+                    if len(written_content) != len(content):
+                        raise IOError(
+                            f"Temporary file size mismatch: written {len(written_content)}, expected {len(content)}"
+                        )
+
+                # Now atomically move the temp file to the target
+                shutil.move(temp_path, expanded_path)
+
+                if DEBUG:
+                    console.print(
+                        f"[yellow]DEBUG: File written successfully via atomic operation[/yellow]"
+                    )
+            finally:
+                # Clean up the temp file if it still exists
+                if os.path.exists(temp_path):
+                    try:
+                        os.unlink(temp_path)
+                    except Exception:
+                        pass
         except KeyboardInterrupt:
             # Handle Ctrl+C during file writing
             console.print("\n[bold red]File writing interrupted by user[/bold red]")
-            console.print("[yellow]Warning: File may be partially written[/yellow]")
+            console.print(
+                "[yellow]Original file is preserved due to atomic writing[/yellow]"
+            )
             return (
                 False,
                 "",
@@ -694,6 +806,9 @@ def write_file_from_marker(
         # Only show error details in debug mode
         if DEBUG:
             console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+            import traceback
+
+            console.print(f"[yellow]DEBUG: {traceback.format_exc()}[/yellow]")
         # Make sure this detailed error is returned so it can be sent to the model
         return False, "", error_msg
 
@@ -731,6 +846,11 @@ def process_file_writes(
         console.print(
             f"[yellow]DEBUG: Found {len(file_matches)} file writing markers[/yellow]"
         )
+        # Log details about each file marker
+        for idx, (file_path, content, _) in enumerate(file_matches):
+            console.print(
+                f"[yellow]DEBUG: Marker {idx+1}: Path={file_path}, Content length={len(content)} bytes[/yellow]"
+            )
 
     processed_response = response
     file_results = []
