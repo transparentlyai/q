@@ -389,7 +389,8 @@ def process_response_operations(
     file_results_data = None
     if not getattr(args, "no_file_write", False) and not operation_interrupted:
         # Check for file operations - don't use spinner to avoid conflict with approval prompts
-        console.print("[info]Checking file operations...[/info]")
+        if DEBUG:
+            console.print("[yellow]DEBUG: Checking file operations...[/yellow]")
         file_processed_response, file_ops_results, file_has_error = process_file_writes(
             response, console, False
         )
@@ -439,7 +440,8 @@ def process_response_operations(
         if filtered_commands:
             # First get user approval for all commands without showing spinner
             # Then process the approved commands with the spinner
-            console.print("[info]Checking command approvals...[/info]")
+            if DEBUG:
+                console.print("[yellow]DEBUG: Checking command approvals...[/yellow]")
             command_results_str, cmd_has_error = process_commands(
                 filtered_commands, console, permission_manager, False
             )
