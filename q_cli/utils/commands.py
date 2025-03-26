@@ -605,13 +605,53 @@ def write_file_from_marker(
 
         # Ask for confirmation with appropriate message
         if is_overwrite:
-            prompt = f"\nOVERWRITE file '{expanded_path}' with the changes shown above? [y/N]: "
+            prompt = f"\nOVERWRITE file '{expanded_path}' with the changes shown above? [y/n/r]: "
+            prompt += "\n(y=yes, n=no, r=rename - create with a different filename): "
         else:
-            prompt = f"\nCreate file '{expanded_path}' with this content? [y/N]: "
+            prompt = f"\nCreate file '{expanded_path}' with this content? [y/n/r]: "
+            prompt += "\n(y=yes, n=no, r=rename - create with a different filename): "
 
         try:
             response = input(prompt).lower().strip()
-            if not response.startswith("y"):
+            
+            # Option to save with a different filename
+            if response.startswith("r"):
+                new_filename = input("\nEnter new filename: ").strip()
+                if not new_filename:
+                    error_msg = "File writing skipped - no filename provided"
+                    if DEBUG:
+                        console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                    return False, "", error_msg
+                
+                # Expand the new file path
+                if not os.path.isabs(new_filename):
+                    # If relative path, keep it in the same directory as the original
+                    new_filename = os.path.join(os.path.dirname(expanded_path), new_filename)
+                else:
+                    # If absolute path, use it as is
+                    new_filename = os.path.expanduser(new_filename)
+                    new_filename = os.path.expandvars(new_filename)
+                
+                # Set the new path and reset overwrite flag
+                expanded_path = new_filename
+                is_overwrite = os.path.exists(expanded_path)
+                
+                # Ensure the directory exists for the new path
+                directory = os.path.dirname(expanded_path)
+                if directory and not os.path.exists(directory):
+                    os.makedirs(directory, exist_ok=True)
+                
+                # Show confirmation of the new path
+                console.print(f"[bold yellow]Will write to new path: {expanded_path}[/bold yellow]")
+                
+                # Ask for final confirmation with the new path
+                confirm = input(f"Proceed with writing to {expanded_path}? [y/N]: ").lower().strip()
+                if not confirm.startswith("y"):
+                    error_msg = "File writing skipped by user"
+                    if DEBUG:
+                        console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                    return False, "", error_msg
+            elif not response.startswith("y"):
                 error_msg = "File writing skipped by user"
                 # Only show error details in debug mode
                 if DEBUG:
