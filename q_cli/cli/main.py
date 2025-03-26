@@ -153,6 +153,30 @@ def main() -> None:
     except (KeyboardInterrupt, EOFError):
         sys.exit(0)
 
+    # If dry-run is enabled, print the message that would be sent to Claude and exit
+    if getattr(args, "dry_run", False):
+        # Initialize conversation with the initial question
+        conversation = []
+        if question.strip():
+            conversation.append({"role": "user", "content": question})
+
+        # Create a formatted representation of the message
+        dry_run_output = (
+            "\n===== DRY RUN MODE =====\n\n"
+            f"[bold blue]Model:[/bold blue] {args.model}\n"
+            f"[bold blue]Max tokens:[/bold blue] {args.max_tokens}\n"
+            f"[bold blue]Temperature:[/bold blue] 0\n\n"
+            f"[bold green]System prompt:[/bold green]\n{system_prompt}\n\n"
+        )
+
+        if conversation:
+            dry_run_output += f"[bold yellow]User message:[/bold yellow]\n{question}\n"
+        else:
+            dry_run_output += "[bold yellow]No initial user message[/bold yellow]\n"
+
+        console.print(dry_run_output)
+        sys.exit(0)
+
     # Run the conversation
     run_conversation(
         client,

@@ -130,4 +130,9 @@ def setup_argparse() -> argparse.ArgumentParser:
         action="store_true",
         help="Update q to the latest version and exit",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the full message that would be sent to Claude and exit",
+    )
     return parser
