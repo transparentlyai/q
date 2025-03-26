@@ -225,16 +225,18 @@ def create_key_bindings():
         """Insert a newline when Alt+Enter is pressed."""
         event.current_buffer.insert_text("\n")
     
-    # Also support the sequence that some terminals might send for Alt+Enter
-    @bindings.add("c-j")  # Ctrl+J is another way Alt+Enter might be sent
-    def handle_ctrl_j(event):
-        """Insert a newline when Ctrl+J is pressed (alternative Alt+Enter)."""
-        event.current_buffer.insert_text("\n")
+    # Support additional ways to insert newlines that different terminals might use
+    for key_combo in ["c-j", "c-m"]:  # Ctrl+J and Ctrl+M are common alternatives
+        @bindings.add(key_combo)
+        def handle_alt_newline(event):
+            """Insert a newline when alternative key combos are pressed."""
+            event.current_buffer.insert_text("\n")
 
-    # Add Escape key to abort/exit with highest priority
-    @escape_bindings.add("escape", eager=True)
-    def handle_escape(event):
-        """Exit the application when Escape is pressed."""
+    # Add double Escape key to abort/exit with high priority
+    # Using double escape to avoid conflict with Alt+Enter which starts with escape
+    @escape_bindings.add("escape", "escape", eager=True)
+    def handle_double_escape(event):
+        """Exit the application when Escape is pressed twice."""
         # Send SIGINT to the current process, which is a cleaner way to exit
         os.kill(os.getpid(), signal.SIGINT)
 
