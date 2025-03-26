@@ -4,7 +4,8 @@ import os
 import subprocess
 import re
 import difflib
-from typing import Tuple, List, Dict, Any
+import mimetypes
+from typing import Tuple, List, Dict, Any, Optional
 from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
@@ -17,6 +18,8 @@ WRITE_FILE_MARKER_END = "/Q:COMMAND"
 RUN_SHELL_MARKER_START = 'Q:COMMAND type="shell"'
 RUN_SHELL_MARKER_END = "/Q:COMMAND"
 URL_BLOCK_MARKER = 'Q:COMMAND type="fetch"'  # Match the block marker in web.py
+READ_FILE_MARKER_START = 'Q:COMMAND type="read"'
+READ_FILE_MARKER_END = "/Q:COMMAND"
 
 # List of potentially dangerous commands to block
 BLOCKED_COMMANDS = [
@@ -332,6 +335,12 @@ def remove_special_markers(response: str) -> str:
         r"<" + re.escape(URL_BLOCK_MARKER) + r">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL
     )
     cleaned = pattern.sub("", cleaned)
+    
+    # Remove file reading markers
+    pattern = re.compile(
+        r"<" + re.escape(READ_FILE_MARKER_START) + r">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL
+    )
+    cleaned = pattern.sub("", cleaned)
 
     # Clean up any leftover open/close tags
     leftover_markers = [
@@ -436,6 +445,38 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
     return matches
 
 
+def extract_read_file_markers_from_response(response: str) -> List[Tuple[str, str]]:
+    """
+    Extract file reading markers from the model's response.
+
+    Format:
+    - <Q:COMMAND type="read">
+      path/to/file
+      </Q:COMMAND>
+
+    Args:
+        response: The model's response text
+
+    Returns:
+        List of tuples containing (file_path, original_marker)
+    """
+    matches = []
+
+    # Regular expression to match the file reading XML-like format
+    pattern = re.compile(
+        r'<Q:COMMAND type="read">\s*(.*?)\s*</Q:COMMAND>', re.DOTALL
+    )
+
+    for match in pattern.finditer(response):
+        file_path = match.group(1).strip()
+        original_marker = match.group(0)
+
+        # For XML-like tags we don't need to check for nested code blocks
+        matches.append((file_path, original_marker))
+
+    return matches
+
+
 def show_diff(old_content: str, new_content: str, console: Console) -> None:
     """
     Display a colored diff between old and new content.
@@ -479,6 +520,112 @@ def show_diff(old_content: str, new_content: str, console: Console) -> None:
             table.add_row(line)
 
     console.print(table)
+
+
+def read_file_from_marker(
+    file_path: str, console: Console
+) -> Tuple[bool, str, str, Optional[str], Optional[bytes]]:
+    """
+    Read content from a file based on a file reading marker.
+
+    Args:
+        file_path: Path of the file to read
+        console: Console for output
+
+    Returns:
+        Tuple containing (success, stdout, stderr, file_type, binary_content)
+        binary_content is only provided for non-text files
+    """
+    try:
+        if DEBUG:
+            console.print(
+                f"[yellow]DEBUG: Reading file from marker: {file_path}[/yellow]"
+            )
+
+        # Expand the file path (handle ~ and environment variables)
+        expanded_path = os.path.expanduser(file_path)
+        expanded_path = os.path.expandvars(expanded_path)
+
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Expanded path: {expanded_path}[/yellow]")
+
+        # Make sure the path is relative to the current working directory if not absolute
+        if not os.path.isabs(expanded_path):
+            expanded_path = os.path.join(os.getcwd(), expanded_path)
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Absolute path: {expanded_path}[/yellow]")
+
+        # Check if file exists
+        if not os.path.exists(expanded_path):
+            error_msg = f"File not found: {expanded_path}"
+            console.print(f"[red]{error_msg}[/red]")
+            return False, "", error_msg, None, None
+
+        # Get file extension and mime type
+        file_ext = os.path.splitext(expanded_path)[1].lower()
+        mime_type = mimetypes.guess_type(expanded_path)[0]
+        
+        # Get file size for information
+        file_size = os.path.getsize(expanded_path)
+        file_info = f"Read file: {expanded_path} ({file_size} bytes)"
+        
+        # Determine if this is a text file or binary file
+        text_extensions = ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.xml', 
+                          '.yml', '.yaml', '.toml', '.ini', '.csv', '.sh', '.bat', '.c', 
+                          '.cpp', '.h', '.java', '.rs', '.go', '.ts', '.jsx', '.tsx']
+        
+        is_text_file = file_ext in text_extensions or (mime_type and mime_type.startswith('text/'))
+        
+        # Try to read as text first
+        try:
+            if is_text_file:
+                with open(expanded_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                # Show success message
+                console.print(f"[bold green]Text file read successfully: {expanded_path}[/bold green]")
+                return True, f"{file_info}\n\n{content}", "", "text", None
+            else:
+                # This is a binary/image file, read it as binary
+                with open(expanded_path, "rb") as f:
+                    binary_content = f.read()
+                
+                # For common image types that Claude can understand
+                image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']
+                if file_ext in image_extensions:
+                    console.print(f"[bold green]Image file read successfully: {expanded_path}[/bold green]")
+                    # Return metadata for multimodal handling
+                    return True, file_info, "", "image", binary_content
+                else:
+                    # For other binary files
+                    console.print(f"[bold green]Binary file read successfully: {expanded_path}[/bold green]")
+                    # Return binary data for potential multimodal handling 
+                    return True, file_info, "", "binary", binary_content
+                    
+        except UnicodeDecodeError:
+            # Fallback: Read as binary if text read fails
+            try:
+                with open(expanded_path, "rb") as f:
+                    binary_content = f.read()
+                console.print(f"[bold green]Binary file read successfully: {expanded_path}[/bold green]")
+                return True, file_info, "", "binary", binary_content
+            except Exception as e:
+                error_msg = f"Error reading file: {str(e)}"
+                console.print(f"[red]{error_msg}[/red]")
+                return False, "", error_msg, None, None
+        except Exception as e:
+            error_msg = f"Error reading file: {str(e)}"
+            console.print(f"[red]{error_msg}[/red]")
+            return False, "", error_msg, None, None
+
+    except Exception as e:
+        error_msg = f"Error reading file: {str(e)}"
+        # Only show error details in debug mode
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+            import traceback
+            console.print(f"[yellow]DEBUG: {traceback.format_exc()}[/yellow]")
+        # Make sure this detailed error is returned so it can be sent to the model
+        return False, "", error_msg, None, None
 
 
 def write_file_from_marker(
@@ -792,6 +939,109 @@ def write_file_from_marker(
             console.print(f"[yellow]DEBUG: {traceback.format_exc()}[/yellow]")
         # Make sure this detailed error is returned so it can be sent to the model
         return False, "", error_msg
+
+
+def process_file_reads(
+    response: str,
+    console: Console,
+    show_errors: bool = True,
+) -> Tuple[str, List[Dict[str, Any]], bool, List[Dict[str, Any]]]:
+    """
+    Process a response from the model, handling any file reading markers.
+
+    Args:
+        response: The model's response text
+        console: Console for output
+        show_errors: Whether to display error messages to the user
+
+    Returns:
+        Tuple containing:
+        - Processed response with file reading markers replaced
+        - List of dictionaries with file reading results (text)
+        - Boolean indicating if any errors occurred
+        - List of dictionaries with multimodal file results (images/binary)
+    """
+    # Extract all file reading markers
+    if DEBUG:
+        console.print(
+            "[yellow]DEBUG: Looking for file reading markers in response[/yellow]"
+        )
+    file_matches = extract_read_file_markers_from_response(response)
+
+    if not file_matches:
+        if DEBUG:
+            console.print("[yellow]DEBUG: No file reading markers found[/yellow]")
+        return response, [], False, []
+
+    if DEBUG:
+        console.print(
+            f"[yellow]DEBUG: Found {len(file_matches)} file reading markers[/yellow]"
+        )
+        # Log details about each file marker
+        for idx, (file_path, _) in enumerate(file_matches):
+            console.print(
+                f"[yellow]DEBUG: Marker {idx+1}: Path={file_path}[/yellow]"
+            )
+
+    processed_response = response
+    file_results = []
+    multimodal_results = []
+    has_error = False
+
+    for file_path, original_marker in file_matches:
+        success, stdout, stderr, file_type, binary_content = read_file_from_marker(file_path, console)
+
+        # Track if any operations failed
+        if not success:
+            has_error = True
+
+        # Create a basic result entry
+        result = {
+            "file_path": file_path,
+            "success": success,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+        
+        # Handle multimodal content (images, binary files)
+        if success and binary_content and file_type in ["image", "binary"]:
+            mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+            multimodal_result = {
+                "file_path": file_path,
+                "file_type": file_type,
+                "content": binary_content,
+                "mime_type": mime_type
+            }
+            multimodal_results.append(multimodal_result)
+            
+            # For multimodal files, we only include basic info in the regular results
+            # The actual binary content will be handled via multimodal messaging
+            file_results.append(result)
+        else:
+            # For text files or failures, proceed as normal
+            file_results.append(result)
+
+        # Use a clean, user-friendly replacement format that won't be interpreted as commands
+        # but still provides information about the file operation result
+        if success:
+            replacement = f"[File read: {file_path}]"
+        else:
+            replacement = f"[Failed to read file: {file_path}]"
+
+        # Find the original marker in the response
+        marker_start = processed_response.find(original_marker)
+        if marker_start != -1:
+            # Simple replacement - keep any text after the marker
+            processed_response = processed_response.replace(
+                original_marker, replacement
+            )
+        else:
+            # Normal replacement as fallback
+            processed_response = processed_response.replace(
+                original_marker, replacement
+            )
+
+    return processed_response, file_results, has_error, multimodal_results
 
 
 def process_file_writes(

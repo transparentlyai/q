@@ -2,7 +2,8 @@
 
 import os
 import sys
-from typing import List, Dict, Optional
+import base64
+from typing import List, Dict, Optional, Any
 import anthropic
 from prompt_toolkit import PromptSession
 from rich.console import Console
@@ -23,6 +24,7 @@ from q_cli.utils.commands import (
     execute_command,
     format_command_output,
     process_file_writes,
+    process_file_reads,
     remove_special_markers,
     WRITE_FILE_MARKER_START,
 )
@@ -55,7 +57,7 @@ def run_conversation(
         permission_manager: Optional manager for command permissions
     """
     # Initialize conversation history
-    conversation: List[Dict[str, str]] = []
+    conversation: List[Dict[str, Any]] = []
 
     try:
         # Add initial user question to conversation and context manager
@@ -89,6 +91,7 @@ def run_conversation(
                         with console.status(
                             "[info]Thinking... [Ctrl+C to cancel][/info]"
                         ):
+                            # Call Claude API - the client will automatically handle text vs multimodal
                             message = client.messages.create(
                                 model=args.model,
                                 max_tokens=args.max_tokens,
@@ -177,7 +180,7 @@ def run_conversation(
                     console.print("")  # Add empty line after response
 
                     # Process operations in the response
-                    operation_results, has_operation_error = (
+                    operation_results, has_operation_error, multimodal_content = (
                         process_response_operations(
                             response,
                             args,
@@ -191,9 +194,31 @@ def run_conversation(
                     # 6. If we have operation results, add them to conversation as user message
                     if operation_results:
                         combined_results = "\n\n".join(operation_results)
-                        conversation.append(
-                            {"role": "user", "content": combined_results}
-                        )
+                        
+                        # Check if we have multimodal content to include
+                        if multimodal_content:
+                            # Create a multimodal message with both text and images
+                            content_array = [
+                                {"type": "text", "text": combined_results}
+                            ]
+                            
+                            # Add all image/multimodal content
+                            for content_item in multimodal_content:
+                                content_array.append(content_item)
+                                
+                            # Create the proper message structure for Claude API
+                            multimodal_message = {
+                                "role": "user",
+                                "content": content_array
+                            }
+                            
+                            # Add to conversation
+                            conversation.append(multimodal_message)
+                        else:
+                            # Standard text-only message
+                            conversation.append(
+                                {"role": "user", "content": combined_results}
+                            )
                         # Continue loop to let Claude process the results
                         continue
 
@@ -347,10 +372,10 @@ def process_response_operations(
     response: str,
     args,
     console: Console,
-    conversation: List[Dict[str, str]],
+    conversation: List[Dict[str, Any]],
     permission_manager: Optional["CommandPermissionManager"] = None,
     auto_approve: bool = False,
-) -> tuple[List[str], bool]:
+) -> tuple[List[str], bool, List[Dict[str, Any]]]:
     """
     Process operations (URL fetching, file operations, commands) in a response.
 
@@ -365,7 +390,10 @@ def process_response_operations(
         Tuple containing:
         - List of operation results
         - Boolean indicating if any errors occurred
+        - List of multimodal content items (images, etc.)
     """
+    # Initialize multimodal_content
+    multimodal_content = []
     operation_results = []
     has_operation_error = False
     operation_interrupted = False  # Track if an operation was interrupted
@@ -402,41 +430,102 @@ def process_response_operations(
                 "based on your request. Here's what I found:\n\n" + web_content
             )
 
-    # 2. Process file operations if enabled
-    file_results_data = None
-    if not getattr(args, "no_file_write", False) and not operation_interrupted:
-        # Check for file operations - don't use spinner to avoid conflict with approval prompts
+    # 2. Process file read operations if enabled
+    file_read_results_data = None
+    multimodal_content = []
+    if not getattr(args, "no_file_read", False) and not operation_interrupted:
+        # Check for file read operations
         if DEBUG:
-            console.print("[yellow]DEBUG: Checking file operations...[/yellow]")
-        file_processed_response, file_ops_results, file_has_error = process_file_writes(
+            console.print("[yellow]DEBUG: Checking file read operations...[/yellow]")
+        file_processed_response, file_read_results, file_read_has_error, multimodal_files = process_file_reads(
+            response, console, False
+        )
+        has_operation_error = has_operation_error or file_read_has_error
+
+        # Handle text file results
+        if file_read_results:
+            # For text file reads, we want to directly pass the content back to the model
+            # so it can work with the file content
+            file_read_messages = []
+            for result in file_read_results:
+                if result["success"]:
+                    # Include the full content for successful reads
+                    file_read_messages.append(result["stdout"])
+                else:
+                    file_read_messages.append(
+                        f"Failed to read file {result['file_path']}: {result['stderr']}"
+                    )
+
+            file_read_results_data = "\n\n".join(file_read_messages)
+        
+        # Handle multimodal file results (images, binary files)
+        if multimodal_files:
+            for file_info in multimodal_files:
+                if file_info["file_type"] == "image":
+                    # For images, we'll create a multimodal message with the image content
+                    try:
+                        # Get mime type
+                        mime_type = file_info["mime_type"] or "image/png"
+                        
+                        # For Claude API, prepare the image in the right format
+                        image_obj = {
+                            "type": "image", 
+                            "source": {
+                                "type": "base64", 
+                                "media_type": mime_type,
+                                "data": base64.b64encode(file_info["content"]).decode('utf-8')
+                            }
+                        }
+                        
+                        # Add to multimodal content list
+                        multimodal_content.append(image_obj)
+                        
+                        if DEBUG:
+                            console.print(f"[yellow]DEBUG: Added image {file_info['file_path']} to multimodal content[/yellow]")
+                    except Exception as e:
+                        if DEBUG:
+                            console.print(f"[yellow]DEBUG: Error preparing image: {str(e)}[/yellow]")
+                elif file_info["file_type"] == "binary":
+                    # For other binary files, we could potentially convert some types later
+                    # Currently we'll just skip them for multimodal handling
+                    if DEBUG:
+                        console.print(f"[yellow]DEBUG: Binary file {file_info['file_path']} not sent as multimodal content[/yellow]")
+    
+    # 3. Process file write operations if enabled
+    file_write_results_data = None
+    if not getattr(args, "no_file_write", False) and not operation_interrupted:
+        # Check for file write operations - don't use spinner to avoid conflict with approval prompts
+        if DEBUG:
+            console.print("[yellow]DEBUG: Checking file write operations...[/yellow]")
+        file_processed_response, file_write_results, file_write_has_error = process_file_writes(
             response, console, False, auto_approve
         )
-        has_operation_error = has_operation_error or file_has_error
+        has_operation_error = has_operation_error or file_write_has_error
 
         # Check if any file operations were cancelled by user
-        for result in file_ops_results:
+        for result in file_write_results:
             if "STOP. The operation was cancelled by user" in result.get("stderr", ""):
                 operation_interrupted = True
                 break
 
-        if file_ops_results:
-            file_messages = []
-            for result in file_ops_results:
+        if file_write_results:
+            file_write_messages = []
+            for result in file_write_results:
                 if result["success"]:
-                    file_messages.append(
+                    file_write_messages.append(
                         f"Successfully wrote file: {result['file_path']}"
                     )
                 else:
-                    file_messages.append(
+                    file_write_messages.append(
                         f"Failed to write file {result['file_path']}: {result['stderr']}"
                     )
 
-            file_results_data = (
+            file_write_results_data = (
                 "I've processed your file writing requests. Here are the results:\n\n"
-                + "\n".join(file_messages)
+                + "\n".join(file_write_messages)
             )
 
-    # 3. Process commands if enabled
+    # 4. Process commands if enabled
     command_results_data = None
     if not getattr(args, "no_execute", False) and not operation_interrupted:
         commands = extract_commands_from_response(response)
@@ -474,7 +563,7 @@ def process_response_operations(
             if command_results_str:
                 command_results_data = get_command_result_prompt(command_results_str)
 
-    # 4. Display appropriate message for operation status
+    # 5. Display appropriate message for operation status
     if has_operation_error and not operation_interrupted:
         # Check if any commands were rejected by user
         if (
@@ -485,11 +574,13 @@ def process_response_operations(
         else:
             console.print("[red]Operation error[/red]")
 
-    # 5. Combine all operation results
+    # 6. Combine all operation results
     if url_results:
         operation_results.append(url_results)
-    if file_results_data:
-        operation_results.append(file_results_data)
+    if file_read_results_data:
+        operation_results.append(file_read_results_data)
+    if file_write_results_data:
+        operation_results.append(file_write_results_data)
     if command_results_data:
         operation_results.append(command_results_data)
 
@@ -498,7 +589,8 @@ def process_response_operations(
         stop_message = "STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user."
         operation_results.append(stop_message)
 
-    return operation_results, has_operation_error
+    # Return operation results, error status, and multimodal content
+    return operation_results, has_operation_error, multimodal_content
 
 
 def handle_next_input(
