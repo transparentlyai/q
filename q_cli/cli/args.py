@@ -135,4 +135,9 @@ def setup_argparse() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the full message that would be sent to Claude and exit",
     )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Automatically approve all file operations (WARNING: use only for new projects with nothing to override)",
+    )
     return parser

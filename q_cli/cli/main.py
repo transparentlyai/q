@@ -139,6 +139,9 @@ def main() -> None:
     # Set up permission manager
     permission_manager = CommandPermissionManager.from_config(config_vars)
 
+    # Check if auto-approve flag is set
+    auto_approve = getattr(args, "yes", False)
+
     # Always add default commands to the user-configured ones
     # This ensures defaults are always included while allowing user customization
     permission_manager.always_approved_commands.update(DEFAULT_ALWAYS_APPROVED_COMMANDS)
@@ -187,6 +190,7 @@ def main() -> None:
         question,
         permission_manager,
         context_manager=context_manager,
+        auto_approve=auto_approve,
     )
 
 

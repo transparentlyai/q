@@ -40,6 +40,7 @@ def run_conversation(
     initial_question: str,
     permission_manager: Optional[CommandPermissionManager] = None,
     context_manager: Optional[ContextManager] = None,
+    auto_approve: bool = False,
 ) -> None:
     """
     Run the continuous conversation loop with Claude.
@@ -178,7 +179,12 @@ def run_conversation(
                     # Process operations in the response
                     operation_results, has_operation_error = (
                         process_response_operations(
-                            response, args, console, conversation, permission_manager
+                            response,
+                            args,
+                            console,
+                            conversation,
+                            permission_manager,
+                            auto_approve,
                         )
                     )
 
@@ -246,6 +252,7 @@ def process_commands(
     console: Console,
     permission_manager: Optional["CommandPermissionManager"] = None,
     show_errors: bool = True,
+    auto_approve: bool = False,
 ) -> tuple[Optional[str], bool]:
     """
     Process and execute commands extracted from Claude's response.
@@ -284,8 +291,17 @@ def process_commands(
             has_error = True
             continue
 
-        # Ask for confirmation if needed
-        if permission_manager and permission_manager.needs_permission(command):
+        # Check if auto-approve is enabled
+        if auto_approve:
+            if DEBUG:
+                console.print(
+                    f"[yellow]DEBUG: Auto-approving command: {command}[/yellow]"
+                )
+            execute = True
+            remember = True
+            console.print(f"[bold green]Auto-approved command:[/bold green] {command}")
+        # Ask for confirmation if needed and not auto-approving
+        elif permission_manager and permission_manager.needs_permission(command):
             execute, remember = ask_command_confirmation(
                 command, console, permission_manager
             )
@@ -333,6 +349,7 @@ def process_response_operations(
     console: Console,
     conversation: List[Dict[str, str]],
     permission_manager: Optional["CommandPermissionManager"] = None,
+    auto_approve: bool = False,
 ) -> tuple[List[str], bool]:
     """
     Process operations (URL fetching, file operations, commands) in a response.
@@ -392,7 +409,7 @@ def process_response_operations(
         if DEBUG:
             console.print("[yellow]DEBUG: Checking file operations...[/yellow]")
         file_processed_response, file_ops_results, file_has_error = process_file_writes(
-            response, console, False
+            response, console, False, auto_approve
         )
         has_operation_error = has_operation_error or file_has_error
 
@@ -429,7 +446,7 @@ def process_response_operations(
         file_op_patterns = [
             "[File written:",
             "[Failed to write file:",
-            "Q:COMMAND type=\"shell\"",
+            'Q:COMMAND type="shell"',
             "<Q:COMMAND",
         ]
 
@@ -443,7 +460,7 @@ def process_response_operations(
             if DEBUG:
                 console.print("[yellow]DEBUG: Checking command approvals...[/yellow]")
             command_results_str, cmd_has_error = process_commands(
-                filtered_commands, console, permission_manager, False
+                filtered_commands, console, permission_manager, False, auto_approve
             )
             has_operation_error = has_operation_error or cmd_has_error
 

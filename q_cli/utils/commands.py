@@ -12,11 +12,11 @@ from colorama import Fore, Style
 from q_cli.utils.constants import DEBUG, MAX_FILE_DISPLAY_LENGTH
 
 # Define the special formats for file writing and command execution
-WRITE_FILE_MARKER_START = "Q:COMMAND type=\"write\" path="
+WRITE_FILE_MARKER_START = 'Q:COMMAND type="write" path='
 WRITE_FILE_MARKER_END = "/Q:COMMAND"
-RUN_SHELL_MARKER_START = "Q:COMMAND type=\"shell\""
+RUN_SHELL_MARKER_START = 'Q:COMMAND type="shell"'
 RUN_SHELL_MARKER_END = "/Q:COMMAND"
-URL_BLOCK_MARKER = "Q:COMMAND type=\"fetch\""  # Match the block marker in web.py
+URL_BLOCK_MARKER = 'Q:COMMAND type="fetch"'  # Match the block marker in web.py
 
 # List of potentially dangerous commands to block
 BLOCKED_COMMANDS = [
@@ -234,7 +234,7 @@ def extract_code_blocks(response: str) -> Dict[str, List[List[str]]]:
         if "<Q:COMMAND" in line or "</Q:COMMAND>" in line:
             skip_line = True
             continue
-            
+
         # Skip line if we're in skip mode
         if skip_line:
             # End skip mode if we've reached the end of a command block
@@ -289,7 +289,9 @@ def extract_shell_markers_from_response(response: str) -> List[Tuple[str, str]]:
         List of tuples containing (command, original_marker)
     """
     # Regular expression to match the shell command format
-    pattern = re.compile(r"<Q:COMMAND type=\"shell\">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL)
+    pattern = re.compile(
+        r"<Q:COMMAND type=\"shell\">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL
+    )
 
     matches = []
 
@@ -314,15 +316,21 @@ def remove_special_markers(response: str) -> str:
         Response with all special markers removed
     """
     # Remove shell command markers
-    pattern = re.compile(r"<Q:COMMAND type=\"shell\">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL)
+    pattern = re.compile(
+        r"<Q:COMMAND type=\"shell\">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL
+    )
     cleaned = pattern.sub("", response)
 
     # Remove file writing markers
-    pattern = re.compile(r'<Q:COMMAND type="write" path="(.*?)">\s*(.*?)\s*</Q:COMMAND>', re.DOTALL)
+    pattern = re.compile(
+        r'<Q:COMMAND type="write" path="(.*?)">\s*(.*?)\s*</Q:COMMAND>', re.DOTALL
+    )
     cleaned = pattern.sub("", cleaned)
 
     # Remove URL fetch markers
-    pattern = re.compile(r"<" + re.escape(URL_BLOCK_MARKER) + r">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL)
+    pattern = re.compile(
+        r"<" + re.escape(URL_BLOCK_MARKER) + r">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL
+    )
     cleaned = pattern.sub("", cleaned)
 
     # Clean up any leftover open/close tags
@@ -413,7 +421,9 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
     matches = []
 
     # Regular expression to match the file writing XML-like format
-    pattern = re.compile(r'<Q:COMMAND type="write" path="(.*?)">\s*(.*?)\s*</Q:COMMAND>', re.DOTALL)
+    pattern = re.compile(
+        r'<Q:COMMAND type="write" path="(.*?)">\s*(.*?)\s*</Q:COMMAND>', re.DOTALL
+    )
 
     for match in pattern.finditer(response):
         file_path = match.group(1).strip()
@@ -472,7 +482,7 @@ def show_diff(old_content: str, new_content: str, console: Console) -> None:
 
 
 def write_file_from_marker(
-    file_path: str, content: str, console: Console
+    file_path: str, content: str, console: Console, auto_approve: bool = False
 ) -> Tuple[bool, str, str]:
     """
     Write content to a file based on a file writing marker.
@@ -603,59 +613,81 @@ def write_file_from_marker(
 
         # No longer showing interrupt hint
 
-        # Ask for confirmation with appropriate message
-        if is_overwrite:
-            prompt = f"\nOVERWRITE file '{expanded_path}' with the changes shown above? [y/n/r]: [y=yes, n=no, r=rename] "
-        else:
-            prompt = f"\nCreate file '{expanded_path}' with this content? [y/n/r]: [y=yes, n=no, r=rename] "
-
         try:
-            response = input(prompt).lower().strip()
-            
-            # Option to save with a different filename
-            if response.startswith("r"):
-                new_filename = input("\nEnter new filename: ").strip()
-                if not new_filename:
-                    error_msg = "File writing skipped - no filename provided"
-                    if DEBUG:
-                        console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
-                    return False, "", error_msg
-                
-                # Expand the new file path
-                if not os.path.isabs(new_filename):
-                    # If relative path, keep it in the same directory as the original
-                    new_filename = os.path.join(os.path.dirname(expanded_path), new_filename)
-                else:
-                    # If absolute path, use it as is
-                    new_filename = os.path.expanduser(new_filename)
-                    new_filename = os.path.expandvars(new_filename)
-                
-                # Set the new path and reset overwrite flag
-                expanded_path = new_filename
-                is_overwrite = os.path.exists(expanded_path)
-                
-                # Ensure the directory exists for the new path
-                directory = os.path.dirname(expanded_path)
-                if directory and not os.path.exists(directory):
-                    os.makedirs(directory, exist_ok=True)
-                
-                # Show confirmation of the new path
-                console.print(f"[bold yellow]Will write to new path: {expanded_path}[/bold yellow]")
-                
-                # Ask for final confirmation with the new path
-                confirm = input(f"Proceed with writing to {expanded_path}? [y/N]: ").lower().strip()
-                if not confirm.startswith("y"):
-                    error_msg = "File writing skipped by user"
-                    if DEBUG:
-                        console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
-                    return False, "", error_msg
-            elif not response.startswith("y"):
-                error_msg = "File writing skipped by user"
-                # Only show error details in debug mode
+            # Set default response
+            response = ""
+
+            # Check if auto-approve is enabled
+            if auto_approve:
                 if DEBUG:
-                    console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
-                # Make sure this error is returned so it can be sent to the model
-                return False, "", error_msg
+                    console.print(
+                        f"[yellow]DEBUG: Auto-approving file operation for {expanded_path}[/yellow]"
+                    )
+                response = "y"  # Auto-approve
+                console.print(
+                    f"[bold green]Auto-approved:[/bold green] {'Overwriting' if is_overwrite else 'Creating'} file '{expanded_path}'"
+                )
+            else:
+                # Ask for confirmation with appropriate message
+                if is_overwrite:
+                    prompt = f"\nOVERWRITE file '{expanded_path}' with the changes shown above? [y/n/r]: [y=yes, n=no, r=rename] "
+                else:
+                    prompt = f"\nCreate file '{expanded_path}' with this content? [y/n/r]: [y=yes, n=no, r=rename] "
+
+                response = input(prompt).lower().strip()
+
+                # Option to save with a different filename
+                if response.startswith("r"):
+                    new_filename = input("\nEnter new filename: ").strip()
+                    if not new_filename:
+                        error_msg = "File writing skipped - no filename provided"
+                        if DEBUG:
+                            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                        return False, "", error_msg
+
+                    # Expand the new file path
+                    if not os.path.isabs(new_filename):
+                        # If relative path, keep it in the same directory as the original
+                        new_filename = os.path.join(
+                            os.path.dirname(expanded_path), new_filename
+                        )
+                    else:
+                        # If absolute path, use it as is
+                        new_filename = os.path.expanduser(new_filename)
+                        new_filename = os.path.expandvars(new_filename)
+
+                    # Set the new path and reset overwrite flag
+                    expanded_path = new_filename
+                    is_overwrite = os.path.exists(expanded_path)
+
+                    # Ensure the directory exists for the new path
+                    directory = os.path.dirname(expanded_path)
+                    if directory and not os.path.exists(directory):
+                        os.makedirs(directory, exist_ok=True)
+
+                    # Show confirmation of the new path
+                    console.print(
+                        f"[bold yellow]Will write to new path: {expanded_path}[/bold yellow]"
+                    )
+
+                    # Ask for final confirmation with the new path
+                    confirm = (
+                        input(f"Proceed with writing to {expanded_path}? [y/N]: ")
+                        .lower()
+                        .strip()
+                    )
+                    if not confirm.startswith("y"):
+                        error_msg = "File writing skipped by user"
+                        if DEBUG:
+                            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                        return False, "", error_msg
+                elif not response.startswith("y"):
+                    error_msg = "File writing skipped by user"
+                    # Only show error details in debug mode
+                    if DEBUG:
+                        console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                    # Make sure this error is returned so it can be sent to the model
+                    return False, "", error_msg
         except KeyboardInterrupt:
             # Handle Ctrl+C during confirmation
             console.print("\n[bold red]File operation interrupted by user[/bold red]")
@@ -763,7 +795,10 @@ def write_file_from_marker(
 
 
 def process_file_writes(
-    response: str, console: Console, show_errors: bool = True
+    response: str,
+    console: Console,
+    show_errors: bool = True,
+    auto_approve: bool = False,
 ) -> Tuple[str, List[Dict[str, Any]], bool]:
     """
     Process a response from the model, handling any file writing markers.
@@ -806,7 +841,9 @@ def process_file_writes(
     has_error = False
 
     for file_path, content, original_marker in file_matches:
-        success, stdout, stderr = write_file_from_marker(file_path, content, console)
+        success, stdout, stderr = write_file_from_marker(
+            file_path, content, console, auto_approve
+        )
 
         # Track if any operations failed
         if not success:
