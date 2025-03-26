@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 from q_cli.utils.constants import DEBUG
 
 # Define the special format for web content fetching
-URL_BLOCK_MARKER = "FETCH_URL"  # Code block format
+URL_BLOCK_MARKER = "Q:COMMAND type=\"fetch\""  # Code block format
 
 
 def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]]:
@@ -16,9 +16,9 @@ def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]
     Extract URLs that are marked for fetching in the model's response.
 
     Format supported:
-    - ```FETCH_URL
+    - <Q:COMMAND type="fetch">
       https://example.com
-      ``` (code block format)
+      </Q:COMMAND>
 
     Args:
         response: The model's response text
@@ -28,26 +28,19 @@ def extract_urls_from_response(response: str) -> List[Tuple[str, str, int, bool]
     """
     matches = []
 
-    # Pattern: Code block format
-    # This pattern matches ```FETCH_URL\nurl``` including the code block markers
-    # We need to be careful with this pattern as it might include whitespace and newlines
+    # Pattern: XML-like format
+    # This pattern matches <Q:COMMAND type="fetch">url</Q:COMMAND>
     code_block_pattern = re.compile(
-        r"```" + re.escape(URL_BLOCK_MARKER) + r"[\s\n]+(.*?)[\s\n]*```", re.DOTALL
+        r"<" + re.escape(URL_BLOCK_MARKER) + r">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL
     )
 
     for match in code_block_pattern.finditer(response):
-        full_match = match.group(0)  # The entire code block
+        full_match = match.group(0)  # The entire tag block
         url = match.group(1).strip()  # Just the URL part
         position = match.start()
 
-        # Check if this is inside a nested code block
-        text_before = response[:position]
-        code_block_markers = text_before.count("```")
-        is_nested = code_block_markers % 2 == 1
-
-        # Only process if it's not nested inside another code block
-        if not is_nested:
-            matches.append((full_match, url, position, False))
+        # For XML-like tags we don't need to check for nested blocks
+        matches.append((full_match, url, position, False))
 
     return matches
 

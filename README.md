@@ -124,13 +124,13 @@ In interactive mode, you can:
 - Q can fetch content from the web to provide up-to-date information in two ways:
   - Displaying web content directly to you with URL markers
   - Fetching web content as context for Q to analyze and use in responses
-- Q can create files for you automatically using the WRITE_FILE mechanism:
-  - Format: `<<WRITE_FILE:path/to/file>>content<<WRITE_FILE>>`
+- Q can create files for you automatically using the write command:
+  - Format: `<Q:COMMAND type="write" path="path/to/file">content</Q:COMMAND>`
   - You'll be asked to confirm before any file is written
   - The file will be shown to you for review before creating it
   - This approach is preferred over using shell commands for file creation
-- Q runs shell commands using the RUN_SHELL mechanism:
-  - Format: `<<RUN_SHELL>>command<<RUN_SHELL>>`
+- Q runs shell commands using the shell command:
+  - Format: `<Q:COMMAND type="shell">command</Q:COMMAND>`
   - You'll be asked to confirm before any command is executed
   - Multi-line commands can be included inside the markers
 - Use the `--no-empty` flag to disable sending empty inputs (pressing Enter without typing anything)

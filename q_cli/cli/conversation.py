@@ -428,8 +428,8 @@ def process_response_operations(
         file_op_patterns = [
             "[File written:",
             "[Failed to write file:",
-            "RUN_SHELL",
-            "```RUN_SHELL",
+            "Q:COMMAND type=\"shell\"",
+            "<Q:COMMAND",
         ]
 
         for cmd in commands:

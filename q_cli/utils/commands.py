@@ -12,11 +12,11 @@ from colorama import Fore, Style
 from q_cli.utils.constants import DEBUG, MAX_FILE_DISPLAY_LENGTH
 
 # Define the special formats for file writing and command execution
-WRITE_FILE_MARKER_START = "WRITE_FILE:"
-WRITE_FILE_MARKER_END = "WRITE_FILE"
-RUN_SHELL_MARKER_START = "RUN_SHELL"
-RUN_SHELL_MARKER_END = "RUN_SHELL"
-URL_BLOCK_MARKER = "FETCH_URL"  # Match the block marker in web.py
+WRITE_FILE_MARKER_START = "Q:COMMAND type=\"write\" path="
+WRITE_FILE_MARKER_END = "/Q:COMMAND"
+RUN_SHELL_MARKER_START = "Q:COMMAND type=\"shell\""
+RUN_SHELL_MARKER_END = "/Q:COMMAND"
+URL_BLOCK_MARKER = "Q:COMMAND type=\"fetch\""  # Match the block marker in web.py
 
 # List of potentially dangerous commands to block
 BLOCKED_COMMANDS = [
@@ -209,7 +209,7 @@ def ask_command_confirmation(
 def extract_code_blocks(response: str) -> Dict[str, List[List[str]]]:
     """
     Extract all code blocks from a response, categorized by block type.
-    Specially handles WRITE_FILE blocks to avoid treating them as commands.
+    Specially handles Q:COMMAND blocks to avoid treating them as commands.
 
     Args:
         response: The response text
@@ -219,40 +219,27 @@ def extract_code_blocks(response: str) -> Dict[str, List[List[str]]]:
     """
     blocks: Dict[str, List[List[str]]] = {"shell": [], "other": []}
 
-    # First, check if there are any WRITE_FILE markers in the response
-    has_write_file = WRITE_FILE_MARKER_START in response
+    # First, check if there are any command markers in the response
+    has_command_markers = "<Q:COMMAND" in response
 
+    # First let's extract all regular code blocks using the traditional format
     lines = response.split("\n")
     in_code_block = False
     current_type = ""
     current_block: List[str] = []
-    in_write_file_block = False  # Track if we're inside a write file block
+    skip_line = False  # To skip lines that might be part of command markers
 
     for line in lines:
-        # Handle ending of blocks
-        if in_write_file_block and line.strip() == "```":
-            in_write_file_block = False
+        # If we see a command marker, skip this line
+        if "<Q:COMMAND" in line or "</Q:COMMAND>" in line:
+            skip_line = True
             continue
-
-        # Check for special code blocks that we need to skip entirely
-        if not in_code_block and line.strip().startswith("```"):
-            block_type = line.strip()[3:].lower()
-            if block_type.startswith("write_file:") or block_type == "run_shell":
-                # Skip these special blocks entirely
-                in_write_file_block = True
-                continue
-
-        # Check for WRITE_FILE markers
-        if has_write_file and WRITE_FILE_MARKER_START in line:
-            in_write_file_block = True
-            continue
-
-        if has_write_file and "WRITE_FILE" in line:
-            in_write_file_block = False
-            continue
-
-        # Skip lines that are part of a WRITE_FILE block
-        if in_write_file_block:
+            
+        # Skip line if we're in skip mode
+        if skip_line:
+            # End skip mode if we've reached the end of a command block
+            if "</Q:COMMAND>" in line:
+                skip_line = False
             continue
 
         if line.strip().startswith("```") and not in_code_block:
@@ -269,11 +256,11 @@ def extract_code_blocks(response: str) -> Dict[str, List[List[str]]]:
             # End of a code block
             in_code_block = False
             if current_block:  # Only add non-empty blocks
-                # Extra check to avoid WRITE_FILE markers in shell blocks
+                # Extra check to avoid command markers in shell blocks
                 if current_type == "shell" and any(
-                    WRITE_FILE_MARKER_START in line for line in current_block
+                    "<Q:COMMAND" in line for line in current_block
                 ):
-                    # Skip this block or convert to "other" type if it contains WRITE_FILE markers
+                    # Skip this block or convert to "other" type if it contains command markers
                     blocks["other"].append(current_block)
                 else:
                     blocks[current_type].append(current_block)
@@ -291,9 +278,9 @@ def extract_shell_markers_from_response(response: str) -> List[Tuple[str, str]]:
     Extract shell command markers from the model's response.
 
     Format:
-    - ```RUN_SHELL
+    - <Q:COMMAND type="shell">
       command
-      ```
+      </Q:COMMAND>
 
     Args:
         response: The model's response text
@@ -302,7 +289,7 @@ def extract_shell_markers_from_response(response: str) -> List[Tuple[str, str]]:
         List of tuples containing (command, original_marker)
     """
     # Regular expression to match the shell command format
-    pattern = re.compile(r"```RUN_SHELL\s*(.*?)```", re.DOTALL)
+    pattern = re.compile(r"<Q:COMMAND type=\"shell\">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL)
 
     matches = []
 
@@ -310,18 +297,8 @@ def extract_shell_markers_from_response(response: str) -> List[Tuple[str, str]]:
         command = match.group(1).strip()
         original_marker = match.group(0)
 
-        # Check if this match is inside a nested code block by counting ``` before this position
-        position = match.start()
-        text_before = response[:position]
-        code_block_markers = text_before.count("```")
-
-        # If even number of ``` markers before our match, we're at the right level
-        # If odd number of ``` markers, we might be inside another code block
-        is_inside_nested_code_block = code_block_markers % 2 == 1
-
-        # We accept markers as long as they're not inside another code block
-        if not is_inside_nested_code_block:
-            matches.append((command, original_marker))
+        # For XML-like tags we don't need to check for nested code blocks
+        matches.append((command, original_marker))
 
     return matches
 
@@ -336,35 +313,22 @@ def remove_special_markers(response: str) -> str:
     Returns:
         Response with all special markers removed
     """
-    # Remove RUN_SHELL markers
-    pattern = re.compile(r"```RUN_SHELL\s*(.*?)```", re.DOTALL)
+    # Remove shell command markers
+    pattern = re.compile(r"<Q:COMMAND type=\"shell\">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL)
     cleaned = pattern.sub("", response)
 
-    # Remove WRITE_FILE markers
-    pattern = re.compile(r"```WRITE_FILE:(.*?)[\r\n]+(.*?)```", re.DOTALL)
+    # Remove file writing markers
+    pattern = re.compile(r'<Q:COMMAND type="write" path="(.*?)">\s*(.*?)\s*</Q:COMMAND>', re.DOTALL)
     cleaned = pattern.sub("", cleaned)
 
-    # Remove FETCH_URL markers in code block format
-    pattern = re.compile(
-        r"```" + re.escape(URL_BLOCK_MARKER) + r"[\s\n]+(.*?)[\s\n]*```", re.DOTALL
-    )
+    # Remove URL fetch markers
+    pattern = re.compile(r"<" + re.escape(URL_BLOCK_MARKER) + r">\s*(.*?)\s*</Q:COMMAND>", re.DOTALL)
     cleaned = pattern.sub("", cleaned)
 
-    # Clean up any empty code blocks that might remain
-    pattern = re.compile(r"```\s*```", re.MULTILINE)
-    cleaned = pattern.sub("", cleaned)
-
-    # Handle edge case of code blocks with just whitespace
-    pattern = re.compile(r"```\s+```", re.MULTILINE)
-    cleaned = pattern.sub("", cleaned)
-
-    # Clean up any leftover markers
+    # Clean up any leftover open/close tags
     leftover_markers = [
-        "WRITE_FILE:",
-        "RUN_SHELL",
-        f"```{URL_BLOCK_MARKER}",
-        "```WRITE_FILE:",
-        "```RUN_SHELL",
+        "<Q:COMMAND",
+        "</Q:COMMAND>",
     ]
 
     for marker in leftover_markers:
@@ -380,10 +344,10 @@ def extract_commands_from_response(response: str) -> List[str]:
     """
     Extract commands from Q's response.
 
-    Uses RUN_SHELL markers to identify commands within a code block format:
-    ```RUN_SHELL
+    Uses Q:COMMAND markers to identify commands within the XML-like format:
+    <Q:COMMAND type="shell">
     command to execute
-    ```
+    </Q:COMMAND>
 
     Filters out any lines that match the WRITE_FILE pattern to avoid treating them as commands.
     """
@@ -397,7 +361,7 @@ def extract_commands_from_response(response: str) -> List[str]:
 
     commands = []
 
-    # Extract commands using RUN_SHELL markers
+    # Extract commands using shell command markers
     shell_markers = extract_shell_markers_from_response(response)
     for command, _ in shell_markers:
         commands.append(command)
@@ -436,9 +400,9 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
     Extract file writing markers from the model's response.
 
     Format:
-    - ```WRITE_FILE:path/to/file
+    - <Q:COMMAND type="write" path="path/to/file">
       content
-      ```
+      </Q:COMMAND>
 
     Args:
         response: The model's response text
@@ -448,69 +412,16 @@ def extract_file_markers_from_response(response: str) -> List[Tuple[str, str, st
     """
     matches = []
 
-    # Use a more robust approach by finding all WRITE_FILE markers first
-    marker_starts = []
-    start_pattern = "```WRITE_FILE:"
+    # Regular expression to match the file writing XML-like format
+    pattern = re.compile(r'<Q:COMMAND type="write" path="(.*?)">\s*(.*?)\s*</Q:COMMAND>', re.DOTALL)
 
-    # Find all potential starting positions
-    start_pos = 0
-    while True:
-        pos = response.find(start_pattern, start_pos)
-        if pos == -1:
-            break
-        marker_starts.append(pos)
-        start_pos = pos + 1
+    for match in pattern.finditer(response):
+        file_path = match.group(1).strip()
+        content = match.group(2)
+        original_marker = match.group(0)
 
-    # Process each potential marker
-    for start_pos in marker_starts:
-        # Find the end of the marker (next ```)
-        end_pos = response.find("```", start_pos + len(start_pattern))
-        if end_pos == -1:
-            continue  # No closing marker found
-
-        # Extract the full marker
-        original_marker = response[start_pos : end_pos + 3]
-
-        # Extract the file path and content
-        first_newline_pos = response.find("\n", start_pos + len(start_pattern))
-
-        if first_newline_pos == -1 or first_newline_pos >= end_pos:
-            continue  # No proper newline between path and content
-
-        file_path = response[start_pos + len(start_pattern) : first_newline_pos].strip()
-        # Content starts after first newline and ends before the closing ```
-        content = response[first_newline_pos + 1 : end_pos]
-
-        # Check if this match is inside a nested code block by counting ``` before this position
-        text_before = response[:start_pos]
-        code_block_markers = text_before.count("```")
-
-        # If even number of ``` markers before our match, we're at the right level
-        # If odd number of ``` markers, we might be inside another code block
-        is_inside_nested_code_block = code_block_markers % 2 == 1
-
-        # We accept markers as long as they're not inside another code block
-        if not is_inside_nested_code_block:
-            matches.append((file_path, content, original_marker))
-
-    # Also try the regex approach as a fallback
-    if not matches:
-        # Regular expression to match the file writing format correctly
-        pattern = re.compile(r"```WRITE_FILE:(.*?)[\r\n]+(.*?)```", re.DOTALL)
-
-        for match in pattern.finditer(response):
-            file_path = match.group(1).strip()
-            content = match.group(2)
-            original_marker = match.group(0)
-
-            # Check if this match is inside a nested code block
-            position = match.start()
-            text_before = response[:position]
-            code_block_markers = text_before.count("```")
-            is_inside_nested_code_block = code_block_markers % 2 == 1
-
-            if not is_inside_nested_code_block:
-                matches.append((file_path, content, original_marker))
+        # For XML-like tags we don't need to check for nested code blocks
+        matches.append((file_path, content, original_marker))
 
     return matches
 
@@ -904,7 +815,7 @@ def process_command_block(block_lines: List[str], commands: List[str]):
     - Backslash as escape character (e.g., `echo \"hello\"`)
     - Backslash as line continuation marker
 
-    Filters out any lines containing WRITE_FILE markers to prevent treating them as commands.
+    Filters out any lines containing Q:COMMAND markers to prevent treating them as commands.
 
     Args:
         block_lines: List of lines from a code block
@@ -919,11 +830,11 @@ def process_command_block(block_lines: List[str], commands: List[str]):
     for i, line in enumerate(block_lines):
         line = line.rstrip()
 
-        # Skip empty lines or lines containing WRITE_FILE markers
+        # Skip empty lines or lines containing command markers
         if not line.strip():
             continue
-        if WRITE_FILE_MARKER_START in line or "<<WRITE_FILE>>" in line:
-            # Skip lines with WRITE_FILE markers entirely
+        if "<Q:COMMAND" in line or "</Q:COMMAND>" in line:
+            # Skip lines with command markers entirely
             continue
 
         if in_continuation:
@@ -931,7 +842,7 @@ def process_command_block(block_lines: List[str], commands: List[str]):
             current_command = current_command[:-1].rstrip() + " " + line.lstrip()
         else:
             # Not in continuation mode - if we have a stored command, add it
-            if current_command and WRITE_FILE_MARKER_START not in current_command:
+            if current_command and "<Q:COMMAND" not in current_command:
                 commands.append(current_command)
             current_command = line
 
@@ -941,8 +852,8 @@ def process_command_block(block_lines: List[str], commands: List[str]):
         # If this is the last line or not a continuation, add the command
         is_last_line = i == len(block_lines) - 1
         if is_last_line and current_command and not in_continuation:
-            # Only add if not a WRITE_FILE marker
-            if WRITE_FILE_MARKER_START not in current_command:
+            # Only add if not a command marker
+            if "<Q:COMMAND" not in current_command:
                 commands.append(current_command)
 
     # Add any remaining command that wasn't added yet
@@ -950,6 +861,6 @@ def process_command_block(block_lines: List[str], commands: List[str]):
         current_command
         and not in_continuation
         and current_command not in commands
-        and WRITE_FILE_MARKER_START not in current_command
+        and "<Q:COMMAND" not in current_command
     ):
         commands.append(current_command)
