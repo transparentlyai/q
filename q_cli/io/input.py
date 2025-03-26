@@ -158,6 +158,7 @@ def create_prompt_session(console: Console) -> PromptSession:
             "prompt": "#ff8800 bold",  # Orange and bold
             "completion": "bg:#444444 #ffffff",  # Gray background for completion menu
             "completion.current": "bg:#008888 #ffffff",  # Highlight selected completion
+            "warning": "#ff9900 italic",  # Warning messages (for multiline hints)
         }
     )
 
@@ -200,7 +201,35 @@ def create_key_bindings():
         """Submit text when Enter is pressed and there's text."""
         # Only accept input if there's text
         if len(event.current_buffer.text.strip()) > 0:
+            # For multiline text, show a hint about Alt+Enter when user first presses Enter
+            if "\n" in event.current_buffer.text and not hasattr(event.current_buffer, "_alt_enter_hint_shown"):
+                from prompt_toolkit.formatted_text import FormattedText
+                
+                # Add attribute to track that we've shown the hint
+                event.current_buffer._alt_enter_hint_shown = True
+                
+                # Don't submit yet, just show the hint
+                event.app.set_temp_message(
+                    FormattedText([
+                        ("class:warning", "\nPress Enter again to send, or Alt+Enter for a new line")
+                    ]), 3  # Show for 3 seconds
+                )
+                return
+            
+            # Normal submission
             event.current_buffer.validate_and_handle()
+    
+    # Add Alt+Enter to insert a newline for multiline input
+    @bindings.add("escape", "enter")  # Alt+Enter is sent as escape followed by enter
+    def handle_alt_enter(event):
+        """Insert a newline when Alt+Enter is pressed."""
+        event.current_buffer.insert_text("\n")
+    
+    # Also support the sequence that some terminals might send for Alt+Enter
+    @bindings.add("c-j")  # Ctrl+J is another way Alt+Enter might be sent
+    def handle_ctrl_j(event):
+        """Insert a newline when Ctrl+J is pressed (alternative Alt+Enter)."""
+        event.current_buffer.insert_text("\n")
 
     # Add Escape key to abort/exit with highest priority
     @escape_bindings.add("escape", eager=True)
