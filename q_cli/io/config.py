@@ -33,8 +33,6 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
         - Context string
         - Dictionary of configuration variables
     """
-    # Show config file path
-    console.print(f"[dim]Using config file: {CONFIG_PATH}[/dim]")
     api_key = None
     config_vars = {}
     context = ""
@@ -232,7 +230,6 @@ def build_context(
     # Add context from additional files (important priority)
     if args.context_file:
         for file_path in args.context_file:
-            console.print(f"[dim]Loading context file: {file_path}[/dim]")
             file_content = read_context_file(file_path, console)
             if file_content:
                 context_manager.add_context(
@@ -240,28 +237,23 @@ def build_context(
                     IMPORTANT_PRIORITY,
                     f"File context: {os.path.basename(file_path)}",
                 )
-            else:
-                console.print(f"[yellow]Warning: No content loaded from context file: {file_path}[/yellow]")
 
     # Add the current directory file tree to the context if enabled (important priority)
     if INCLUDE_FILE_TREE:
-        console.print(f"[dim]Generating file tree for current directory...[/dim]")
         file_tree = generate_file_tree(console)
         if file_tree:
-            file_count = file_tree.count('\n')
             context_manager.add_context(
                 "Current directory file structure:\n```\n" + file_tree + "\n```",
                 IMPORTANT_PRIORITY,
                 "File tree",
             )
-            console.print(f"[dim]Added file tree with {file_count} entries to context[/dim]")
-        else:
-            console.print("[yellow]Warning: Unable to generate file tree[/yellow]")
+
+            if DEBUG:
+                console.print("[info]Added file tree to context[/info]")
 
     # Check for .Q directory in current working directory
     q_dir_path = os.path.join(os.getcwd(), ".Q")
     if os.path.isdir(q_dir_path):
-        console.print(f"[dim]Found project .Q directory[/dim]")
         # Get all files in .Q directory
         try:
             q_files = os.listdir(q_dir_path)
@@ -272,32 +264,30 @@ def build_context(
                     IMPORTANT_PRIORITY,
                     ".Q directory files",
                 )
-                console.print(
-                    f"[dim]Added {len(q_files)} files from .Q directory to context[/dim]"
-                )
-            else:
-                console.print(f"[dim]Project .Q directory is empty[/dim]")
+                if DEBUG:
+                    console.print(
+                        f"[info]Added {len(q_files)} files from .Q directory to context[/info]"
+                    )
         except Exception as e:
-            console.print(f"[yellow]Error reading .Q directory: {str(e)}[/yellow]")
+            if DEBUG:
+                console.print(f"[yellow]Error reading .Q directory: {str(e)}[/yellow]")
 
     # Check for project.md file inside the .Q directory
     project_md_path = os.path.join(q_dir_path, "project.md")
     if os.path.isdir(q_dir_path) and os.path.isfile(project_md_path):
-        console.print(f"[dim]Found project.md file[/dim]")
         try:
             project_content = read_context_file(project_md_path, console)
             if project_content:
-                content_length = len(project_content)
                 context_manager.add_context(
                     f"Project Information:\n{project_content}",
                     IMPORTANT_PRIORITY,
                     "project.md content",
                 )
-                console.print(f"[dim]Added project.md ({content_length} chars) to context[/dim]")
-            else:
-                console.print("[yellow]Warning: Empty project.md file[/yellow]")
+                if DEBUG:
+                    console.print("[info]Added .Q/project.md content to context[/info]")
         except Exception as e:
-            console.print(f"[yellow]Error reading .Q/project.md: {str(e)}[/yellow]")
+            if DEBUG:
+                console.print(f"[yellow]Error reading .Q/project.md: {str(e)}[/yellow]")
 
     # Build the final context string
     context = context_manager.build_context_string()
