@@ -46,3 +46,4 @@ test_*.txt
 # Project specific test files
 .Q/
 project.md
+q-test
