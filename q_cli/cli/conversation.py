@@ -614,13 +614,18 @@ def process_response_operations(
 
     # 5. Display appropriate message for operation status
     if has_operation_error and not operation_interrupted:
-        # Check if any commands were rejected by user
-        if (
-            command_results_data
-            and "Command execution skipped by user" in command_results_data
-        ):
-            console.print("[yellow]Operation rejected[/yellow]")
+        # Check if any commands or file operations were rejected by user
+        rejection_indicators = [
+            "Command execution skipped by user",
+            "File writing skipped by user"
+        ]
+        
+        if (command_results_data and any(indicator in command_results_data for indicator in rejection_indicators)) or \
+           (file_write_results_data and any(indicator in file_write_results_data for indicator in rejection_indicators)):
+            # User deliberately rejected the operation
+            console.print("[yellow]Operation skipped[/yellow]")
         else:
+            # Actual error occurred
             console.print("[red]Operation error[/red]")
 
     # 6. Combine all operation results

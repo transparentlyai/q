@@ -804,7 +804,7 @@ def write_file_from_marker(
 
         if is_overwrite:
             console.print(
-                f"[bold yellow]Q wants to OVERWRITE an existing file:[/bold yellow] {expanded_path}"
+                f"[bold yellow]Q wants to MODIFY an existing file:[/bold yellow] {expanded_path}"
             )
             console.print("[bold yellow]Here's what will change:[/bold yellow]")
             show_diff(existing_content, content, console)
@@ -870,14 +870,14 @@ def write_file_from_marker(
                     )
                 response = "y"  # Auto-approve
                 console.print(
-                    f"[bold green]Auto-approved:[/bold green] {'Overwriting' if is_overwrite else 'Creating'} file '{expanded_path}'"
+                    f"[bold green]Auto-approved:[/bold green] {'Modifying' if is_overwrite else 'Creating'} file '{expanded_path}'"
                 )
             else:
                 # Ask for confirmation with appropriate message
                 if is_overwrite:
-                    prompt = f"\nOVERWRITE file '{expanded_path}' with the changes shown above? [y/n/r]: [y=yes, n=no, r=rename] "
+                    prompt = f"\nMODIFY file '{expanded_path}' with the changes shown above? [y=yes, n=no, r=rename] "
                 else:
-                    prompt = f"\nCreate file '{expanded_path}' with this content? [y/n/r]: [y=yes, n=no, r=rename] "
+                    prompt = f"\nCreate file '{expanded_path}' with this content? [y=yes, n=no, r=rename] "
 
                 response = input(prompt).lower().strip()
 
@@ -917,7 +917,7 @@ def write_file_from_marker(
 
                     # Ask for final confirmation with the new path
                     confirm = (
-                        input(f"Proceed with writing to {expanded_path}? [y/N]: ")
+                        input(f"Proceed with writing to {expanded_path}? [y=yes, N=no] ")
                         .lower()
                         .strip()
                     )
