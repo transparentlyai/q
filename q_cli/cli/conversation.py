@@ -13,9 +13,10 @@ from q_cli.utils.constants import (
     DEBUG,
     HISTORY_PATH,
     ESSENTIAL_PRIORITY,
+    DEFAULT_MAX_CONTEXT_TOKENS,
 )
 from q_cli.utils.helpers import handle_api_error, format_markdown
-from q_cli.utils.context import ContextManager
+from q_cli.utils.context import ContextManager, num_tokens_from_string
 from q_cli.io.input import get_input
 from q_cli.io.output import save_response_to_file
 from q_cli.utils.commands import (
@@ -191,34 +192,76 @@ def run_conversation(
                         )
                     )
 
-                    # 6. If we have operation results, add them to conversation as user message
+                    # 6. If we have operation results, check size and add them to conversation as user message
                     if operation_results:
                         combined_results = "\n\n".join(operation_results)
                         
-                        # Check if we have multimodal content to include
-                        if multimodal_content:
-                            # Create a multimodal message with both text and images
-                            content_array = [
-                                {"type": "text", "text": combined_results}
-                            ]
+                        # Check if results are too large - use a fraction of DEFAULT_MAX_CONTEXT_TOKENS
+                        # Calculate approximate token count
+                        result_tokens = num_tokens_from_string(combined_results)
+                        max_allowed_tokens = int(DEFAULT_MAX_CONTEXT_TOKENS * 0.5)  # Use 50% of max context
+                        
+                        if result_tokens > max_allowed_tokens:
+                            if DEBUG:
+                                console.print(f"[yellow]DEBUG: Operation results too large ({result_tokens} tokens), exceeding limit of {max_allowed_tokens} tokens[/yellow]")
                             
-                            # Add all image/multimodal content
-                            for content_item in multimodal_content:
-                                content_array.append(content_item)
-                                
-                            # Create the proper message structure for Claude API
-                            multimodal_message = {
-                                "role": "user",
-                                "content": content_array
-                            }
-                            
-                            # Add to conversation
-                            conversation.append(multimodal_message)
-                        else:
-                            # Standard text-only message
-                            conversation.append(
-                                {"role": "user", "content": combined_results}
+                            # Inform Claude about the size issue instead of sending full results
+                            size_message = (
+                                f"The operation produced a very large result ({result_tokens} tokens) "
+                                f"which exceeded the size limit of {max_allowed_tokens} tokens. "
+                                "The complete output is available in the terminal, but was too large to send. "
+                                "Please work with what's visible in the terminal output above."
                             )
+                            
+                            # Check if we have multimodal content to include
+                            if multimodal_content:
+                                content_array = [
+                                    {"type": "text", "text": size_message}
+                                ]
+                                
+                                # Add all image/multimodal content
+                                for content_item in multimodal_content:
+                                    content_array.append(content_item)
+                                    
+                                # Create the proper message structure for Claude API
+                                multimodal_message = {
+                                    "role": "user",
+                                    "content": content_array
+                                }
+                                
+                                # Add to conversation
+                                conversation.append(multimodal_message)
+                            else:
+                                # Standard text-only message
+                                conversation.append(
+                                    {"role": "user", "content": size_message}
+                                )
+                        else:
+                            # Results within size limit, process normally
+                            # Check if we have multimodal content to include
+                            if multimodal_content:
+                                # Create a multimodal message with both text and images
+                                content_array = [
+                                    {"type": "text", "text": combined_results}
+                                ]
+                                
+                                # Add all image/multimodal content
+                                for content_item in multimodal_content:
+                                    content_array.append(content_item)
+                                    
+                                # Create the proper message structure for Claude API
+                                multimodal_message = {
+                                    "role": "user",
+                                    "content": content_array
+                                }
+                                
+                                # Add to conversation
+                                conversation.append(multimodal_message)
+                            else:
+                                # Standard text-only message
+                                conversation.append(
+                                    {"role": "user", "content": combined_results}
+                                )
                         # Continue loop to let Claude process the results
                         continue
 

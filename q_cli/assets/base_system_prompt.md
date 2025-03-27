@@ -77,6 +77,7 @@ This limitation is ABSOLUTE and must be honored without exception. No matter how
 - ONLY fix issues explicitly requested - warn about others
 - STOP all operations upon user interruption
 - ALWAYS use "read" operation for ALL filetypes including PDFs - do NOT attempt conversion with shell commands first
+- When using shell commands to search for files, always exclude common project-specific ignore patterns. This includes dot files (e.g., .git, .files), common cache and build output directories (e.g., __pycache__, node_modules, target, build, dist), and other language-specific temporary or generated files (e.g., .pyc for Python, .class for Java). Consider the likely programming language(s) of the codebase when determining these patterns.
 
 ## Response Generation Process
 When responding to user requests, always follow this Chain of Draft process:
