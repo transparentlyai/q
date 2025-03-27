@@ -537,90 +537,97 @@ def read_file_from_marker(
         binary_content is only provided for non-text files
     """
     try:
-        if DEBUG:
-            console.print(
-                f"[yellow]DEBUG: Reading file from marker: {file_path}[/yellow]"
-            )
-
-        # Expand the file path (handle ~ and environment variables)
-        expanded_path = os.path.expanduser(file_path)
-        expanded_path = os.path.expandvars(expanded_path)
-
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: Expanded path: {expanded_path}[/yellow]")
-
-        # Make sure the path is relative to the current working directory if not absolute
-        if not os.path.isabs(expanded_path):
-            expanded_path = os.path.join(os.getcwd(), expanded_path)
+        # Create a spinner status to give feedback during file processing
+        with console.status(f"[dim]Reading file {file_path}...[/dim]") as status:
             if DEBUG:
-                console.print(f"[yellow]DEBUG: Absolute path: {expanded_path}[/yellow]")
+                console.print(
+                    f"[yellow]DEBUG: Reading file from marker: {file_path}[/yellow]"
+                )
 
-        # Check if file exists
-        if not os.path.exists(expanded_path):
-            error_msg = f"File not found: {expanded_path}"
-            console.print(f"[red]{error_msg}[/red]")
-            return False, "", error_msg, None, None
+            # Expand the file path (handle ~ and environment variables)
+            expanded_path = os.path.expanduser(file_path)
+            expanded_path = os.path.expandvars(expanded_path)
 
-        # Get file size for information
-        file_size = os.path.getsize(expanded_path)
-        file_info = f"Read file: {expanded_path} ({file_size} bytes)"
-        
-        # Use python-magic for robust file type detection
-        try:
-            import magic
-            file_type = magic.from_file(expanded_path)
-            mime_type = magic.from_file(expanded_path, mime=True)
-            
             if DEBUG:
-                console.print(f"[yellow]DEBUG: Magic detected type: {file_type}[/yellow]")
-                console.print(f"[yellow]DEBUG: Magic detected MIME: {mime_type}[/yellow]")
+                console.print(f"[yellow]DEBUG: Expanded path: {expanded_path}[/yellow]")
+
+            # Make sure the path is relative to the current working directory if not absolute
+            if not os.path.isabs(expanded_path):
+                expanded_path = os.path.join(os.getcwd(), expanded_path)
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Absolute path: {expanded_path}[/yellow]")
+
+            # Check if file exists
+            if not os.path.exists(expanded_path):
+                error_msg = f"File not found: {expanded_path}"
+                console.print(f"[red]{error_msg}[/red]")
+                return False, "", error_msg, None, None
+
+            # Get file size for information
+            file_size = os.path.getsize(expanded_path)
+            file_info = f"Read file: {expanded_path} ({file_size} bytes)"
             
-            # Check if it's a text file based on mime type and description
-            is_text_file = mime_type.startswith('text/') or \
-                any(t in mime_type for t in ['json', 'xml', 'javascript', 'yaml', 'html']) or \
-                "ASCII text" in file_type or "UTF-8 text" in file_type or \
-                "Unicode text" in file_type or "script" in file_type
+            # Update status with file size info
+            status.update(f"[dim]Processing {expanded_path} ({file_size} bytes)...[/dim]")
+            
+            # Use python-magic for robust file type detection
+            try:
+                import magic
+                file_type = magic.from_file(expanded_path)
+                mime_type = magic.from_file(expanded_path, mime=True)
                 
-            # Special case for Dockerfiles
-            filename = os.path.basename(expanded_path)
-            if filename.lower() == "dockerfile" or filename.lower().endswith("dockerfile"):
-                is_text_file = True
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Magic detected type: {file_type}[/yellow]")
+                    console.print(f"[yellow]DEBUG: Magic detected MIME: {mime_type}[/yellow]")
                 
-        except ImportError:
-            # Fallback to extension-based detection if python-magic is not available
-            file_ext = os.path.splitext(expanded_path)[1].lower()
-            mime_type_result = mimetypes.guess_type(expanded_path)[0]
-            mime_type = mime_type_result if mime_type_result is not None else ""
+                # Check if it's a text file based on mime type and description
+                is_text_file = mime_type.startswith('text/') or \
+                    any(t in mime_type for t in ['json', 'xml', 'javascript', 'yaml', 'html']) or \
+                    "ASCII text" in file_type or "UTF-8 text" in file_type or \
+                    "Unicode text" in file_type or "script" in file_type
+                    
+                # Special case for Dockerfiles
+                filename = os.path.basename(expanded_path)
+                if filename.lower() == "dockerfile" or filename.lower().endswith("dockerfile"):
+                    is_text_file = True
+                    
+            except ImportError:
+                # Fallback to extension-based detection if python-magic is not available
+                file_ext = os.path.splitext(expanded_path)[1].lower()
+                mime_type_result = mimetypes.guess_type(expanded_path)[0]
+                mime_type = mime_type_result if mime_type_result is not None else ""
+                
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Magic not available, using extension-based detection[/yellow]")
+                    console.print(f"[yellow]DEBUG: Extension: {file_ext}, MIME: {mime_type}[/yellow]")
+                
+                # Determine if this is a text file or binary file based on extension
+                text_extensions = ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.xml', 
+                                '.yml', '.yaml', '.toml', '.ini', '.csv', '.sh', '.bat', '.c', 
+                                '.cpp', '.h', '.java', '.rs', '.go', '.ts', '.jsx', '.tsx',
+                                '.dockerfile', '.gitignore', '.env']
+                
+                is_text_file = file_ext in text_extensions or mime_type.startswith('text/')
+                
+                # Special case for Dockerfiles
+                filename = os.path.basename(expanded_path)
+                if filename.lower() == "dockerfile" or filename.lower().endswith("dockerfile"):
+                    is_text_file = True
             
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Magic not available, using extension-based detection[/yellow]")
-                console.print(f"[yellow]DEBUG: Extension: {file_ext}, MIME: {mime_type}[/yellow]")
-            
-            # Determine if this is a text file or binary file based on extension
-            text_extensions = ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.xml', 
-                              '.yml', '.yaml', '.toml', '.ini', '.csv', '.sh', '.bat', '.c', 
-                              '.cpp', '.h', '.java', '.rs', '.go', '.ts', '.jsx', '.tsx',
-                              '.dockerfile', '.gitignore', '.env']
-            
-            is_text_file = file_ext in text_extensions or mime_type.startswith('text/')
-            
-            # Special case for Dockerfiles
-            filename = os.path.basename(expanded_path)
-            if filename.lower() == "dockerfile" or filename.lower().endswith("dockerfile"):
-                is_text_file = True
-        
-        # Try to read as text first
-        try:
-            if is_text_file:
-                with open(expanded_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                # Show success message
-                console.print(f"[bold green]Text file read successfully: {expanded_path}[/bold green]")
-                return True, f"{file_info}\n\n{content}", "", "text", None
-            else:
-                # This is a binary/image file, read it as binary
-                with open(expanded_path, "rb") as f:
-                    binary_content = f.read()
+            # Try to read as text first
+            try:
+                if is_text_file:
+                    status.update(f"[dim]Reading text from {expanded_path}...[/dim]")
+                    with open(expanded_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    # Show success message
+                    console.print(f"[bold green]Text file read successfully: {expanded_path}[/bold green]")
+                    return True, f"{file_info}\n\n{content}", "", "text", None
+                else:
+                    # This is a binary/image file, read it as binary
+                    status.update(f"[dim]Reading binary content from {expanded_path}...[/dim]")
+                    with open(expanded_path, "rb") as f:
+                        binary_content = f.read()
                 
                 # Check if this is a PDF file
                 is_pdf = mime_type == "application/pdf" or expanded_path.lower().endswith('.pdf')
@@ -635,6 +642,7 @@ def read_file_from_marker(
                     is_image = file_ext in image_extensions
                 
                 if is_pdf:
+                    status.update(f"[dim]PDF file detected, processing with PDF module: {expanded_path}...[/dim]")
                     if DEBUG:
                         console.print(f"[yellow]DEBUG: PDF file detected, processing with PDF module: {expanded_path}[/yellow]")
                     
@@ -650,21 +658,41 @@ def read_file_from_marker(
                             console.print(f"[bold green]PDF file read as text (missing PDF libraries): {expanded_path}[/bold green]")
                             return True, file_info, "", "text", None
                         
-                        # Extract text and tables from PDF
-                        success, pdf_text, _ = extract_text_from_pdf(expanded_path, console)
+                        # Extract text and tables from PDF - keep the spinner running
+                        status.update(f"[dim]Reading PDF file: {expanded_path}...[/dim]")
+                        # Use a custom quiet console that only shows output in debug mode
+                        from rich.console import Console as RichConsole
+                        quiet_console = RichConsole(quiet=not DEBUG) if not DEBUG else console
+                        success, pdf_text, _ = extract_text_from_pdf(expanded_path, quiet_console)
                         if success:
                             console.print(f"[bold green]PDF processed successfully: {expanded_path}[/bold green]")
                             # Only return text, not binary content
                             return True, f"{file_info}\n\n{pdf_text}", "", "text", None
                         else:
-                            # Fallback to binary handling if extraction fails
-                            console.print(f"[bold green]PDF file read as binary (extraction failed): {expanded_path}[/bold green]")
-                            # Try to extract as text anyway
-                            return True, file_info, "", "text", None
+                            # Last resort - try to extract using pdf2text if available (quietly)
+                            try:
+                                if DEBUG:
+                                    console.print(f"[yellow]DEBUG: Attempting extraction with pdftotext utility...[/yellow]")
+                                import subprocess
+                                result = subprocess.run(
+                                    ["pdftotext", expanded_path, "-"],
+                                    capture_output=True, text=True, check=True
+                                )
+                                if result.stdout.strip():
+                                    console.print(f"[bold green]PDF extracted with pdftotext utility[/bold green]")
+                                    return True, f"{file_info}\n\n{result.stdout}", "", "text", None
+                            except (subprocess.SubprocessError, FileNotFoundError) as e:
+                                if DEBUG:
+                                    console.print(f"[yellow]DEBUG: pdftotext fallback failed: {str(e)}[/yellow]")
+                            
+                            # Fallback to text handling with a warning if all extraction methods fail
+                            console.print(f"[bold yellow]Warning: PDF content extraction failed[/bold yellow]")
+                            # Return a helpful message but don't show the path to reduce output verbosity
+                            return True, f"{file_info}\n\nPDF content extraction failed. The PDF may be secured, corrupted, or in an unsupported format.", "", "text", None
                     except ImportError:
                         # PDF module not available or dependencies missing
                         if DEBUG:
-                            console.print(f"[yellow]DEBUG: PDF module not available, handling as binary[/yellow]")
+                            console.print(f"[yellow]DEBUG: PDF module not available, handling as text[/yellow]")
                         console.print(f"[bold green]PDF file read as text: {expanded_path}[/bold green]")
                         return True, file_info, "", "text", None
                 
@@ -677,43 +705,43 @@ def read_file_from_marker(
                     console.print(f"[bold green]Binary file read successfully: {expanded_path}[/bold green]")
                     # Return binary data for potential multimodal handling 
                     return True, file_info, "", "binary", binary_content
-                    
-        except UnicodeDecodeError:
-            # Fallback: Read as binary if text read fails
-            try:
-                # We thought it was text, but it failed to decode - read as binary
-                with open(expanded_path, "rb") as f:
-                    binary_content = f.read()
-                
-                # Double-check with magic if we have it
+            
+            except UnicodeDecodeError:
+                # Fallback: Read as binary if text read fails
                 try:
-                    import magic
-                    mime_type = magic.from_buffer(binary_content, mime=True)
-                    file_type = magic.from_buffer(binary_content)
-                    
-                    # Check if it's an image despite the decode error
-                    is_image = bool(mime_type and mime_type.startswith('image/'))
-                    
-                    if is_image:
-                        console.print(f"[bold green]Image file read successfully: {expanded_path}[/bold green]")
-                        return True, file_info, "", "image", binary_content
-                    
-                    if DEBUG:
-                        console.print(f"[yellow]DEBUG: UnicodeDecodeError but magic says: {file_type}[/yellow]")
-                except ImportError:
-                    # No magic available, just continue with binary handling
-                    pass
-                    
-                console.print(f"[bold green]Binary file read successfully: {expanded_path}[/bold green]")
-                return True, file_info, "", "binary", binary_content
+                    # We thought it was text, but it failed to decode - read as binary
+                    with open(expanded_path, "rb") as f:
+                        binary_content = f.read()
+                
+                    # Double-check with magic if we have it
+                    try:
+                        import magic
+                        mime_type = magic.from_buffer(binary_content, mime=True)
+                        file_type = magic.from_buffer(binary_content)
+                        
+                        # Check if it's an image despite the decode error
+                        is_image = bool(mime_type and mime_type.startswith('image/'))
+                        
+                        if is_image:
+                            console.print(f"[bold green]Image file read successfully: {expanded_path}[/bold green]")
+                            return True, file_info, "", "image", binary_content
+                        
+                        if DEBUG:
+                            console.print(f"[yellow]DEBUG: UnicodeDecodeError but magic says: {file_type}[/yellow]")
+                    except ImportError:
+                        # No magic available, just continue with binary handling
+                        pass
+                        
+                    console.print(f"[bold green]Binary file read successfully: {expanded_path}[/bold green]")
+                    return True, file_info, "", "binary", binary_content
+                except Exception as e:
+                    error_msg = f"Error reading file: {str(e)}"
+                    console.print(f"[red]{error_msg}[/red]")
+                    return False, "", error_msg, None, None
             except Exception as e:
                 error_msg = f"Error reading file: {str(e)}"
                 console.print(f"[red]{error_msg}[/red]")
                 return False, "", error_msg, None, None
-        except Exception as e:
-            error_msg = f"Error reading file: {str(e)}"
-            console.print(f"[red]{error_msg}[/red]")
-            return False, "", error_msg, None, None
 
     except Exception as e:
         error_msg = f"Error reading file: {str(e)}"

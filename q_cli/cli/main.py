@@ -47,18 +47,22 @@ def main() -> None:
 
     update_available, latest_version = check_for_updates()
 
-    # Debug version check information
+    # Always show version information, even without debug mode
+    console.print(
+        f"[dim]Q {__version__} - Command-line AI Assistant[/dim]"
+    )
+    
+    # Show GitHub version information if available
+    if latest_version:
+        if update_available:
+            msg = f"[dim]New version {latest_version} available. Run 'q --update' to update.[/dim]"
+            console.print(msg)
+        elif os.environ.get("Q_DEBUG"):
+            console.print(f"[dim]Latest version from GitHub: {latest_version} (current)[/dim]")
+            
+    # Additional debug info
     if os.environ.get("Q_DEBUG"):
-        console.print(
-            f"[dim]Current version: {__version__}, Latest version from GitHub: {latest_version or 'not found'}[/dim]"
-        )
-        if latest_version:
-            is_newer = is_newer_version(latest_version, __version__)
-            console.print(f"[dim]Is GitHub version newer: {is_newer}[/dim]")
-
-    if update_available:
-        msg = f"[dim]New version {latest_version} available. Run 'q --update' to update.[/dim]"
-        console.print(msg)
+        console.print(f"[dim]Debug mode enabled[/dim]")
 
     # Get API key and config vars from config file
     config_api_key, config_context, config_vars = read_config_file(console)
@@ -69,9 +73,11 @@ def main() -> None:
     # Set model from args, config file, or default
     if not args.model:
         args.model = config_vars.get("MODEL", DEFAULT_MODEL)
+    console.print(f"[dim]Using model: {args.model}[/dim]")
 
     # Set max_tokens from config file or default
     args.max_tokens = int(config_vars.get("MAX_TOKENS", DEFAULT_MAX_TOKENS))
+    console.print(f"[dim]Max output tokens: {args.max_tokens}[/dim]")
 
     if not api_key:
         console.print(
@@ -85,6 +91,10 @@ def main() -> None:
     # Set up prompt session for input
     prompt_session = create_prompt_session(console)
     history = prompt_session.history
+    
+    # Show history file information
+    from q_cli.utils.constants import HISTORY_PATH
+    console.print(f"[dim]Using history file: {HISTORY_PATH}[/dim]")
 
     # Check if file tree should be included from args or config
     include_file_tree = getattr(args, "file_tree", False)
@@ -129,6 +139,11 @@ def main() -> None:
 
     # Make sure the context manager knows about the system prompt
     context_manager.set_system_prompt(system_prompt)
+    
+    # Show context summary
+    total_tokens = context_manager.get_total_tokens()
+    context_size = len(context_manager.build_context_string())
+    console.print(f"[dim]Using context: {context_size} chars, {total_tokens} tokens[/dim]")
 
     # If confirm-context is specified, show the context and ask for confirmation
     if args.confirm_context and sanitized_context:

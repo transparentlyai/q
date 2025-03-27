@@ -62,6 +62,7 @@ def extract_text_from_pdf(
         return False, error_msg, None
 
     try:
+        # Avoid using status context since one may already be active in the parent function
         # Expand the file path (handle ~ and environment variables)
         expanded_path = os.path.expanduser(file_path)
         expanded_path = os.path.expandvars(expanded_path)
@@ -82,6 +83,8 @@ def extract_text_from_pdf(
             return False, error_msg, None
 
         # Read the original binary content for multimodal use
+        if DEBUG:
+            console.print(f"[dim]Reading PDF file: {expanded_path}...[/dim]")
         with open(expanded_path, "rb") as f:
             binary_content = f.read()
 
@@ -89,27 +92,49 @@ def extract_text_from_pdf(
         extracted_text = ""
         page_texts = []
 
-        # First extract text with PyMuPDF
+        # First extract text with PyMuPDF - only show in debug mode
+        if DEBUG:
+            console.print(f"[dim]Extracting text from PDF with PyMuPDF...[/dim]")
         with fitz.open(expanded_path) as doc:
+            total_pages = len(doc)
+            # Only show detailed progress in debug mode
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: PDF has {total_pages} pages[/yellow]")
+            
             for i, page in enumerate(doc):
+                # Show progress only in debug mode
+                if DEBUG and (i == 0 or i == total_pages - 1 or total_pages > 20 and i % 20 == 0):
+                    console.print(f"[dim]Extracting text from page {i+1}/{total_pages}...[/dim]")
+                
                 # Extract text from the page
                 page_text = page.get_text("text")
                 page_texts.append(page_text)
 
-                if DEBUG:
+                if DEBUG and (i % 10 == 0 or i == total_pages - 1):
                     console.print(
                         f"[yellow]DEBUG: Extracted {len(page_text)} "
                         f"chars from page {i+1}[/yellow]"
                     )
 
         # Now extract tables with pdfplumber and add them to the text
+        if DEBUG:
+            console.print(f"[dim]Extracting tables from PDF with pdfplumber...[/dim]")
         with pdfplumber.open(expanded_path) as pdf:
+            total_pages = len(pdf.pages)
+            found_tables = False
+            
             for i, page in enumerate(pdf.pages):
+                # No progress messages for table search to reduce verbosity
+                # Only report when tables are actually found
+                
                 # Extract tables from the page
                 tables = page.extract_tables()
 
                 if tables:
+                    found_tables = True
+                    # Only show table conversion messages in debug mode
                     if DEBUG:
+                        console.print(f"[dim]Converting {len(tables)} tables on page {i+1}...[/dim]")
                         console.print(
                             f"[yellow]DEBUG: Found {len(tables)} "
                             f"tables on page {i+1}[/yellow]"
@@ -117,7 +142,7 @@ def extract_text_from_pdf(
 
                     # Convert tables to text representation
                     tables_text = []
-                    for table in tables:
+                    for table_idx, table in enumerate(tables):
                         # Convert table to markdown format
                         header_cells = [col if col else '' for col in table[0]]
                         md_table = "\n| " + " | ".join(header_cells) + " |\n"
@@ -136,14 +161,24 @@ def extract_text_from_pdf(
                     # Just append tables at the end of each page for simplicity
                     page_texts[i] += "\n\n" + "\n\n".join(tables_text)
 
-        # Combine all page texts
+        # Combine all page texts - only show in debug mode
+        if DEBUG:
+            if total_pages > 10:
+                console.print(f"[dim]Finalizing PDF extraction ({total_pages} pages)...[/dim]")
+            else:
+                console.print(f"[dim]Finalizing PDF extraction...[/dim]")
+            
         extracted_text = "\n\n".join(page_texts)
 
         if DEBUG:
             console.print(
                 f"[yellow]DEBUG: Total extracted text: "
-                f"{len(extracted_text)} chars[/yellow]"
+                f"{len(extracted_text)} chars from {total_pages} pages[/yellow]"
             )
+            
+        # Report if tables were found - only in debug mode
+        if found_tables and DEBUG:
+            console.print(f"[dim]Tables were detected and extracted as markdown[/dim]")
 
         # Return success with extracted text and binary content
         return True, extracted_text, binary_content
@@ -154,4 +189,37 @@ def extract_text_from_pdf(
             console.print(f"[red]DEBUG: {error_msg}[/red]")
             import traceback
             console.print(f"[yellow]DEBUG: {traceback.format_exc()}[/yellow]")
+            
+        # Try fallback approach for text extraction if pymupdf failed
+        try:
+            if DEBUG:
+                console.print(f"[yellow]Attempting fallback PDF extraction method...[/yellow]")
+            extracted_text = ""
+            with pdfplumber.open(file_path) as pdf:
+                total_pages = len(pdf.pages)
+                
+                # Only show progress messages in debug mode
+                if DEBUG:
+                    console.print(f"[dim]Extracting {total_pages} pages with fallback method...[/dim]")
+                
+                for i, page in enumerate(pdf.pages):
+                    # Show minimal progress for large PDFs - only in debug mode
+                    if DEBUG and total_pages > 50 and i % 50 == 0 and i > 0:
+                        console.print(f"[dim]Processed {i}/{total_pages} pages...[/dim]")
+                        
+                    # Extract text using pdfplumber only
+                    page_text = page.extract_text() or ""
+                    if page_text:
+                        extracted_text += page_text + "\n\n"
+            
+            if extracted_text.strip():
+                if DEBUG:
+                    console.print(f"[green]Successfully extracted text with fallback method[/green]")
+                return True, extracted_text, None
+        except Exception as fallback_error:
+            if DEBUG:
+                console.print(f"[red]Fallback extraction also failed: {str(fallback_error)}[/red]")
+        
+        # Show user-friendly error message
+        console.print(f"[red]Failed to extract content from PDF: {file_path}[/red]")
         return False, error_msg, None

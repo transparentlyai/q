@@ -43,6 +43,7 @@ CLAUDE.md
 
 # Test files
 test_*.txt
+q-test/
 # Project specific test files
 .Q/
 project.md

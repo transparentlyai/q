@@ -143,9 +143,8 @@ def check_for_updates() -> Tuple[bool, str]:
                 else None
             )
 
-            # Check if GitHub version is newer
-            if is_newer_version(github_version, current_version):
-                return True, github_version
+            # Always return the GitHub version, but flag if it's newer
+            return is_newer_version(github_version, current_version), github_version
     except Exception as e:
         # Silently fail on any error - don't disrupt the user experience
         if DEBUG:
