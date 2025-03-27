@@ -1,5 +1,8 @@
-    anthropic
-    rich
-    prompt_toolkit
-    requests
-    beautifulsoup4
+anthropic
+rich
+prompt_toolkit
+requests
+beautifulsoup4
+pymupdf
+pdfplumber
+python-magic

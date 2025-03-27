@@ -622,6 +622,9 @@ def read_file_from_marker(
                 with open(expanded_path, "rb") as f:
                     binary_content = f.read()
                 
+                # Check if this is a PDF file
+                is_pdf = mime_type == "application/pdf" or expanded_path.lower().endswith('.pdf')
+                
                 # Use magic to detect if this is an image (ensure mime_type is not None)
                 is_image = bool(mime_type and mime_type.startswith('image/'))
                 
@@ -631,7 +634,41 @@ def read_file_from_marker(
                     image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']
                     is_image = file_ext in image_extensions
                 
-                if is_image:
+                if is_pdf:
+                    if DEBUG:
+                        console.print(f"[yellow]DEBUG: PDF file detected, processing with PDF module: {expanded_path}[/yellow]")
+                    
+                    # Handle PDF with specialized PDF module
+                    try:
+                        from q_cli.utils.pdf import extract_text_from_pdf, check_dependencies
+                        
+                        # Check if PDF dependencies are installed
+                        deps_installed, error_msg = check_dependencies()
+                        if not deps_installed:
+                            if DEBUG:
+                                console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                            console.print(f"[bold green]PDF file read as text (missing PDF libraries): {expanded_path}[/bold green]")
+                            return True, file_info, "", "text", None
+                        
+                        # Extract text and tables from PDF
+                        success, pdf_text, _ = extract_text_from_pdf(expanded_path, console)
+                        if success:
+                            console.print(f"[bold green]PDF processed successfully: {expanded_path}[/bold green]")
+                            # Only return text, not binary content
+                            return True, f"{file_info}\n\n{pdf_text}", "", "text", None
+                        else:
+                            # Fallback to binary handling if extraction fails
+                            console.print(f"[bold green]PDF file read as binary (extraction failed): {expanded_path}[/bold green]")
+                            # Try to extract as text anyway
+                            return True, file_info, "", "text", None
+                    except ImportError:
+                        # PDF module not available or dependencies missing
+                        if DEBUG:
+                            console.print(f"[yellow]DEBUG: PDF module not available, handling as binary[/yellow]")
+                        console.print(f"[bold green]PDF file read as text: {expanded_path}[/bold green]")
+                        return True, file_info, "", "text", None
+                
+                elif is_image:
                     console.print(f"[bold green]Image file read successfully: {expanded_path}[/bold green]")
                     # Return metadata for multimodal handling
                     return True, file_info, "", "image", binary_content
@@ -1064,16 +1101,24 @@ def process_file_reads(
             "stderr": stderr,
         }
         
-        # Handle multimodal content (images, binary files)
-        if success and binary_content and file_type in ["image", "binary"]:
+        # Handle multimodal content (images, PDFs, binary files)
+        if success and binary_content:
             mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
-            multimodal_result = {
-                "file_path": file_path,
-                "file_type": file_type,
-                "content": binary_content,
-                "mime_type": mime_type
-            }
-            multimodal_results.append(multimodal_result)
+            
+            # Check if PDF specifically 
+            is_pdf = mime_type == "application/pdf" or file_path.lower().endswith('.pdf')
+            
+            # Only include images in multimodal content (not PDFs)
+            if file_type == "image":
+                multimodal_result = {
+                    "file_path": file_path,
+                    "file_type": "image",
+                    "content": binary_content,
+                    "mime_type": mime_type
+                }
+                multimodal_results.append(multimodal_result)
+            elif file_type == "binary" and DEBUG:
+                console.print(f"[yellow]DEBUG: Binary file {file_path} not sent as multimodal content[/yellow]")
             
             # For multimodal files, we only include basic info in the regular results
             # The actual binary content will be handled via multimodal messaging
