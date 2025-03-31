@@ -204,10 +204,14 @@ def ask_command_confirmation(
     console.print("\n[bold yellow]Q wants to run this command:[/bold yellow]")
     console.print(f"[bold cyan]{command}[/bold cyan]")
 
-    options = "[y/a/Y/N] (y=yes, a=approve all, Y=yes+remember for similar commands, N=no): "
+    options = "[y/a/Y/N/c] (y=yes, a=approve all, Y=yes+remember for similar commands, N=no, c=cancel): "
     response = input("\nExecute this command? " + options).lower().strip()
 
-    if response == "a":
+    if response == "c":
+        # "Cancel" option - cancel the operation completely
+        console.print(f"[bold red]Operation cancelled by user[/bold red]")
+        return False, "cancel"
+    elif response == "a":
         # "Approve all" option - approve all commands for this session
         console.print(f"[bold green]Approve-all mode activated. All subsequent operations will be approved automatically.[/bold green]")
         # The caller should enable approve_all mode, and the command is approved
