@@ -210,7 +210,8 @@ def ask_command_confirmation(
     if response == "c":
         # "Cancel" option - cancel the operation completely
         console.print(f"[bold red]Operation cancelled by user[/bold red]")
-        return False, "cancel"
+        # We use a special marker "cancel_all" to indicate nothing should be sent to Claude
+        return "cancel_all", False
     elif response == "a":
         # "Approve all" option - approve all commands for this session
         console.print(f"[bold green]Approve-all mode activated. All subsequent operations will be approved automatically.[/bold green]")
@@ -900,11 +901,18 @@ def write_file_from_marker(
             else:
                 # Ask for confirmation with appropriate message
                 if is_overwrite:
-                    prompt = f"\nMODIFY file '{expanded_path}' with the changes shown above? [y=yes, n=no, r=rename, a=approve all] "
+                    prompt = f"\nMODIFY file '{expanded_path}' with the changes shown above? [y=yes, n=no, r=rename, a=approve all, c=cancel] "
                 else:
-                    prompt = f"\nCreate file '{expanded_path}' with this content? [y=yes, n=no, r=rename, a=approve all] "
+                    prompt = f"\nCreate file '{expanded_path}' with this content? [y=yes, n=no, r=rename, a=approve all, c=cancel] "
 
                 response = input(prompt).lower().strip()
+                
+                # Check if user selected "cancel"
+                if response.startswith("c"):
+                    # Cancel the entire operation
+                    console.print(f"[bold red]Operation cancelled by user[/bold red]")
+                    # Use "cancel_all" as a special marker that nothing should be sent to Claude
+                    return "cancel_all", "", ""
                 
                 # Check if user selected "approve all"
                 if response.startswith("a"):
@@ -965,11 +973,16 @@ def write_file_from_marker(
 
                     # Ask for final confirmation with the new path
                     confirm = (
-                        input(f"Proceed with writing to {expanded_path}? [y=yes, N=no] ")
+                        input(f"Proceed with writing to {expanded_path}? [y=yes, N=no, c=cancel] ")
                         .lower()
                         .strip()
                     )
-                    if not confirm.startswith("y"):
+                    if confirm.startswith("c"):
+                        # Cancel the entire operation
+                        console.print(f"[bold red]Operation cancelled by user[/bold red]")
+                        # Use "cancel_all" as a special marker that nothing should be sent to Claude
+                        return "cancel_all", "", ""
+                    elif not confirm.startswith("y"):
                         error_msg = "File writing skipped by user"
                         if DEBUG:
                             console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")

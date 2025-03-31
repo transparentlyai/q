@@ -449,7 +449,14 @@ def process_commands(
             execute, remember = ask_command_confirmation(
                 command, console, permission_manager
             )
-
+            
+            # Special handling for "cancel_all" operation
+            if execute == "cancel_all":
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: User cancelled all operations[/yellow]")
+                # Return empty to avoid sending anything to Claude
+                return None, False
+                
             if not execute:
                 error_msg = "Command execution skipped by user"
                 if DEBUG:
@@ -647,6 +654,13 @@ def process_response_operations(
 
         # Check if any file operations were cancelled by user
         for result in file_write_results:
+            # Check for special "cancel_all" marker
+            if result.get("success") == "cancel_all":
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: File operation was cancelled completely by user[/yellow]")
+                # Return empty values to avoid sending anything to Claude
+                return [], False, []
+            
             if "STOP. The operation was cancelled by user" in result.get("stderr", ""):
                 operation_interrupted = True
                 break
