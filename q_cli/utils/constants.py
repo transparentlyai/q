@@ -10,6 +10,10 @@ DEBUG = os.environ.get("Q_DEBUG", "false").lower() == "true"
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 DEFAULT_MAX_TOKENS = 4096
 
+# Rate limiting
+MAX_TOKENS_PER_MIN = 80000  # Maximum tokens per minute rate limit
+RATE_LIMIT_COOLDOWN = 60  # Seconds to wait after hitting rate limit
+
 # File Paths
 CONFIG_PATH = os.path.expanduser("~/.config/q.conf")
 HISTORY_PATH = os.path.expanduser("~/.qhistory")

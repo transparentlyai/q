@@ -159,17 +159,54 @@ def check_for_updates() -> Tuple[bool, str]:
     return False, ""
 
 
-def handle_api_error(e: Exception, console: Console) -> None:
-    """Handle errors from the Q API in a consistent way."""
+def handle_api_error(e: Exception, console: Console, exit_on_error: bool = True) -> bool:
+    """
+    Handle errors from the Q API in a consistent way.
+    
+    Args:
+        e: The exception that occurred
+        console: Console for output
+        exit_on_error: Whether to exit the program on error
+        
+    Returns:
+        True if error is a rate limit error that can be retried, False otherwise
+    """
     import anthropic
     import os
     import sys
-
+    import json
+    from q_cli.utils.constants import DEBUG
+    
+    is_rate_limit_error = False
+    
     if isinstance(e, anthropic.APIStatusError):
         if e.status_code == 401:
             console.print(
                 "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
             )
+        elif e.status_code == 429:
+            # Handle rate limit error
+            console.print(
+                f"[bold yellow]Rate limit exceeded: {e.message}[/bold yellow]"
+            )
+            is_rate_limit_error = True
+            
+            # Try to extract error details for more information
+            try:
+                if hasattr(e, 'body'):
+                    error_body = json.loads(e.body) if isinstance(e.body, str) else e.body
+                    if isinstance(error_body, dict) and 'error' in error_body:
+                        error_details = error_body['error']
+                        if DEBUG:
+                            console.print(f"[dim]Rate limit error details: {error_details}[/dim]")
+            except Exception as parse_error:
+                if DEBUG:
+                    console.print(f"[dim]Could not parse rate limit error details: {parse_error}[/dim]")
+                    
+            # Only exit if requested
+            if not exit_on_error:
+                console.print("[yellow]Waiting to retry after rate limit cooldown...[/yellow]")
+                return is_rate_limit_error
         else:
             console.print(
                 f"[bold red]Error communicating with Q (Status {e.status_code}): {e.message}[/bold red]"
@@ -185,7 +222,10 @@ def handle_api_error(e: Exception, console: Console) -> None:
     else:
         console.print(f"[bold red]Error communicating with Q: {e}[/bold red]")
 
-    if os.environ.get("Q_DEBUG"):
+    if DEBUG or os.environ.get("Q_DEBUG"):
         console.print(f"[bold red]Error details: {e}[/bold red]")
 
-    sys.exit(1)
+    if exit_on_error:
+        sys.exit(1)
+        
+    return is_rate_limit_error

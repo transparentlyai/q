@@ -2,8 +2,10 @@
 
 import os
 import tiktoken
-from typing import Dict, List, Optional, Tuple, Union
+import time
+from typing import Dict, List, Optional, Tuple, Union, Deque
 import re
+from collections import deque
 
 from rich.console import Console
 
@@ -17,18 +19,78 @@ from q_cli.utils.constants import (
     ESSENTIAL_TOKEN_ALLOCATION,
     IMPORTANT_TOKEN_ALLOCATION,
     SUPPLEMENTARY_TOKEN_ALLOCATION,
+    MAX_TOKENS_PER_MIN,
 )
 
 
-def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> int:
-    """Return the number of tokens in a text string."""
+def num_tokens_from_string(string_or_obj: Union[str, Dict, List], encoding_name: str = "cl100k_base") -> int:
+    """
+    Return the number of tokens in a text string or message object.
+    
+    Args:
+        string_or_obj: Text string or message object (dict with content field, or list of messages)
+        encoding_name: Tiktoken encoding name to use
+        
+    Returns:
+        Estimated token count
+    """
     try:
         encoding = tiktoken.get_encoding(encoding_name)
-        num_tokens = len(encoding.encode(string))
-        return num_tokens
+        
+        # Handle different input types
+        if isinstance(string_or_obj, str):
+            # Simple string case
+            return len(encoding.encode(string_or_obj))
+        
+        elif isinstance(string_or_obj, dict):
+            # Message dict case
+            if "content" in string_or_obj:
+                content = string_or_obj["content"]
+                
+                # Handle multimodal content
+                if isinstance(content, list):
+                    total_tokens = 0
+                    for item in content:
+                        if isinstance(item, dict):
+                            if item.get("type") == "text":
+                                total_tokens += len(encoding.encode(item.get("text", "")))
+                            elif item.get("type") == "image":
+                                # Image tokens are harder to estimate, use rough approximation
+                                # Claude's current rate: ~170 tokens per 512x512 image
+                                # This is a very rough estimate
+                                total_tokens += 700  # Conservative estimate for typical image
+                    return total_tokens
+                else:
+                    # Standard text content
+                    return len(encoding.encode(str(content)))
+            return 0
+        
+        elif isinstance(string_or_obj, list):
+            # List of messages case
+            return sum(num_tokens_from_string(msg) for msg in string_or_obj)
+        
+        else:
+            # Fallback to string representation
+            return len(encoding.encode(str(string_or_obj)))
+        
     except Exception:
         # Fallback to a simple approximation if tiktoken fails
-        return len(string) // 4  # Rough approximation
+        if isinstance(string_or_obj, str):
+            return len(string_or_obj) // 4  # Rough approximation
+        elif isinstance(string_or_obj, dict) and "content" in string_or_obj:
+            content = string_or_obj["content"]
+            if isinstance(content, list):
+                # Rougher approximation for multimodal
+                text_chars = sum(len(item.get("text", "")) for item in content 
+                               if isinstance(item, dict) and item.get("type") == "text")
+                image_count = sum(1 for item in content 
+                                if isinstance(item, dict) and item.get("type") == "image")
+                return (text_chars // 4) + (image_count * 700)
+            return len(str(content)) // 4
+        elif isinstance(string_or_obj, list):
+            # Recursively apply to list items
+            return sum(num_tokens_from_string(item) for item in string_or_obj)
+        return len(str(string_or_obj)) // 4  # Very rough approximation
 
 
 class ContextItem:
@@ -466,3 +528,147 @@ def simple_truncate(text: str, max_tokens: int) -> str:
 
     # Simple truncation if we can't do the above
     return encoding.decode(tokens[: max_tokens - 3]) + "..."
+
+
+class TokenRateTracker:
+    """
+    Tracks token usage rate for API rate limiting compliance.
+    
+    Maintains a sliding window of token usage to ensure we don't exceed
+    the Anthropic rate limit of MAX_TOKENS_PER_MIN tokens per minute.
+    """
+    
+    def __init__(self, max_tokens_per_min: int = MAX_TOKENS_PER_MIN):
+        """
+        Initialize the token rate tracker.
+        
+        Args:
+            max_tokens_per_min: Maximum tokens allowed per minute
+        """
+        self.max_tokens_per_min = max_tokens_per_min
+        self.window_size = 60  # 1 minute in seconds
+        # Store (timestamp, token_count) tuples
+        self.usage_window: Deque[Tuple[float, int]] = deque()
+        self.total_tokens_in_window = 0
+    
+    def add_usage(self, token_count: int) -> None:
+        """
+        Record token usage at the current time.
+        
+        Args:
+            token_count: Number of tokens used
+        """
+        current_time = time.time()
+        
+        # First clean up expired entries older than our window
+        self._clean_expired_entries(current_time)
+        
+        # Add the new usage
+        self.usage_window.append((current_time, token_count))
+        self.total_tokens_in_window += token_count
+    
+    def _clean_expired_entries(self, current_time: float) -> None:
+        """
+        Remove entries older than the window size.
+        
+        Args:
+            current_time: Current timestamp
+        """
+        window_start = current_time - self.window_size
+        
+        # Remove expired entries
+        while self.usage_window and self.usage_window[0][0] < window_start:
+            timestamp, tokens = self.usage_window.popleft()
+            self.total_tokens_in_window -= tokens
+    
+    def get_current_usage(self) -> int:
+        """
+        Get the current token usage within the time window.
+        
+        Returns:
+            Total tokens used in the current window
+        """
+        self._clean_expired_entries(time.time())
+        return self.total_tokens_in_window
+    
+    def can_use_tokens(self, token_count: int) -> bool:
+        """
+        Check if the specified token count can be used without exceeding the rate limit.
+        
+        Args:
+            token_count: Number of tokens to check
+            
+        Returns:
+            True if tokens can be used, False if it would exceed rate limit
+        """
+        current_usage = self.get_current_usage()
+        return (current_usage + token_count) <= self.max_tokens_per_min
+    
+    def wait_if_needed(self, token_count: int, console: Optional[Console] = None) -> float:
+        """
+        Wait if necessary to avoid exceeding rate limits when using token_count tokens.
+        
+        Args:
+            token_count: Number of tokens that will be used
+            console: Optional console for logging
+            
+        Returns:
+            Seconds waited (0 if no wait was needed)
+        """
+        current_time = time.time()
+        self._clean_expired_entries(current_time)
+        
+        # Special case for very large requests (>70% of rate limit)
+        # For these, we want to be extra cautious to avoid rate limit errors
+        large_request_threshold = int(self.max_tokens_per_min * 0.7)
+        
+        if token_count > large_request_threshold:
+            # For very large requests, we need to be more conservative
+            # Wait until we have enough capacity, which may require waiting
+            # for most/all previous requests to expire
+            capacity_needed = token_count
+            
+            if self.total_tokens_in_window > (self.max_tokens_per_min - capacity_needed):
+                if console:
+                    console.print(f"[yellow]Large request ({token_count} tokens) detected. Ensuring sufficient capacity...[/yellow]")
+                
+                # For very large requests, wait until we're close to empty
+                if self.usage_window:
+                    oldest_timestamp = self.usage_window[0][0]
+                    wait_time = max(0, (oldest_timestamp + self.window_size) - current_time)
+                    
+                    if wait_time > 0:
+                        if console:
+                            console.print(f"[yellow]Waiting {wait_time:.1f} seconds to ensure sufficient capacity for large request...[/yellow]")
+                        time.sleep(wait_time)
+                        # Clean up again after waiting
+                        self._clean_expired_entries(time.time())
+                        return wait_time
+        
+        # Standard case: if adding these tokens would exceed our limit, calculate wait time
+        elif (self.total_tokens_in_window + token_count) > self.max_tokens_per_min:
+            # Calculate how long to wait for enough tokens to expire
+            tokens_to_expire = (self.total_tokens_in_window + token_count) - self.max_tokens_per_min
+            
+            # Find the earliest entries that sum to tokens_to_expire
+            tokens_found = 0
+            earliest_timestamp = current_time
+            
+            for timestamp, tokens in self.usage_window:
+                tokens_found += tokens
+                if tokens_found >= tokens_to_expire:
+                    earliest_timestamp = timestamp
+                    break
+            
+            # Calculate wait time until those tokens expire from our window
+            wait_time = max(0, (earliest_timestamp + self.window_size) - current_time)
+            
+            if wait_time > 0:
+                if console:
+                    console.print(f"[yellow]Rate limit approaching. Waiting {wait_time:.1f} seconds before continuing...[/yellow]")
+                time.sleep(wait_time)
+                # Clean up again after waiting
+                self._clean_expired_entries(time.time())
+                return wait_time
+        
+        return 0.0

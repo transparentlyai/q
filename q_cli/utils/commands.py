@@ -5,12 +5,17 @@ import subprocess
 import re
 import difflib
 import mimetypes
-from typing import Tuple, List, Dict, Any, Optional
+from typing import Tuple, List, Dict, Any, Optional, Union
 from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 from colorama import Fore, Style
 from q_cli.utils.constants import DEBUG, MAX_FILE_DISPLAY_LENGTH
+
+# Global flag for "approve all" operations that persists between function calls
+# This is set to True when user selects "a" option and ensures all subsequent operations
+# are auto-approved without asking again
+GLOBAL_APPROVE_ALL = False
 
 # Define the special formats for file writing and command execution
 WRITE_FILE_MARKER_START = 'Q:COMMAND type="write" path='
@@ -199,13 +204,19 @@ def ask_command_confirmation(
     console.print("\n[bold yellow]Q wants to run this command:[/bold yellow]")
     console.print(f"[bold cyan]{command}[/bold cyan]")
 
-    options = "[y/a/N] (y=yes, a=always, N=no): "
+    options = "[y/a/Y/N] (y=yes, a=approve all, Y=yes+remember for similar commands, N=no): "
     response = input("\nExecute this command? " + options).lower().strip()
 
-    if response.startswith("a"):
-        # "Always" option - remember for the session
+    if response == "a":
+        # "Approve all" option - approve all commands for this session
+        console.print(f"[bold green]Approve-all mode activated. All subsequent operations will be approved automatically.[/bold green]")
+        # The caller should enable approve_all mode, and the command is approved
+        return True, "approve_all"
+    elif response.startswith("y") and len(response) > 1:
+        # "Always" option - remember this command type for the session
         return True, True
-
+    
+    # Regular yes (or any other response starting with y)
     return response.startswith("y"), False
 
 
@@ -727,8 +738,9 @@ def read_file_from_marker(
 
 
 def write_file_from_marker(
-    file_path: str, content: str, console: Console, auto_approve: bool = False
-) -> Tuple[bool, str, str]:
+    file_path: str, content: str, console: Console, auto_approve: bool = False, 
+    approve_all: bool = False
+) -> Tuple[bool, str, Union[str, bool]]:
     """
     Write content to a file based on a file writing marker.
 
@@ -736,10 +748,24 @@ def write_file_from_marker(
         file_path: Path where the file should be written
         content: Content to write to the file
         console: Console for output
+        auto_approve: Whether to automatically approve file operations (from command line)
+        approve_all: Whether to approve all file operations in this session
 
     Returns:
-        Tuple containing (success, stdout, stderr)
+        Tuple containing:
+        - success: Whether the operation succeeded
+        - stdout: Output message
+        - stderr_or_approve_all: Either error message or True if "approve all" was selected
     """
+    # Access global flag - if it's True, we auto-approve all operations
+    # The global statement must be at the function level
+    global GLOBAL_APPROVE_ALL
+    
+    # Use either the passed approve_all flag or the global flag
+    effective_approve_all = approve_all or GLOBAL_APPROVE_ALL
+    
+    if DEBUG and effective_approve_all:
+        console.print(f"[yellow]DEBUG: Auto-approving file operations (GLOBAL_APPROVE_ALL={GLOBAL_APPROVE_ALL})[/yellow]")
     try:
         if DEBUG:
             console.print(
@@ -862,24 +888,42 @@ def write_file_from_marker(
             # Set default response
             response = ""
 
-            # Check if auto-approve is enabled
-            if auto_approve:
-                if DEBUG:
-                    console.print(
-                        f"[yellow]DEBUG: Auto-approving file operation for {expanded_path}[/yellow]"
-                    )
+            # Auto-approve if command line flag OR approve-all mode is active
+            if auto_approve or effective_approve_all:
                 response = "y"  # Auto-approve
-                console.print(
-                    f"[bold green]Auto-approved:[/bold green] {'Modifying' if is_overwrite else 'Creating'} file '{expanded_path}'"
-                )
+                action = "Modifying" if is_overwrite else "Creating"
+                console.print(f"[bold green]Auto-approved:[/bold green] {action} file '{expanded_path}'")
             else:
                 # Ask for confirmation with appropriate message
                 if is_overwrite:
-                    prompt = f"\nMODIFY file '{expanded_path}' with the changes shown above? [y=yes, n=no, r=rename] "
+                    prompt = f"\nMODIFY file '{expanded_path}' with the changes shown above? [y=yes, n=no, r=rename, a=approve all] "
                 else:
-                    prompt = f"\nCreate file '{expanded_path}' with this content? [y=yes, n=no, r=rename] "
+                    prompt = f"\nCreate file '{expanded_path}' with this content? [y=yes, n=no, r=rename, a=approve all] "
 
                 response = input(prompt).lower().strip()
+                
+                # Check if user selected "approve all"
+                if response.startswith("a"):
+                    response = "y"  # Treat as yes for this file
+                    
+                    # CRITICAL: Set the GLOBAL flag to ensure all future operations are approved
+                    # (note: global statements must be at the function level, not in a conditional)
+                    GLOBAL_APPROVE_ALL = True
+                    
+                    # Show clear console message
+                    console.print(f"[bold green]▶▶▶ Approve-all mode activated. All file operations will be approved automatically.[/bold green]")
+                    
+                    # Write the file now
+                    directory = os.path.dirname(expanded_path)
+                    if directory and not os.path.exists(directory):
+                        os.makedirs(directory, exist_ok=True)
+                    
+                    with open(expanded_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    
+                    # Return and signal that approve_all was activated
+                    action = "updated" if is_overwrite else "created"
+                    return True, f"File {action}: {expanded_path}", True
 
                 # Option to save with a different filename
                 if response.startswith("r"):
@@ -1025,7 +1069,14 @@ def write_file_from_marker(
             console.print(
                 f"[green]DEBUG: File write successful: {expanded_path}[/green]"
             )
-        return True, f"File {action}: {expanded_path}", ""
+            
+        # Return approve_all status in third position
+        if approve_all or effective_approve_all or GLOBAL_APPROVE_ALL:
+            # Return True to indicate approve_all is active
+            return True, f"File {action}: {expanded_path}", True
+        else:
+            # Normal operation - return empty string for stderr
+            return True, f"File {action}: {expanded_path}", ""
 
     except Exception as e:
         error_msg = f"Error writing file: {str(e)}"
@@ -1155,6 +1206,7 @@ def process_file_writes(
     console: Console,
     show_errors: bool = True,
     auto_approve: bool = False,
+    approve_all: bool = False,
 ) -> Tuple[str, List[Dict[str, Any]], bool]:
     """
     Process a response from the model, handling any file writing markers.
@@ -1163,6 +1215,8 @@ def process_file_writes(
         response: The model's response text
         console: Console for output
         show_errors: Whether to display error messages to the user
+        auto_approve: Whether to automatically approve all file operations (from command line)
+        approve_all: Whether to approve all file operations in this session
 
     Returns:
         Tuple containing:
@@ -1170,6 +1224,11 @@ def process_file_writes(
         - List of dictionaries with file writing results
         - Boolean indicating if any errors occurred
     """
+    # Access the global approve_all flag - must be at the function level
+    global GLOBAL_APPROVE_ALL
+    
+    # Initialize _approve_all with either the passed flag or the global flag
+    _approve_all = approve_all or GLOBAL_APPROVE_ALL
     # Extract all file writing markers
     if DEBUG:
         console.print(
@@ -1196,11 +1255,24 @@ def process_file_writes(
     file_results = []
     has_error = False
 
+    # Process each file
     for file_path, content, original_marker in file_matches:
-        success, stdout, stderr = write_file_from_marker(
-            file_path, content, console, auto_approve
+            
+        # Call write_file_from_marker with current approve_all status
+        success, stdout, result = write_file_from_marker(
+            file_path, content, console, auto_approve, _approve_all
         )
 
+        # Check if approve_all was activated
+        if success and result is True:
+            # User selected "approve all" or it was already active
+            _approve_all = True
+            GLOBAL_APPROVE_ALL = True
+            stderr = ""  # No error
+        else:
+            # Normal case (not approve_all), stderr was returned
+            stderr = result
+            
         # Track if any operations failed
         if not success:
             has_error = True
@@ -1234,6 +1306,17 @@ def process_file_writes(
             )
 
     # We no longer show errors here - they're handled at the higher level in conversation.py
+
+    # Add marker if approve_all is active
+    if _approve_all or GLOBAL_APPROVE_ALL:
+        # Add a marker that the caller will check for
+        approve_all_status = {
+            "file_path": "__approve_all_status__",
+            "success": True,
+            "stdout": "Approve-all mode is active", 
+            "stderr": "",
+        }
+        file_results.append(approve_all_status)
 
     return processed_response, file_results, has_error
 

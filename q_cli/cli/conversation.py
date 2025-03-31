@@ -3,6 +3,7 @@
 import os
 import sys
 import base64
+import time
 from typing import List, Dict, Optional, Any
 import anthropic
 from prompt_toolkit import PromptSession
@@ -16,7 +17,7 @@ from q_cli.utils.constants import (
     DEFAULT_MAX_CONTEXT_TOKENS,
 )
 from q_cli.utils.helpers import handle_api_error, format_markdown
-from q_cli.utils.context import ContextManager, num_tokens_from_string
+from q_cli.utils.context import ContextManager, num_tokens_from_string, TokenRateTracker
 from q_cli.io.input import get_input
 from q_cli.io.output import save_response_to_file
 from q_cli.utils.commands import (
@@ -59,6 +60,9 @@ def run_conversation(
     """
     # Initialize conversation history
     conversation: List[Dict[str, Any]] = []
+    
+    # Initialize token rate tracker to monitor rate limits
+    token_tracker = TokenRateTracker()
 
     try:
         # Add initial user question to conversation and context manager
@@ -92,14 +96,70 @@ def run_conversation(
                         with console.status(
                             "[info]Thinking... [Ctrl+C to cancel][/info]"
                         ):
-                            # Call Claude API - the client will automatically handle text vs multimodal
-                            message = client.messages.create(
-                                model=args.model,
-                                max_tokens=args.max_tokens,
-                                temperature=0,
-                                system=current_system_prompt,
-                                messages=conversation,  # type: ignore
-                            )
+                            # Import rate limiting constants
+                            from q_cli.utils.constants import RATE_LIMIT_COOLDOWN
+                            import time
+                            
+                            # Retry loop for handling rate limits
+                            max_retries = 3
+                            retry_count = 0
+                            
+                            # Calculate approximate token count for this request
+                            system_tokens = num_tokens_from_string(current_system_prompt)
+                            conversation_tokens = sum(num_tokens_from_string(msg.get("content", "")) for msg in conversation)
+                            total_input_tokens = system_tokens + conversation_tokens
+                            
+                            if DEBUG:
+                                # Show token usage stats
+                                current_usage = token_tracker.get_current_usage()
+                                console.print(f"[dim]Current token usage: {current_usage}/{token_tracker.max_tokens_per_min} tokens in the last minute[/dim]")
+                                console.print(f"[dim]Request token count estimate: {total_input_tokens} tokens[/dim]")
+                            
+                            # Proactively wait if needed to avoid rate limit
+                            token_tracker.wait_if_needed(total_input_tokens, console)
+                            
+                            while retry_count <= max_retries:
+                                try:
+                                    # Call Claude API - the client will automatically handle text vs multimodal
+                                    message = client.messages.create(
+                                        model=args.model,
+                                        max_tokens=args.max_tokens,
+                                        temperature=0,
+                                        system=current_system_prompt,
+                                        messages=conversation,  # type: ignore
+                                    )
+                                    
+                                    # Record token usage
+                                    if hasattr(message, "usage") and message.usage:
+                                        # If the API returns actual usage info, use that
+                                        if hasattr(message.usage, "input_tokens"):
+                                            token_tracker.add_usage(message.usage.input_tokens)
+                                        else:
+                                            # Otherwise use our estimate
+                                            token_tracker.add_usage(total_input_tokens)
+                                    else:
+                                        # Fall back to our estimate
+                                        token_tracker.add_usage(total_input_tokens)
+                                    
+                                    # Success, break out of the retry loop
+                                    break
+                                    
+                                except Exception as api_error:
+                                    # Handle the error, but don't exit on rate limit
+                                    is_rate_limit = handle_api_error(api_error, console, exit_on_error=False)
+                                    
+                                    # If it's not a rate limit error or we've used all retries, re-raise
+                                    if not is_rate_limit or retry_count >= max_retries:
+                                        raise
+                                    
+                                    # It's a rate limit error and we have retries left
+                                    retry_count += 1
+                                    console.print(f"[yellow]Retry {retry_count}/{max_retries}: Waiting {RATE_LIMIT_COOLDOWN} seconds before retrying...[/yellow]")
+                                    
+                                    # Sleep before retrying
+                                    time.sleep(RATE_LIMIT_COOLDOWN)
+                                    console.print("[yellow]Retrying request...[/yellow]")
+                                    
                     except KeyboardInterrupt:
                         # Handle Ctrl+C during API call
                         console.print(
@@ -296,9 +356,22 @@ def run_conversation(
                         # Otherwise add the empty input to trigger a Claude response
                         conversation.append({"role": "user", "content": next_question})
 
-                except Exception as e:
+                except anthropic.APIStatusError as e:
+                    # Pass directly to handle_api_error with exit_on_error=True for all API errors
+                    # This ensures consistent handling and will exit on non-recoverable errors
                     handle_api_error(e, console)
-
+                    
+                    # If we get here (unlikely as handle_api_error with exit_on_error=True should exit),
+                    # add error message to conversation
+                    error_message = f"An error occurred: {str(e)}"
+                    conversation.append({"role": "user", "content": error_message})
+                except Exception as e:
+                    # For non-API errors, handle differently
+                    console.print(f"[bold red]Error: {str(e)}[/bold red]")
+                    
+                    if DEBUG:
+                        console.print(f"[bold red]Error details: {e}[/bold red]")
+                    
                     # Add error message to conversation
                     error_message = f"An error occurred: {str(e)}"
                     conversation.append({"role": "user", "content": error_message})
@@ -330,6 +403,7 @@ def process_commands(
         console: Console for output
         permission_manager: Optional manager for command permissions
         show_errors: Whether to display error messages to the user
+        auto_approve: Whether to automatically approve all commands (includes approve_all flag)
 
     Returns:
         Tuple containing:
@@ -383,8 +457,16 @@ def process_commands(
                 has_error = True
                 continue
 
-            # Remember this command type if requested
-            if remember and permission_manager:
+            # Check if the user selected "approve all" option
+            if remember == "approve_all":
+                # Enable approve_all mode for future operations
+                auto_approve = True  # This will auto-approve remaining commands in this batch
+                # Add notification in results to let calling code know approve_all was activated
+                results.append("Approve-all mode activated for all operations")
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Command approve-all mode activated[/yellow]")
+            # Remember this command type if requested as type-specific approval
+            elif remember and permission_manager:
                 permission_manager.approve_command_type(command)
         else:
             # Command is pre-approved
@@ -428,6 +510,7 @@ def process_response_operations(
         console: Console for output
         conversation: Conversation history
         permission_manager: Permission manager for commands
+        auto_approve: Whether to auto-approve all operations
 
     Returns:
         Tuple containing:
@@ -440,6 +523,7 @@ def process_response_operations(
     operation_results = []
     has_operation_error = False
     operation_interrupted = False  # Track if an operation was interrupted
+    approve_all = False  # Track if user has chosen to approve all operations
 
     # If the last message was an interruption, we're already in STOP mode
     # So we should not process any more operations
@@ -547,9 +631,17 @@ def process_response_operations(
         if DEBUG:
             console.print("[yellow]DEBUG: Checking file write operations...[/yellow]")
         file_processed_response, file_write_results, file_write_has_error = process_file_writes(
-            response, console, False, auto_approve
+            response, console, False, auto_approve, approve_all
         )
         has_operation_error = has_operation_error or file_write_has_error
+        
+        # Check for approve_all flag from file writes
+        if file_write_results and len(file_write_results) > 0:
+            # Check for approve_all marker in results
+            for result in file_write_results:
+                if result.get("file_path") == "__approve_all_status__":
+                    approve_all = True
+                    break
 
         # Check if any file operations were cancelled by user
         for result in file_write_results:
@@ -597,8 +689,9 @@ def process_response_operations(
             # Then process the approved commands with the spinner
             if DEBUG:
                 console.print("[yellow]DEBUG: Checking command approvals...[/yellow]")
+            # Use either auto_approve from args or approve_all from file operations
             command_results_str, cmd_has_error = process_commands(
-                filtered_commands, console, permission_manager, False, auto_approve
+                filtered_commands, console, permission_manager, False, auto_approve or approve_all
             )
             has_operation_error = has_operation_error or cmd_has_error
 
@@ -608,6 +701,7 @@ def process_response_operations(
                 and "STOP. The operation was cancelled by user" in command_results_str
             ):
                 operation_interrupted = True
+            
 
             if command_results_str:
                 command_results_data = get_command_result_prompt(command_results_str)
