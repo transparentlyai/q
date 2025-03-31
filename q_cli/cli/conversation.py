@@ -213,6 +213,8 @@ def run_conversation(
                             f"[yellow]DEBUG: Received model response ({len(response)} chars)[/yellow]"
                         )
                         console.print(f"[red]DEBUG RESPONSE: {response}[/red]")
+                        # Log full message object to expose all fields including stop_reason
+                        console.print(f"[yellow]DEBUG MESSAGE OBJECT: {message}[/yellow]")
 
                     # Add Claude's response to conversation history and context manager
                     conversation.append({"role": "assistant", "content": response})
