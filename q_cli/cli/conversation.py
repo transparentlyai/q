@@ -799,39 +799,40 @@ def handle_next_input(
 
         # Handle 'recover' command
         if question.strip().lower() == RECOVER_COMMAND and session_manager:
-            console.print("[green]Attempting to recover from latest session...[/green]")
-            from q_cli.utils.session.manager import recover_session
+            console.print("[green]Attempting to recover previous session history...[/green]")
             
-            # Import locally to avoid circular imports
-            import anthropic
-            import os
-            from q_cli.utils.constants import DEFAULT_MODEL
-            from q_cli.io.config import read_config_file
-            from q_cli.utils.permissions import CommandPermissionManager
+            # Load the previous session data
+            prev_conversation, prev_system_prompt, _ = session_manager.load_session()
             
-            # We need to get the API key from the client that's already in use
-            # Since we can't access it directly in the current client due to scoping,
-            # we need to use the same approach used in main.py
-            from q_cli.io.config import read_config_file
-            
-            # Get configuration needed to initialize the client
-            config_api_key, _, config_vars = read_config_file(console)
-            api_key = os.environ.get("ANTHROPIC_API_KEY") or config_api_key
-            
-            if not api_key:
-                console.print("[red]Error: Cannot retrieve API key for recovery[/red]")
+            if not prev_conversation or not prev_system_prompt:
+                console.print("[yellow]No previous session found to recover[/yellow]")
                 return ""
                 
-            # Initialize a new client with the API key
-            client = anthropic.Anthropic(api_key=api_key)
+            # Show session info
+            console.print(f"[green]Found previous session with {len(prev_conversation)} messages[/green]")
             
-            # Set up permission manager
-            permission_manager = CommandPermissionManager.from_config(config_vars)
+            # Ask for confirmation
+            console.print("\nMerge this history with current conversation? (yes/no): ", end="")
+            confirm = input().strip().lower()
             
-            # Attempt to recover
-            recovered = recover_session(client, args, prompt_session, console, permission_manager)
-            if not recovered:
-                console.print("[yellow]Could not recover session. Continuing current conversation.[/yellow]")
+            if confirm != "yes":
+                console.print("[yellow]Recovery cancelled[/yellow]")
+                return ""
+                
+            # Add previous conversation messages to the current conversation
+            # Skip if we're at the start of a conversation (don't duplicate)
+            if len(conversation) <= 1:
+                # Clear current conversation and use the recovered one
+                conversation.clear()
+                conversation.extend(prev_conversation)
+                console.print(f"[green]Loaded {len(prev_conversation)} messages from previous session[/green]")
+            else:
+                # We're in an active conversation, so we'll preserve it
+                # and append the previous conversation history at the beginning
+                current_messages = len(conversation)
+                for msg in reversed(prev_conversation):
+                    conversation.insert(0, msg)
+                console.print(f"[green]Added {len(prev_conversation)} messages to current conversation[/green]")
             
             # Empty string to trigger new input prompt
             return ""
