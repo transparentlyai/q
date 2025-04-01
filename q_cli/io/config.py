@@ -103,8 +103,8 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                             # Store in config vars
                             config_vars[key] = value
                             
-                            # Debug output for VertexAI settings
-                            if key in ["VERTEXAI_PROJECT", "VERTEXAI_LOCATION", "VERTEXAI_API_KEY"]:
+                            # Debug output for VertexAI settings only when debug is enabled
+                            if DEBUG and key in ["VERTEXAI_PROJECT", "VERTEXAI_LOCATION", "VERTEXAI_API_KEY"]:
                                 print(f"DEBUG: Loaded {key}={value} from config file")
                                 
                             # Make sure to set VERTEXAI_LOCATION in the environment if found in config
