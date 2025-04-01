@@ -2,14 +2,12 @@
 
 import os
 import re
-import requests
 from typing import Dict, List, Tuple, Optional
 
 from rich.console import Console
 from rich.markdown import Markdown
 
 from q_cli.utils.constants import SENSITIVE_PATTERNS, REDACTED_TEXT, DEBUG
-from q_cli import __version__
 
 # Type definitions for better code clarity
 Message = Dict[str, str]
@@ -118,6 +116,11 @@ def check_for_updates(console: Optional[Console] = None) -> Tuple[bool, str]:
         - Latest version string if update is available, otherwise empty string
     """
     try:
+        # Lazy import to avoid loading these modules during startup
+        import requests
+        import re
+        from q_cli import __version__
+        
         # Fetch the latest version from GitHub's raw content
         response = requests.get(
             "https://raw.githubusercontent.com/transparentlyai/q/main/q_cli/__init__.py",
@@ -168,9 +171,10 @@ def handle_api_error(
     """
     import os
     import sys
-    import json
-    import litellm
     from q_cli.utils.constants import DEBUG
+    
+    # Lazy imports to reduce startup time
+    import litellm
 
     # LiteLLM is the only API we need
     has_anthropic = False

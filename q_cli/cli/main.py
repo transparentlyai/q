@@ -1,7 +1,5 @@
 """Main entry point for the q_cli package."""
 
-import litellm
-from q_cli.utils.client import LLMClient
 import os
 import sys
 from q_cli import __version__
@@ -191,23 +189,33 @@ def main() -> None:
     # Console already initialized above for recovery command
     # Skip re-initializing console here
 
-    # Check for updates and notify user if available
-    from q_cli.utils.helpers import check_for_updates, is_newer_version
+    # Async check for updates - don't block startup
+    def check_updates_async():
+        from threading import Thread
+        from q_cli.utils.helpers import check_for_updates, is_newer_version
 
-    update_available, latest_version = check_for_updates(console)
-
-    # Debug version check information
-    if get_debug():
-        console.print(
-            f"[dim]Current version: {__version__}, Latest version from GitHub: {latest_version or 'not found'}[/dim]"
-        )
-        if latest_version:
-            is_newer = is_newer_version(latest_version, __version__)
-            console.print(f"[dim]Is GitHub version newer: {is_newer}[/dim]")
-
-    if update_available:
-        msg = f"[dim]New version {latest_version} available. Run 'q --update' to update.[/dim]"
-        console.print(msg)
+        def _check_update():
+            update_available, latest_version = check_for_updates(console)
+            if update_available:
+                msg = f"[dim]New version {latest_version} available. Run 'q --update' to update.[/dim]"
+                console.print(msg)
+            
+            # Debug version check information
+            if get_debug():
+                console.print(
+                    f"[dim]Current version: {__version__}, Latest version from GitHub: {latest_version or 'not found'}[/dim]"
+                )
+                if latest_version:
+                    is_newer = is_newer_version(latest_version, __version__)
+                    console.print(f"[dim]Is GitHub version newer: {is_newer}[/dim]")
+        
+        # Run in background thread to avoid blocking startup
+        update_thread = Thread(target=_check_update)
+        update_thread.daemon = True
+        update_thread.start()
+    
+    # Start the background update check
+    check_updates_async()
 
     # Get API key and config vars from config file
     config_api_key, config_context, config_vars = read_config_file(console)
@@ -288,6 +296,10 @@ def main() -> None:
     
     # Initialize client with error handling
     try:
+        # Lazy import LLMClient only when needed
+        from q_cli.utils.client import LLMClient
+        import litellm  # Only import when we're about to use it
+        
         # Initialize our LLM client wrapper
         client = LLMClient(api_key=api_key, model=args.model, provider=provider)
         
@@ -399,10 +411,11 @@ def main() -> None:
         console.print(dry_run_output)
         sys.exit(0)
 
-    # Initialize session manager for saving conversation state
-    from q_cli.utils.session.manager import SessionManager
-
-    session_manager = SessionManager(console)
+    # Initialize session manager only if we will be using it
+    session_manager = None
+    if not getattr(args, "no_save", False):
+        from q_cli.utils.session.manager import SessionManager
+        session_manager = SessionManager(console)
 
     # Run the conversation with improved error handling
     try:

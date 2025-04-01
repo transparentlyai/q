@@ -3,7 +3,6 @@
 import os
 from typing import Dict, List, Optional, Any, Union
 import litellm
-import json
 
 from q_cli.utils.constants import DEFAULT_MODEL, DEBUG
 
@@ -654,6 +653,8 @@ class LLMClient:
                     }
                 
                 def __str__(self):
+                    # Lazy import json only when needed
+                    import json
                     return json.dumps(self.to_dict(), indent=2)
         
         return TransformedResponse(response)
@@ -761,6 +762,8 @@ class LLMClient:
                         }
                     
                     def __str__(self):
+                        # Lazy import json only when needed
+                        import json
                         return json.dumps(self.to_dict(), indent=2)
             
             yield TransformedChunk(chunk)
