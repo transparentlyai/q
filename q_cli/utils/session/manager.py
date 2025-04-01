@@ -7,7 +7,7 @@ import tempfile
 import mmap
 from typing import Dict, List, Optional, Any, Tuple
 from rich.console import Console
-import anthropic
+# No need to import anthropic - using litellm only
 from q_cli.utils.client import LLMClient
 from prompt_toolkit import PromptSession
 
@@ -286,7 +286,7 @@ class SessionManager:
 
 
 def recover_session(
-    client: Any,  # Changed from anthropic.Anthropic to support any client implementation
+    client: Any,  # Client implementation supporting LLM provider via litellm
     args,
     prompt_session: PromptSession,
     console: Console,

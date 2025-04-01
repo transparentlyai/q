@@ -8,12 +8,8 @@ from typing import List, Dict, Optional, Any
 import litellm
 from q_cli.utils.client import LLMClient
 
-# Import anthropic for backward compatibility only
-try:
-    import anthropic
-    has_anthropic = True
-except ImportError:
-    has_anthropic = False
+# All LLM provider interaction is now via litellm
+has_anthropic = False
 from prompt_toolkit import PromptSession
 from rich.console import Console
 
@@ -465,21 +461,17 @@ def run_conversation(
                     # Pass directly to handle_api_error with exit_on_error=True for all API errors
                     # This ensures consistent handling and will exit on non-recoverable errors
                     handle_api_error(e, console)
-                # For backward compatibility with legacy API usage
+                # Handle all other exceptions
                 except Exception as e:
-                    # Check if this is a legacy API-specific error
-                    if has_anthropic and isinstance(e, anthropic.APIStatusError):
-                        handle_api_error(e, console)
-                    else:
-                        # For non-API errors, handle differently
-                        console.print(f"[bold red]Error: {str(e)}[/bold red]")
+                    # For non-API errors, handle differently
+                    console.print(f"[bold red]Error: {str(e)}[/bold red]")
 
-                        if DEBUG:
-                            console.print(f"[bold red]Error details: {e}[/bold red]")
+                    if DEBUG:
+                        console.print(f"[bold red]Error details: {e}[/bold red]")
 
-                        # Add error message to conversation
-                        error_message = f"An error occurred: {str(e)}"
-                        conversation.append({"role": "user", "content": error_message})
+                    # Add error message to conversation
+                    error_message = f"An error occurred: {str(e)}"
+                    conversation.append({"role": "user", "content": error_message})
 
     except (KeyboardInterrupt, EOFError):
         # Handle Ctrl+C or Ctrl+D gracefully

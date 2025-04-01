@@ -1,4 +1,3 @@
-anthropic
 litellm>=1.65.1
 rich
 prompt_toolkit

@@ -172,13 +172,8 @@ def handle_api_error(
     import litellm
     from q_cli.utils.constants import DEBUG
 
-    # For backward compatibility with direct Anthropic API usage
-    # This will eventually be removed when full migration to litellm is complete
-    try:
-        import anthropic
-        has_anthropic = True
-    except ImportError:
-        has_anthropic = False
+    # LiteLLM is the only API we need
+    has_anthropic = False
 
     is_rate_limit_error = False
 
@@ -258,55 +253,7 @@ def handle_api_error(
             console.print(
                 f"[bold red]Error communicating with LLM provider: {str(e)}[/bold red]"
             )
-    # Handle Anthropic-specific errors (for backward compatibility)
-    elif has_anthropic and isinstance(e, anthropic.APIStatusError):
-        if e.status_code == 401:
-            console.print(
-                "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
-            )
-        elif e.status_code == 429:
-            # Handle rate limit error
-            console.print(
-                f"[bold yellow]Rate limit exceeded: {e.message}[/bold yellow]"
-            )
-            is_rate_limit_error = True
-
-            # Try to extract error details for more information
-            try:
-                if hasattr(e, "body"):
-                    error_body = (
-                        json.loads(e.body) if isinstance(e.body, str) else e.body
-                    )
-                    if isinstance(error_body, dict) and "error" in error_body:
-                        error_details = error_body["error"]
-                        if DEBUG:
-                            console.print(
-                                f"[dim]Rate limit error details: {error_details}[/dim]"
-                            )
-            except Exception as parse_error:
-                if DEBUG:
-                    console.print(
-                        f"[dim]Could not parse rate limit error details: {parse_error}[/dim]"
-                    )
-
-            # Only exit if requested
-            if not exit_on_error:
-                console.print(
-                    "[yellow]Waiting to retry after rate limit cooldown...[/yellow]"
-                )
-                return is_rate_limit_error
-        else:
-            console.print(
-                f"[bold red]Error communicating with LLM provider (Status {e.status_code}): {e.message}[/bold red]"
-            )
-    elif has_anthropic and isinstance(e, anthropic.APIConnectionError):
-        console.print(
-            "[bold red]Connection error: Could not connect to LLM provider API. Please check your internet connection.[/bold red]"
-        )
-    elif has_anthropic and isinstance(e, anthropic.APITimeoutError):
-        console.print(
-            "[bold red]Timeout error: The request to LLM provider API timed out.[/bold red]"
-        )
+    # All provider errors are now handled by litellm
     # Generic fallback for any other error
     else:
         console.print(f"[bold red]Error communicating with LLM provider: {e}[/bold red]")
