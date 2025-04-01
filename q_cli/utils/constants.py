@@ -56,6 +56,7 @@ PROMPTS_DIR = os.path.join(
 EXIT_COMMANDS = ["exit", "quit", "q"]
 SAVE_COMMAND_PREFIX = "save "
 RECOVER_COMMAND = "recover"
+MAX_HISTORY_TURNS = 5  # Maximum number of conversation turns to keep in history
 
 # Default permission-related values in JSON format
 

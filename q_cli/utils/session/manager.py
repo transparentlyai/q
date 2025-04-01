@@ -95,10 +95,14 @@ class SessionManager:
                 self.console.print(f"[yellow]Error saving session: {str(e)}[/yellow]")
             return False
     
-    def load_session(self) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str], Optional[Dict]]:
+    def load_session(self, max_turns: int = 5) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str], Optional[Dict]]:
         """
         Load a previously saved conversation session.
         
+        Args:
+            max_turns: Maximum number of conversation turns to load (default: 5)
+                       A turn consists of a user message and its corresponding assistant response
+                       
         Returns:
             Tuple containing:
             - List of conversation messages (or None if not found)
@@ -129,6 +133,31 @@ class SessionManager:
                     conversation = session_data.get("conversation", [])
                     system_prompt = session_data.get("system_prompt", "")
                     context_data = session_data.get("context_data", None)
+                    
+                    # Apply max_turns limit - keep only the most recent turns
+                    if max_turns > 0 and conversation:
+                        # Count user messages to determine turns
+                        user_msg_indexes = [i for i, msg in enumerate(conversation) if msg.get("role") == "user"]
+                        
+                        # If we have more user messages than our max turns limit
+                        if len(user_msg_indexes) > max_turns:
+                            # Calculate where to start (keep last max_turns)
+                            # We want to keep user messages from this index and forward
+                            start_index = user_msg_indexes[-(max_turns)]
+                            
+                            # If this is not the first message, we need to make sure we start with a user message
+                            if start_index > 0 and conversation[start_index-1].get("role") == "assistant":
+                                # Adjust to include the preceding assistant message to maintain conversation flow
+                                start_index -= 1
+                                
+                            # Keep only the most recent messages
+                            conversation = conversation[start_index:]
+                            
+                            if DEBUG:
+                                self.console.print(
+                                    f"[dim]Trimmed conversation history to last {max_turns} turns "
+                                    f"({len(conversation)} messages)[/dim]"
+                                )
                     
                     if DEBUG:
                         self.console.print(

@@ -12,6 +12,7 @@ from rich.console import Console
 from q_cli.utils.constants import (
     SAVE_COMMAND_PREFIX,
     RECOVER_COMMAND,
+    MAX_HISTORY_TURNS,
     DEBUG,
     HISTORY_PATH,
     ESSENTIAL_PRIORITY,
@@ -77,8 +78,8 @@ def run_conversation(
         if initial_question.strip().lower() == RECOVER_COMMAND and session_manager:
             console.print("[green]Processing recovery command...[/green]")
             
-            # Load previous session
-            prev_conversation, prev_system_prompt, _ = session_manager.load_session()
+            # Load previous session, keeping a limited number of turns
+            prev_conversation, prev_system_prompt, _ = session_manager.load_session(max_turns=MAX_HISTORY_TURNS)
             
             if prev_conversation and prev_system_prompt:
                 # Show session info
@@ -839,8 +840,8 @@ def handle_next_input(
         if question.strip().lower() == RECOVER_COMMAND and session_manager:
             console.print("[green]Attempting to recover previous session history...[/green]")
             
-            # Load the previous session data
-            prev_conversation, prev_system_prompt, _ = session_manager.load_session()
+            # Load the previous session data, keeping a limited number of turns
+            prev_conversation, prev_system_prompt, _ = session_manager.load_session(max_turns=MAX_HISTORY_TURNS)
             
             if not prev_conversation or not prev_system_prompt:
                 console.print("[yellow]No previous session found to recover[/yellow]")
