@@ -10,6 +10,15 @@ DEBUG = os.environ.get("Q_DEBUG", "false").lower() == "true"
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 DEFAULT_MAX_TOKENS = 4096
 
+# LLM Provider Constants
+DEFAULT_PROVIDER = "anthropic"
+SUPPORTED_PROVIDERS = ["anthropic", "vertexai", "groq"]
+
+# Provider-specific model defaults
+ANTHROPIC_DEFAULT_MODEL = "claude-3-7-sonnet-latest"
+VERTEXAI_DEFAULT_MODEL = "gemini-2.0-flash-001"
+GROQ_DEFAULT_MODEL = "deepseek-r1-distill-llama-70b"
+
 # Rate limiting
 MAX_TOKENS_PER_MIN = 80000  # Maximum tokens per minute rate limit
 RATE_LIMIT_COOLDOWN = 60  # Seconds to wait after hitting rate limit

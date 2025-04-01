@@ -36,12 +36,17 @@ def setup_argparse() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-key",
         "-k",
-        help="Anthropic API key (defaults to config file or ANTHROPIC_API_KEY env var)",
+        help="API key for the selected provider (defaults to config file or environment variable)",
     )
     parser.add_argument(
         "--model",
         "-m",
-        help="Model to use (defaults to config file or claude-3-opus-20240229)",
+        help="Model to use (defaults to config file or model appropriate for the selected provider)",
+    )
+    parser.add_argument(
+        "--provider",
+        choices=["anthropic", "vertexai", "groq"],
+        help="LLM provider to use (defaults to anthropic)",
     )
     # Use a mutually exclusive group for interactive mode options
     interactive_group = parser.add_mutually_exclusive_group()

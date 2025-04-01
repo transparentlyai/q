@@ -1,6 +1,6 @@
-# q - The Command Line Assistant
+# q - The Command Line LLM Assistant
 
-A simple command-line tool for sending questions to Q AI and getting beautifully formatted responses in your terminal.
+A simple command-line tool for sending questions to Q AI and getting beautifully formatted responses in your terminal. Now with support for multiple LLM providers via LittleLLM.
 
 **Author:** [mauro@transparently.ai](mailto:mauro@transparently.ai)
 
@@ -9,6 +9,7 @@ A simple command-line tool for sending questions to Q AI and getting beautifully
 - 🌟 Interactive mode with persistent conversation history
 - 💻 Beautiful terminal formatting with syntax highlighting, code blocks, and more
 - 📃 Markdown rendering for responses
+- 🤖 Support for multiple LLM providers via LittleLLM (Anthropic, VertexAI, Groq)
 - 🔐 Multiple API key sources (config file, environment variable, command-line)
 - 📋 Context management via config file with environment variable support
 - 💾 Load questions from file and save responses to file
@@ -53,9 +54,15 @@ For a complete example of all available configuration options, refer to the [exa
 
 ### Supported Configuration Variables
 
-- `ANTHROPIC_API_KEY`: Your Anthropic API key (should start with `sk-ant-api-`)
-- `MODEL`: Default model to use (e.g., "claude-3-opus-20240229", "claude-3-haiku-20240307")
+#### Provider Configuration
+- `PROVIDER`: LLM provider to use (supported: "anthropic", "vertexai", "groq")
+- `ANTHROPIC_API_KEY`: Your Anthropic API key (for Claude models)
+- `VERTEXAI_API_KEY`: Your VertexAI API key (for Gemini models)
+- `GROQ_API_KEY`: Your Groq API key (for Llama and other models)
+- `MODEL`: Default model to use (provider-specific, e.g., "claude-3-7-sonnet-latest", "gemini-1.5-pro", "llama3-70b-8192")
 - `MAX_TOKENS`: Maximum number of tokens in the response (default: 4096)
+
+#### Command Permission Configuration
 - `ALWAYS_APPROVED_COMMANDS`: List of commands that will always be executed without asking for permission (JSON array format)
 - `ALWAYS_RESTRICTED_COMMANDS`: List of commands that will always require explicit permission (JSON array format)
 - `PROHIBITED_COMMANDS`: List of commands that will never be executed (JSON array format)
@@ -66,7 +73,11 @@ See the [example configuration file](https://github.com/transparentlyai/q/blob/m
 
 Environment variables in the config file are expanded using the syntax `$VAR` or `${VAR}`.
 
-Check the anthropic available models here: https://docs.anthropic.com/en/docs/about-claude/models/all-models
+#### Recommended Models by Provider:
+- **Anthropic**: `claude-3-7-sonnet-latest` (default), `claude-3-haiku-latest`, `claude-3-opus-latest`
+  - Check the available Claude models here: https://docs.anthropic.com/en/docs/about-claude/models/all-models
+- **VertexAI**: `gemini-2.0-flash-001` (default), `gemini-1.5-pro`, `gemini-1.5-flash`
+- **Groq**: `deepseek-r1-distill-llama-70b` (default), `llama3-70b-8192`, `llama3-8b-8192`, `mixtral-8x7b-32768`
 
 ⚠️ **Security Warning:** 
 - Never include API keys or sensitive information in your context section or context files
@@ -86,7 +97,13 @@ q "What is the capital of France?"
 q -f questions.txt
 
 # Use a different model
-q -m claude-3-haiku-20240307 "What is the meaning of life?"
+q -m claude-3-haiku-latest "What is the meaning of life?"
+
+# Use a different provider
+q --provider vertexai "What is the meaning of life?" 
+
+# Specify provider and model
+q --provider groq -m llama3-70b-8192 "What is the meaning of life?"
 
 # Disable interactive mode
 q -i "Tell me a joke"
@@ -254,8 +271,9 @@ You can add your own commands to any of these categories in your configuration f
 
 - `question`: The question to send to Q
 - `--file`, `-f`: Read question from file
-- `--api-key`, `-k`: Anthropic API key (defaults to config file or ANTHROPIC_API_KEY env var)
-- `--model`, `-m`: Model to use (default: claude-3.7-latest)
+- `--api-key`, `-k`: API key for the selected provider
+- `--model`, `-m`: Model to use (defaults to provider-specific default)
+- `--provider`: LLM provider to use ("anthropic", "vertexai", "groq")
 - `--no-interactive`, `-i`: Disable interactive mode
 - `--no-context`, `-c`: Disable using context from config file
 - `--no-md`, `-p`: Disable markdown formatting of responses
@@ -273,5 +291,5 @@ You can add your own commands to any of these categories in your configuration f
 - `--context-priority-mode`: Context priority mode (balanced, code, conversation)                                                                              
 - `--context-stats`: Show context statistics before sending to model                                                                                           
 - `--update`: Update q to the latest version and exit                                                                                                          
-- `--dry-run`: Print the full message that would be sent to Claude and exit  
+- `--dry-run`: Print the full message that would be sent to the model and exit  
 

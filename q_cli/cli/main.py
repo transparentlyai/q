@@ -1,6 +1,8 @@
 """Main entry point for the q_cli package."""
 
 import anthropic
+import littlellm
+from q_cli.utils.client import LLMClient
 import os
 import sys
 from q_cli import __version__
@@ -51,12 +53,33 @@ def main() -> None:
         # Get API key and config vars from config file
         config_api_key, _, config_vars = read_config_file(console)
 
-        # Use API key from args, config file, or environment variable
-        api_key = args.api_key or config_api_key or os.environ.get("ANTHROPIC_API_KEY")
-
-        # Set model from args, config file, or default
+        # Get provider from args, config file, or default
+        provider = args.provider or config_vars.get("PROVIDER", DEFAULT_PROVIDER)
+        
+        # Get API key based on provider
+        if args.api_key:
+            # Use API key from args
+            api_key = args.api_key
+        elif provider.lower() == "anthropic":
+            api_key = config_vars.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+        elif provider.lower() == "vertexai":
+            api_key = config_vars.get("VERTEXAI_API_KEY") or os.environ.get("VERTEXAI_API_KEY")
+        elif provider.lower() == "groq":
+            api_key = config_vars.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+        else:
+            # Fallback to generic API key or anthropic key for backward compatibility
+            api_key = config_api_key or os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+        
+        # Set model based on provider if not explicitly specified
         if not args.model:
-            args.model = config_vars.get("MODEL", DEFAULT_MODEL)
+            if provider.lower() == "anthropic":
+                args.model = config_vars.get("MODEL", ANTHROPIC_DEFAULT_MODEL)
+            elif provider.lower() == "vertexai":
+                args.model = config_vars.get("MODEL", VERTEXAI_DEFAULT_MODEL)
+            elif provider.lower() == "groq":
+                args.model = config_vars.get("MODEL", GROQ_DEFAULT_MODEL)
+            else:
+                args.model = config_vars.get("MODEL", DEFAULT_MODEL)
 
         # Force interactive mode when recovering
         args.no_interactive = False
@@ -65,13 +88,13 @@ def main() -> None:
         # Check for API key
         if not api_key:
             console.print(
-                "[bold red]Error: Anthropic API key not provided. Add to ~/.config/q.conf, set ANTHROPIC_API_KEY environment variable, or use --api-key[/bold red]"
+                f"[bold red]Error: API key for {provider} not provided. Add to ~/.config/q.conf, set {provider.upper()}_API_KEY environment variable, or use --api-key[/bold red]"
             )
             sys.exit(1)
 
         try:
-            # Initialize Anthropic client
-            client = anthropic.Anthropic(api_key=api_key)
+            # Initialize LLM client wrapper
+            client = LLMClient(api_key=api_key, model=args.model, provider=provider)
 
             # Set up prompt session for input
             prompt_session = create_prompt_session(console)
@@ -130,28 +153,54 @@ def main() -> None:
     # Get API key and config vars from config file
     config_api_key, config_context, config_vars = read_config_file(console)
 
-    # Use API key from args, config file, or environment variable (in that order)
-    api_key = args.api_key or config_api_key or os.environ.get("ANTHROPIC_API_KEY")
-
-    # Set model from args, config file, or default
+    # Get provider from args, config file, or default
+    provider = args.provider or config_vars.get("PROVIDER", DEFAULT_PROVIDER)
+    
+    # Get API key based on provider
+    if args.api_key:
+        # Use API key from args
+        api_key = args.api_key
+    elif provider.lower() == "anthropic":
+        api_key = config_vars.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    elif provider.lower() == "vertexai":
+        api_key = config_vars.get("VERTEXAI_API_KEY") or os.environ.get("VERTEXAI_API_KEY")
+    elif provider.lower() == "groq":
+        api_key = config_vars.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+    else:
+        # Fallback to generic API key or anthropic key for backward compatibility
+        api_key = config_api_key or os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    
+    # Set model based on provider if not explicitly specified
     if not args.model:
-        args.model = config_vars.get("MODEL", DEFAULT_MODEL)
-
+        if provider.lower() == "anthropic":
+            args.model = config_vars.get("MODEL", ANTHROPIC_DEFAULT_MODEL)
+        elif provider.lower() == "vertexai":
+            args.model = config_vars.get("MODEL", VERTEXAI_DEFAULT_MODEL)
+        elif provider.lower() == "groq":
+            args.model = config_vars.get("MODEL", GROQ_DEFAULT_MODEL)
+        else:
+            args.model = config_vars.get("MODEL", DEFAULT_MODEL)
+    
     # Set max_tokens from config file or default
     args.max_tokens = int(config_vars.get("MAX_TOKENS", DEFAULT_MAX_TOKENS))
-
+    
     if not api_key:
         console.print(
-            "[bold red]Error: Anthropic API key not provided. Add to ~/.config/q.conf, set ANTHROPIC_API_KEY environment variable, or use --api-key[/bold red]"
+            f"[bold red]Error: API key for {provider} not provided. Add to ~/.config/q.conf, set {provider.upper()}_API_KEY environment variable, or use --api-key[/bold red]"
         )
         sys.exit(1)
-
+    
     # Initialize client with error handling
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        # Initialize our LLM client wrapper
+        client = LLMClient(api_key=api_key, model=args.model, provider=provider)
+        
+        if DEBUG:
+            console.print(f"[dim]Using provider: {provider}, model: {args.model}[/dim]")
+    
     except Exception as e:
         console.print(
-            f"[bold red]Error initializing Anthropic client: {str(e)}[/bold red]"
+            f"[bold red]Error initializing LLM client with provider {provider}: {str(e)}[/bold red]"
         )
         console.print("[yellow]Please check your API key and try again.[/yellow]")
         sys.exit(1)

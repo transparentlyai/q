@@ -6,6 +6,7 @@ import base64
 import time
 from typing import List, Dict, Optional, Any
 import anthropic
+from q_cli.utils.client import LLMClient
 from prompt_toolkit import PromptSession
 from rich.console import Console
 
@@ -38,7 +39,7 @@ from q_cli.utils.web import process_urls_in_response
 
 
 def run_conversation(
-    client: anthropic.Anthropic,
+    client: Any,  # Changed from anthropic.Anthropic to support any client implementation
     system_prompt: str,
     args,
     prompt_session: PromptSession,
@@ -51,10 +52,10 @@ def run_conversation(
     session_manager=None,
 ) -> None:
     """
-    Run the continuous conversation loop with Claude.
+    Run the continuous conversation loop with the LLM provider.
 
     Args:
-        client: Anthropic client
+        client: LLM client wrapper
         system_prompt: System prompt with context
         args: Command line arguments
         prompt_session: PromptSession for input
@@ -150,8 +151,8 @@ def run_conversation(
 
                             while retry_count <= max_retries:
                                 try:
-                                    # Call Claude API - the client will automatically handle text vs multimodal
-                                    message = client.messages.create(
+                                    # Call LLM API via our client wrapper
+                                    message = client.messages_create(
                                         model=args.model,
                                         max_tokens=args.max_tokens,
                                         temperature=0,
@@ -431,7 +432,7 @@ def run_conversation(
                         # Otherwise add the empty input to trigger a Claude response
                         conversation.append({"role": "user", "content": next_question})
 
-                except anthropic.APIStatusError as e:
+                except (anthropic.APIStatusError, littlellm.exceptions.APIError) as e:
                     # Pass directly to handle_api_error with exit_on_error=True for all API errors
                     # This ensures consistent handling and will exit on non-recoverable errors
                     handle_api_error(e, console)

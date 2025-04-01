@@ -8,6 +8,7 @@ import mmap
 from typing import Dict, List, Optional, Any, Tuple
 from rich.console import Console
 import anthropic
+from q_cli.utils.client import LLMClient
 from prompt_toolkit import PromptSession
 
 from q_cli.utils.constants import DEBUG, SESSION_PATH
@@ -285,7 +286,7 @@ class SessionManager:
 
 
 def recover_session(
-    client: anthropic.Anthropic,
+    client: Any,  # Changed from anthropic.Anthropic to support any client implementation
     args,
     prompt_session: PromptSession,
     console: Console,

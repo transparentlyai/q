@@ -37,6 +37,8 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
     config_vars = {}
     context = ""
     context_started = False
+    # For use with multiple providers
+    provider_api_keys = {}
 
     # Find example_config.conf in different possible locations
     # First try the package directory
@@ -97,8 +99,16 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                             # Store in config vars
                             config_vars[key] = value
 
-                            # Check for API key specifically
-                            if key == "ANTHROPIC_API_KEY" and not api_key:
+                            # Check for API keys for various providers
+                            if key == "ANTHROPIC_API_KEY":
+                                provider_api_keys["anthropic"] = value
+                                if not api_key:  # For backward compatibility
+                                    api_key = value
+                            elif key == "VERTEXAI_API_KEY":
+                                provider_api_keys["vertexai"] = value
+                            elif key == "GROQ_API_KEY":
+                                provider_api_keys["groq"] = value
+                            elif key == "API_KEY" and not api_key:  # Generic API key
                                 api_key = value
                         # Check for API key (assuming it's just the key on a line by itself)
                         elif (
@@ -106,8 +116,9 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                         ):  # Simple validation for API key-like string
                             if line.startswith(
                                 "sk-ant-api"
-                            ):  # Strict validation for v1 API key format
+                            ):  # Strict validation for Anthropic v1 API key format
                                 api_key = line
+                                provider_api_keys["anthropic"] = line
         except Exception as e:
             console.print(f"Warning: Error reading config file: {e}", style="warning")
     else:
@@ -130,9 +141,17 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                 minimal_config = """# Configuration file for q - AI Command Line Assistant
 # Edit this file to customize behavior
 
-# Anthropic API key (recommended to use environment variable)
+# API keys for different providers (recommended to use environment variables)
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+# VERTEXAI_API_KEY=${VERTEXAI_API_KEY}
+# GROQ_API_KEY=${GROQ_API_KEY}
+
+# Provider and model settings
+PROVIDER=anthropic
 MODEL=claude-3.7-latest
+# Uncomment and set one of these for a specific provider:
+# MODEL=gemini-2.0-flash-001  # For VertexAI
+# MODEL=deepseek-r1-distill-llama-70b  # For Groq
 
 # Command permission settings (JSON arrays)
 ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "date", "whoami", "cat"]
@@ -162,6 +181,13 @@ PROHIBITED_COMMANDS=["rm -rf /", "shutdown", "reboot"]
                 style="info",
             )
 
+    # Store provider API keys in config_vars
+    for provider, key in provider_api_keys.items():
+        config_vars[f"{provider.upper()}_API_KEY"] = key
+    
+    # Store provider keys in a format that can be accessed programmatically
+    config_vars["PROVIDER_API_KEYS"] = ",".join([f"{p}:{k}" for p, k in provider_api_keys.items()])
+    
     return api_key, context.strip(), config_vars
 
 

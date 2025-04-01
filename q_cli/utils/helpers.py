@@ -155,7 +155,7 @@ def handle_api_error(
     e: Exception, console: Console, exit_on_error: bool = True
 ) -> bool:
     """
-    Handle errors from the Q API in a consistent way.
+    Handle errors from the LLM API in a consistent way.
 
     Args:
         e: The exception that occurred
@@ -166,6 +166,7 @@ def handle_api_error(
         True if error is a rate limit error that can be retried, False otherwise
     """
     import anthropic
+    import littlellm
     import os
     import sys
     import json
@@ -173,6 +174,7 @@ def handle_api_error(
 
     is_rate_limit_error = False
 
+    # Handle Anthropic-specific errors
     if isinstance(e, anthropic.APIStatusError):
         if e.status_code == 401:
             console.print(
@@ -211,18 +213,60 @@ def handle_api_error(
                 return is_rate_limit_error
         else:
             console.print(
-                f"[bold red]Error communicating with Q (Status {e.status_code}): {e.message}[/bold red]"
+                f"[bold red]Error communicating with LLM provider (Status {e.status_code}): {e.message}[/bold red]"
             )
     elif isinstance(e, anthropic.APIConnectionError):
         console.print(
-            "[bold red]Connection error: Could not connect to Anthropic API. Please check your internet connection.[/bold red]"
+            "[bold red]Connection error: Could not connect to LLM provider API. Please check your internet connection.[/bold red]"
         )
     elif isinstance(e, anthropic.APITimeoutError):
         console.print(
-            "[bold red]Timeout error: The request to Anthropic API timed out.[/bold red]"
+            "[bold red]Timeout error: The request to LLM provider API timed out.[/bold red]"
+        )
+    # Handle LittleLLM-specific errors
+    elif isinstance(e, littlellm.exceptions.APIError):
+        if "401" in str(e) or "Unauthorized" in str(e) or "authentication" in str(e).lower():
+            console.print(
+                "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
+            )
+        elif "429" in str(e) or "rate" in str(e).lower() or "limit" in str(e).lower():
+            console.print(
+                f"[bold yellow]Rate limit exceeded: {str(e)}[/bold yellow]"
+            )
+            is_rate_limit_error = True
+            
+            # Only exit if requested
+            if not exit_on_error:
+                console.print(
+                    "[yellow]Waiting to retry after rate limit cooldown...[/yellow]"
+                )
+                return is_rate_limit_error
+        else:
+            console.print(
+                f"[bold red]Error communicating with LLM provider: {str(e)}[/bold red]"
+            )
+    elif isinstance(e, littlellm.exceptions.RateLimitError):
+        console.print(
+            f"[bold yellow]Rate limit exceeded: {str(e)}[/bold yellow]"
+        )
+        is_rate_limit_error = True
+        
+        # Only exit if requested
+        if not exit_on_error:
+            console.print(
+                "[yellow]Waiting to retry after rate limit cooldown...[/yellow]"
+            )
+            return is_rate_limit_error
+    elif isinstance(e, littlellm.exceptions.ContentFilterError):
+        console.print(
+            f"[bold red]Content filter error: {str(e)}[/bold red]"
+        )
+    elif isinstance(e, littlellm.exceptions.AuthenticationError):
+        console.print(
+            "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
         )
     else:
-        console.print(f"[bold red]Error communicating with Q: {e}[/bold red]")
+        console.print(f"[bold red]Error communicating with LLM provider: {e}[/bold red]")
 
     if DEBUG or os.environ.get("Q_DEBUG"):
         console.print(f"[bold red]Error details: {e}[/bold red]")
