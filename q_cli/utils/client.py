@@ -1,8 +1,9 @@
-"""LLM client wrapper for q_cli."""
+"""LLM client wrapper for q_cli using LittleLLM."""
 
 import os
 from typing import Dict, List, Optional, Any, Union
 import littlellm
+import json
 
 from q_cli.utils.constants import DEFAULT_MODEL, DEBUG
 
@@ -22,41 +23,62 @@ class LLMClient:
         Args:
             api_key: API key for the LLM provider
             model: Model name to use
-            provider: LLM provider (anthropic, vertex, groq) - optional, can be inferred
+            provider: LLM provider (anthropic, vertexai, groq) - optional, can be inferred
         """
         self.api_key = api_key
         self.model = model or DEFAULT_MODEL
         self.provider = provider
-
-        # Set up LittleLLM defaults
-        if self.api_key:
-            # Determine which environment variable to set based on inferred provider
-            self._setup_provider_env_vars()
         
-        # Map provider/model configurations here
-        self.client = littlellm
-
-    def _setup_provider_env_vars(self) -> None:
-        """Set up the appropriate environment variables for the provider."""
-        # Parse the model string to determine the likely provider if not specified
+        # Determine provider from model if not specified
         if not self.provider:
             if "claude" in self.model.lower():
                 self.provider = "anthropic"
-            elif "gemini" in self.model.lower() or "vertex" in self.model.lower():
-                self.provider = "vertex"
-            elif "groq" in self.model.lower():
+            elif "gemini" in self.model.lower():
+                self.provider = "vertexai"
+            elif "deepseek" in self.model.lower() or "llama" in self.model.lower() or "mixtral" in self.model.lower():
                 self.provider = "groq"
             else:
                 # Default fallback
                 self.provider = "anthropic"
+
+        # Set up LittleLLM API keys
+        if self.api_key:
+            self._setup_provider_env_vars()
         
-        # Set the environment variable
-        if self.provider == "anthropic":
+        # Initialize littlellm
+        self.client = littlellm
+
+        if DEBUG:
+            print(f"Initialized LLMClient with provider={self.provider}, model={self.model}")
+
+    def _setup_provider_env_vars(self) -> None:
+        """Set up the appropriate environment variables for the provider."""
+        # Set provider-specific API keys
+        if self.provider.lower() == "anthropic":
             os.environ["ANTHROPIC_API_KEY"] = self.api_key
-        elif self.provider == "vertex":
+        elif self.provider.lower() == "vertexai":
+            # VertexAI typically uses service account credentials
+            # For simplicity we'll set an environment variable that our code uses
             os.environ["VERTEXAI_API_KEY"] = self.api_key
-        elif self.provider == "groq":
+            # These are typically required for VertexAI
+            if "VERTEXAI_PROJECT" not in os.environ and "VERTEX_PROJECT" not in os.environ:
+                if DEBUG:
+                    print("WARNING: VERTEXAI_PROJECT not set in environment")
+        elif self.provider.lower() == "groq":
             os.environ["GROQ_API_KEY"] = self.api_key
+        elif self.provider.lower() == "openai":
+            os.environ["OPENAI_API_KEY"] = self.api_key
+        
+        # Set default model prefix based on provider if not already in model name
+        if not "/" in self.model:
+            if self.provider.lower() == "anthropic":
+                self.model = f"anthropic/{self.model}"
+            elif self.provider.lower() == "vertexai":
+                self.model = f"vertex_ai/{self.model}"
+            elif self.provider.lower() == "groq":
+                self.model = f"groq/{self.model}"
+            elif self.provider.lower() == "openai":
+                self.model = f"openai/{self.model}"
 
     def messages_create(
         self,
@@ -65,6 +87,7 @@ class LLMClient:
         temperature: float,
         system: str,
         messages: List[Dict[str, Any]],
+        stream: bool = False,
         **kwargs
     ) -> Any:
         """
@@ -76,6 +99,7 @@ class LLMClient:
             temperature: Sampling temperature
             system: System prompt
             messages: List of messages to send to the model
+            stream: Whether to stream the response
             **kwargs: Additional arguments to pass to the API
 
         Returns:
@@ -84,20 +108,27 @@ class LLMClient:
         # Transform the messages to the format expected by LittleLLM
         transformed_messages = self._transform_messages(messages, system)
         
-        # Make the API call
         try:
+            # Make the API call
+            if DEBUG:
+                print(f"LittleLLM request: model={model}, max_tokens={max_tokens}, stream={stream}")
+                
             response = self.client.completion(
                 model=model,
                 messages=transformed_messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                stream=stream,
                 **kwargs
             )
 
             # Convert the response to match the expected format by existing code
-            return self._transform_response(response)
+            return self._transform_response(response, stream=stream)
+            
         except Exception as e:
-            # Modify this to handle specific LittleLLM exceptions as needed
+            if DEBUG:
+                print(f"LittleLLM error: {str(e)}")
+            # Let the caller handle the exception with its error mapping
             raise e
 
     def _transform_messages(
@@ -166,46 +197,169 @@ class LLMClient:
                 transformed.append({"role": role, "content": content})
         
         if DEBUG:
-            print(f"Transformed messages: {transformed}")
+            print(f"Transformed {len(messages)} messages for LittleLLM")
         
         return transformed
 
-    def _transform_response(self, response: Any) -> Any:
+    def _transform_response(self, response: Any, stream: bool = False) -> Any:
         """
         Transform LittleLLM response to match Anthropic API format.
 
         Args:
             response: The response from LittleLLM
+            stream: Whether the response is streaming
 
         Returns:
             Transformed response
         """
+        if stream:
+            # For streaming, return a generator that transforms each chunk
+            return self._transform_streaming_response(response)
+        
         # Create an object that mimics the structure expected by the existing code
         class TransformedResponse:
             def __init__(self, llm_response):
+                self.id = getattr(llm_response, "id", "chatcmpl-" + str(hash(str(llm_response)))[:8])
+                self.created = getattr(llm_response, "created", 0)
+                self.model = getattr(llm_response, "model", "")
+                self.object = "chat.completion"
+                self.system_fingerprint = None
+                
+                # Handle usage information
                 self.usage = None
                 if hasattr(llm_response, "usage") and llm_response.usage:
                     class Usage:
                         def __init__(self, usage_data):
-                            self.input_tokens = usage_data.get("prompt_tokens", 0)
-                            self.output_tokens = usage_data.get("completion_tokens", 0)
+                            if isinstance(usage_data, dict):
+                                self.input_tokens = usage_data.get("prompt_tokens", 0)
+                                self.output_tokens = usage_data.get("completion_tokens", 0)
+                                self.total_tokens = usage_data.get("total_tokens", 0)
+                            else:
+                                self.input_tokens = getattr(usage_data, "prompt_tokens", 0)
+                                self.output_tokens = getattr(usage_data, "completion_tokens", 0)
+                                self.total_tokens = getattr(usage_data, "total_tokens", 0)
                     
                     self.usage = Usage(llm_response.usage)
                 
                 # Handle content format
                 self.content = []
+                self.choices = []
+                
                 if hasattr(llm_response, "choices") and llm_response.choices:
-                    message = llm_response.choices[0].message
-                    content = message.get("content", "")
-                    
-                    class ContentItem:
-                        def __init__(self, text):
-                            self.text = text
-                            self.type = "text"
-                    
-                    self.content.append(ContentItem(content))
+                    for i, choice in enumerate(llm_response.choices):
+                        # Process message content
+                        message_content = ""
+                        if hasattr(choice, "message"):
+                            message_content = choice.message.get("content", "")
+                        elif hasattr(choice, "delta") and hasattr(choice.delta, "content"):
+                            message_content = choice.delta.content
+                        
+                        # Create message object
+                        message = {
+                            "content": message_content,
+                            "role": "assistant",
+                            "tool_calls": None,
+                            "function_call": None
+                        }
+                        
+                        # Create choice object
+                        choice_obj = {
+                            "finish_reason": getattr(choice, "finish_reason", "stop"),
+                            "index": i,
+                            "message": message
+                        }
+                        
+                        self.choices.append(choice_obj)
+                        
+                        # For backward compatibility with code expecting content
+                        class ContentItem:
+                            def __init__(self, text):
+                                self.text = text
+                                self.type = "text"
+                        
+                        self.content.append(ContentItem(message_content))
                 
                 # Add any other fields that might be needed
                 self.stop_reason = getattr(llm_response, "finish_reason", None)
+                
+                def to_dict(self):
+                    """Convert to dict for debugging."""
+                    return {
+                        "id": self.id,
+                        "created": self.created,
+                        "model": self.model,
+                        "object": self.object,
+                        "choices": self.choices,
+                    }
+                
+                def __str__(self):
+                    return json.dumps(self.to_dict(), indent=2)
         
         return TransformedResponse(response)
+    
+    def _transform_streaming_response(self, streaming_response):
+        """
+        Transform a streaming response from LittleLLM to match Anthropic's streaming format.
+        
+        Args:
+            streaming_response: The streaming response from LittleLLM
+            
+        Returns:
+            Generator that yields transformed response chunks
+        """
+        for chunk in streaming_response:
+            # Create a class to mimic the structure expected by the existing code
+            class TransformedChunk:
+                def __init__(self, chunk):
+                    self.id = getattr(chunk, "id", "chatcmpl-" + str(hash(str(chunk)))[:8])
+                    self.created = getattr(chunk, "created", 0)
+                    self.model = getattr(chunk, "model", "")
+                    self.object = "chat.completion.chunk"
+                    self.system_fingerprint = None
+                    
+                    # Handle content format
+                    self.choices = []
+                    if hasattr(chunk, "choices") and chunk.choices:
+                        for i, choice in enumerate(chunk.choices):
+                            # Extract delta content
+                            content = ""
+                            
+                            # Handle different possible delta formats
+                            if hasattr(choice, "delta"):
+                                if hasattr(choice.delta, "content"):
+                                    content = choice.delta.content
+                                elif isinstance(choice.delta, dict) and "content" in choice.delta:
+                                    content = choice.delta["content"]
+                            
+                            # Create delta object
+                            delta = {
+                                "content": content,
+                                "role": "assistant",
+                                "function_call": None,
+                                "tool_calls": None,
+                                "audio": None
+                            }
+                            
+                            # Create choice object
+                            choice_obj = {
+                                "finish_reason": getattr(choice, "finish_reason", None),
+                                "index": i,
+                                "delta": delta,
+                                "logprobs": None
+                            }
+                            
+                            self.choices.append(choice_obj)
+                    
+                    # Add content array for compatibility
+                    self.content = []
+                    if self.choices and "content" in self.choices[0].get("delta", {}):
+                        class ContentItem:
+                            def __init__(self, text):
+                                self.text = text
+                                self.type = "text"
+                        
+                        content_text = self.choices[0]["delta"]["content"]
+                        if content_text:
+                            self.content.append(ContentItem(content_text))
+            
+            yield TransformedChunk(chunk)
