@@ -37,68 +37,82 @@ def main() -> None:
     # Handle the update command if specified
     if args.update:
         from q_cli.cli.args import update_command
+
         update_command()
-        
-    # Initialize console for output early for recover command
+
+    # Initialize console for output
     console = setup_console()
-        
+
     # Handle the recover command if specified
     if args.recover:
         from q_cli.utils.session.manager import recover_session
-        
+
         # Initialize necessary components for recovery
         # Get API key and config vars from config file
         config_api_key, _, config_vars = read_config_file(console)
-        
+
         # Use API key from args, config file, or environment variable
         api_key = args.api_key or config_api_key or os.environ.get("ANTHROPIC_API_KEY")
-        
+
         # Set model from args, config file, or default
         if not args.model:
             args.model = config_vars.get("MODEL", DEFAULT_MODEL)
-            
+
+        # Force interactive mode when recovering
+        args.no_interactive = False
+        args.interactive = True
+
         # Check for API key
         if not api_key:
             console.print(
                 "[bold red]Error: Anthropic API key not provided. Add to ~/.config/q.conf, set ANTHROPIC_API_KEY environment variable, or use --api-key[/bold red]"
             )
             sys.exit(1)
-            
+
         try:
             # Initialize Anthropic client
             client = anthropic.Anthropic(api_key=api_key)
-            
+
             # Set up prompt session for input
             prompt_session = create_prompt_session(console)
-            
+
             # Set up permission manager
             permission_manager = CommandPermissionManager.from_config(config_vars)
-            
+
             # Always add default commands
-            permission_manager.always_approved_commands.update(DEFAULT_ALWAYS_APPROVED_COMMANDS)
-            permission_manager.always_restricted_commands.update(DEFAULT_ALWAYS_RESTRICTED_COMMANDS)
+            permission_manager.always_approved_commands.update(
+                DEFAULT_ALWAYS_APPROVED_COMMANDS
+            )
+            permission_manager.always_restricted_commands.update(
+                DEFAULT_ALWAYS_RESTRICTED_COMMANDS
+            )
             permission_manager.prohibited_commands.update(DEFAULT_PROHIBITED_COMMANDS)
-            
+
             # Attempt to recover the session
-            if recover_session(client, args, prompt_session, console, permission_manager):
+            if recover_session(
+                client, args, prompt_session, console, permission_manager
+            ):
                 # If recovery was successful and conversation started, exit
                 sys.exit(0)
             # Otherwise fall through to normal startup
-            
+
         except Exception as e:
-            console.print(f"[bold red]Error during session recovery: {str(e)}[/bold red]")
+            console.print(
+                f"[bold red]Error during session recovery: {str(e)}[/bold red]"
+            )
             if DEBUG:
                 import traceback
+
                 console.print(f"[red]{traceback.format_exc()}[/red]")
             # Continue with normal startup
 
-    # Initialize console for output
-    console = setup_console()
+    # Console already initialized above for recovery command
+    # Skip re-initializing console here
 
     # Check for updates and notify user if available
     from q_cli.utils.helpers import check_for_updates, is_newer_version
 
-    update_available, latest_version = check_for_updates()
+    update_available, latest_version = check_for_updates(console)
 
     # Debug version check information
     if os.environ.get("Q_DEBUG"):
@@ -158,12 +172,12 @@ def main() -> None:
 
     # Set the constant if needed
     if include_file_tree:
-        # Import in local scope to avoid circular imports
-        import q_cli.utils.constants as constants
+        # Set the constant directly
+        from q_cli.utils.constants import INCLUDE_FILE_TREE
 
-        constants.INCLUDE_FILE_TREE = True
+        INCLUDE_FILE_TREE = True
 
-        if constants.DEBUG:
+        if DEBUG:
             console.print("[info]File tree will be included in context[/info]")
 
     # Build and sanitize context from config and files
@@ -242,8 +256,9 @@ def main() -> None:
 
     # Initialize session manager for saving conversation state
     from q_cli.utils.session.manager import SessionManager
+
     session_manager = SessionManager(console)
-    
+
     # Run the conversation with improved error handling
     try:
         run_conversation(

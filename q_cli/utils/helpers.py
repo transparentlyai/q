@@ -3,7 +3,7 @@
 import os
 import re
 import requests
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -108,7 +108,7 @@ def is_newer_version(version1: str, version2: str) -> bool:
     return False
 
 
-def check_for_updates() -> Tuple[bool, str]:
+def check_for_updates(console: Optional[Console] = None) -> Tuple[bool, str]:
     """
     Check if a newer version of the q tool is available on GitHub.
 
@@ -132,42 +132,36 @@ def check_for_updates() -> Tuple[bool, str]:
             github_version = version_match.group(1)
             current_version = __version__
 
-            # Use console for debug output if available
-            from rich.console import Console
-
-            (
-                Console().print(
+            # Use console for debug output if DEBUG enabled
+            if DEBUG and console:
+                console.print(
                     f"[dim]DEBUG: Current version: {current_version}, GitHub version: {github_version}[/dim]"
                 )
-                if DEBUG
-                else None
-            )
 
             # Check if GitHub version is newer
             if is_newer_version(github_version, current_version):
                 return True, github_version
     except Exception as e:
         # Silently fail on any error - don't disrupt the user experience
-        if DEBUG:
-            from rich.console import Console
-
-            Console().print(
+        if DEBUG and console:
+            console.print(
                 f"[yellow]DEBUG: Error checking for updates: {str(e)}[/yellow]"
             )
-        pass
 
     return False, ""
 
 
-def handle_api_error(e: Exception, console: Console, exit_on_error: bool = True) -> bool:
+def handle_api_error(
+    e: Exception, console: Console, exit_on_error: bool = True
+) -> bool:
     """
     Handle errors from the Q API in a consistent way.
-    
+
     Args:
         e: The exception that occurred
         console: Console for output
         exit_on_error: Whether to exit the program on error
-        
+
     Returns:
         True if error is a rate limit error that can be retried, False otherwise
     """
@@ -176,9 +170,9 @@ def handle_api_error(e: Exception, console: Console, exit_on_error: bool = True)
     import sys
     import json
     from q_cli.utils.constants import DEBUG
-    
+
     is_rate_limit_error = False
-    
+
     if isinstance(e, anthropic.APIStatusError):
         if e.status_code == 401:
             console.print(
@@ -190,22 +184,30 @@ def handle_api_error(e: Exception, console: Console, exit_on_error: bool = True)
                 f"[bold yellow]Rate limit exceeded: {e.message}[/bold yellow]"
             )
             is_rate_limit_error = True
-            
+
             # Try to extract error details for more information
             try:
-                if hasattr(e, 'body'):
-                    error_body = json.loads(e.body) if isinstance(e.body, str) else e.body
-                    if isinstance(error_body, dict) and 'error' in error_body:
-                        error_details = error_body['error']
+                if hasattr(e, "body"):
+                    error_body = (
+                        json.loads(e.body) if isinstance(e.body, str) else e.body
+                    )
+                    if isinstance(error_body, dict) and "error" in error_body:
+                        error_details = error_body["error"]
                         if DEBUG:
-                            console.print(f"[dim]Rate limit error details: {error_details}[/dim]")
+                            console.print(
+                                f"[dim]Rate limit error details: {error_details}[/dim]"
+                            )
             except Exception as parse_error:
                 if DEBUG:
-                    console.print(f"[dim]Could not parse rate limit error details: {parse_error}[/dim]")
-                    
+                    console.print(
+                        f"[dim]Could not parse rate limit error details: {parse_error}[/dim]"
+                    )
+
             # Only exit if requested
             if not exit_on_error:
-                console.print("[yellow]Waiting to retry after rate limit cooldown...[/yellow]")
+                console.print(
+                    "[yellow]Waiting to retry after rate limit cooldown...[/yellow]"
+                )
                 return is_rate_limit_error
         else:
             console.print(
@@ -227,5 +229,5 @@ def handle_api_error(e: Exception, console: Console, exit_on_error: bool = True)
 
     if exit_on_error:
         sys.exit(1)
-        
+
     return is_rate_limit_error
