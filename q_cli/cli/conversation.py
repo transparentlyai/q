@@ -73,7 +73,38 @@ def run_conversation(
     token_tracker = TokenRateTracker()
 
     try:
-        # Add initial user question to conversation and context manager
+        # Check if initial question is "recover" and handle it separately
+        if initial_question.strip().lower() == RECOVER_COMMAND and session_manager:
+            console.print("[green]Processing recovery command...[/green]")
+            
+            # Load previous session
+            prev_conversation, prev_system_prompt, _ = session_manager.load_session()
+            
+            if prev_conversation and prev_system_prompt:
+                # Show session info
+                console.print(f"[green]Found previous session with {len(prev_conversation)} messages[/green]")
+                console.print("\nUse this session? (yes/no): ", end="")
+                confirm = input().strip().lower()
+                
+                if confirm == "yes":
+                    # Use the recovered conversation instead
+                    conversation.clear()
+                    conversation.extend(prev_conversation)
+                    console.print(f"[green]Loaded {len(prev_conversation)} messages from previous session[/green]")
+                    console.print("[green]Type your next message to continue with the recovered session.[/green]")
+                    
+                    # Get a new initial question
+                    initial_question = get_input("Q> ", session=prompt_session)
+                else:
+                    # User declined, get a new question
+                    console.print("[yellow]Recovery cancelled[/yellow]")
+                    initial_question = get_input("Q> ", session=prompt_session)
+            else:
+                # No session found
+                console.print("[yellow]No previous session found to recover[/yellow]")
+                initial_question = get_input("Q> ", session=prompt_session)
+                
+        # Now process the initial question (either original or new after recovery)
         if initial_question.strip():
             conversation.append({"role": "user", "content": initial_question})
 
