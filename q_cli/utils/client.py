@@ -1,15 +1,15 @@
-"""LLM client wrapper for q_cli using LittleLLM."""
+"""LLM client wrapper for q_cli using LiteLLM."""
 
 import os
 from typing import Dict, List, Optional, Any, Union
-import littlellm
+import litellm
 import json
 
 from q_cli.utils.constants import DEFAULT_MODEL, DEBUG
 
 
 class LLMClient:
-    """Unified client wrapper for LLM providers via LittleLLM."""
+    """Unified client wrapper for LLM providers via LiteLLM."""
 
     def __init__(
         self,
@@ -41,12 +41,12 @@ class LLMClient:
                 # Default fallback
                 self.provider = "anthropic"
 
-        # Set up LittleLLM API keys
+        # Set up LiteLLM API keys
         if self.api_key:
             self._setup_provider_env_vars()
         
-        # Initialize littlellm
-        self.client = littlellm
+        # Initialize litellm
+        self.client = litellm
 
         if DEBUG:
             print(f"Initialized LLMClient with provider={self.provider}, model={self.model}")
@@ -127,7 +127,7 @@ class LLMClient:
             
         except Exception as e:
             if DEBUG:
-                print(f"LittleLLM error: {str(e)}")
+                print(f"LiteLLM error: {str(e)}")
             # Let the caller handle the exception with its error mapping
             raise e
 
@@ -135,7 +135,7 @@ class LLMClient:
         self, messages: List[Dict[str, Any]], system: str = None
     ) -> List[Dict[str, Any]]:
         """
-        Transform messages to the format expected by LittleLLM.
+        Transform messages to the format expected by LiteLLM.
 
         Args:
             messages: Original messages in Anthropic format
@@ -197,16 +197,16 @@ class LLMClient:
                 transformed.append({"role": role, "content": content})
         
         if DEBUG:
-            print(f"Transformed {len(messages)} messages for LittleLLM")
+            print(f"Transformed {len(messages)} messages for LiteLLM")
         
         return transformed
 
     def _transform_response(self, response: Any, stream: bool = False) -> Any:
         """
-        Transform LittleLLM response to match Anthropic API format.
+        Transform LiteLLM response to match Anthropic API format.
 
         Args:
-            response: The response from LittleLLM
+            response: The response from LiteLLM
             stream: Whether the response is streaming
 
         Returns:
@@ -299,10 +299,10 @@ class LLMClient:
     
     def _transform_streaming_response(self, streaming_response):
         """
-        Transform a streaming response from LittleLLM to match Anthropic's streaming format.
+        Transform a streaming response from LiteLLM to match Anthropic's streaming format.
         
         Args:
-            streaming_response: The streaming response from LittleLLM
+            streaming_response: The streaming response from LiteLLM
             
         Returns:
             Generator that yields transformed response chunks

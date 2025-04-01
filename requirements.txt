@@ -1,5 +1,5 @@
 anthropic
-littlellm>=1.65.1
+litellm>=1.65.1
 rich
 prompt_toolkit
 requests

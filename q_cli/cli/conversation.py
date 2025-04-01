@@ -432,7 +432,7 @@ def run_conversation(
                         # Otherwise add the empty input to trigger a Claude response
                         conversation.append({"role": "user", "content": next_question})
 
-                except (anthropic.APIStatusError, littlellm.exceptions.APIError) as e:
+                except (anthropic.APIStatusError, litellm.exceptions.APIError) as e:
                     # Pass directly to handle_api_error with exit_on_error=True for all API errors
                     # This ensures consistent handling and will exit on non-recoverable errors
                     handle_api_error(e, console)

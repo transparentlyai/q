@@ -166,7 +166,7 @@ def handle_api_error(
         True if error is a rate limit error that can be retried, False otherwise
     """
     import anthropic
-    import littlellm
+    import litellm
     import os
     import sys
     import json
@@ -223,8 +223,8 @@ def handle_api_error(
         console.print(
             "[bold red]Timeout error: The request to LLM provider API timed out.[/bold red]"
         )
-    # Handle LittleLLM-specific errors
-    elif isinstance(e, littlellm.exceptions.APIError):
+    # Handle LiteLLM-specific errors
+    elif isinstance(e, litellm.exceptions.APIError):
         if "401" in str(e) or "Unauthorized" in str(e) or "authentication" in str(e).lower():
             console.print(
                 "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
@@ -245,7 +245,7 @@ def handle_api_error(
             console.print(
                 f"[bold red]Error communicating with LLM provider: {str(e)}[/bold red]"
             )
-    elif isinstance(e, littlellm.exceptions.RateLimitError):
+    elif isinstance(e, litellm.exceptions.RateLimitError):
         console.print(
             f"[bold yellow]Rate limit exceeded: {str(e)}[/bold yellow]"
         )
@@ -257,11 +257,11 @@ def handle_api_error(
                 "[yellow]Waiting to retry after rate limit cooldown...[/yellow]"
             )
             return is_rate_limit_error
-    elif isinstance(e, littlellm.exceptions.ContentFilterError):
+    elif isinstance(e, litellm.exceptions.ContentFilterError):
         console.print(
             f"[bold red]Content filter error: {str(e)}[/bold red]"
         )
-    elif isinstance(e, littlellm.exceptions.AuthenticationError):
+    elif isinstance(e, litellm.exceptions.AuthenticationError):
         console.print(
             "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
         )
