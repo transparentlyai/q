@@ -74,44 +74,17 @@ def run_conversation(
     token_tracker = TokenRateTracker()
 
     try:
-        # Check if initial question is "recover" and handle it separately
-        if initial_question.strip().lower() == RECOVER_COMMAND and session_manager:
-            console.print("[green]Processing recovery command...[/green]")
-
-            # Load previous session, keeping a limited number of turns
-            prev_conversation, prev_system_prompt, _ = session_manager.load_session(
-                max_turns=MAX_HISTORY_TURNS
+        # The 'recover' command in interactive mode has been removed.
+        # We only process 'recover' as a CLI flag.
+        if initial_question.strip().lower() == RECOVER_COMMAND:
+            console.print(
+                "[yellow]The 'recover' command is no longer available in interactive mode.[/yellow]"
             )
-
-            if prev_conversation and prev_system_prompt:
-                # Show session info
-                console.print(
-                    f"[green]Found previous session with {len(prev_conversation)} messages[/green]"
-                )
-                console.print("\nUse this session? (yes/no): ", end="")
-                confirm = input().strip().lower()
-
-                if confirm == "yes":
-                    # Use the recovered conversation instead
-                    conversation.clear()
-                    conversation.extend(prev_conversation)
-                    console.print(
-                        f"[green]Loaded {len(prev_conversation)} messages from previous session[/green]"
-                    )
-                    console.print(
-                        "[green]Type your next message to continue with the recovered session.[/green]"
-                    )
-
-                    # Get a new initial question
-                    initial_question = get_input("Q> ", session=prompt_session)
-                else:
-                    # User declined, get a new question
-                    console.print("[yellow]Recovery cancelled[/yellow]")
-                    initial_question = get_input("Q> ", session=prompt_session)
-            else:
-                # No session found
-                console.print("[yellow]No previous session found to recover[/yellow]")
-                initial_question = get_input("Q> ", session=prompt_session)
+            console.print(
+                "[yellow]Please use 'q --recover' from the command line instead.[/yellow]"
+            )
+            # Get a new initial question
+            initial_question = get_input("Q> ", session=prompt_session)
 
         # Now process the initial question (either original or new after recovery)
         if initial_question.strip():
@@ -432,10 +405,7 @@ def run_conversation(
                         sys.exit(0)
 
                     # Check for special internal command marker
-                    if (
-                        next_question.startswith("[INTERNAL_COMMAND_COMPLETED:")
-                        or next_question.strip().lower() == "recover"
-                    ):
+                    if next_question.startswith("[INTERNAL_COMMAND_COMPLETED:"):
                         # This is a special message indicating an internal command completed
                         # We should not send this to Claude, just continue to the next user input
                         console.print(
@@ -920,68 +890,7 @@ def handle_next_input(
     while True:
         question = get_input("Q> ", session=prompt_session)
 
-        # Handle 'recover' command
-        if question.strip().lower() == RECOVER_COMMAND and session_manager:
-            console.print(
-                "[green]Attempting to recover previous session history...[/green]"
-            )
-
-            # Load the previous session data, keeping a limited number of turns
-            prev_conversation, prev_system_prompt, _ = session_manager.load_session(
-                max_turns=MAX_HISTORY_TURNS
-            )
-
-            if not prev_conversation or not prev_system_prompt:
-                console.print("[yellow]No previous session found to recover[/yellow]")
-                # Return a non-empty, non-command string to avoid Claude interpreting it
-                return (
-                    "The recovery command has completed. No previous session was found."
-                )
-
-            # Show session info
-            console.print(
-                f"[green]Found previous session with {len(prev_conversation)} messages[/green]"
-            )
-
-            # Ask for confirmation
-            console.print(
-                "\nMerge this history with current conversation? (yes/no): ", end=""
-            )
-            confirm = input().strip().lower()
-
-            if confirm != "yes":
-                console.print("[yellow]Recovery cancelled[/yellow]")
-                # Return a non-empty, non-command string to avoid Claude interpreting it
-                return (
-                    "The recovery command has completed. The operation was cancelled."
-                )
-
-            # Add previous conversation messages to the current conversation
-            # Skip if we're at the start of a conversation (don't duplicate)
-            if len(conversation) <= 1:
-                # Clear current conversation and use the recovered one
-                conversation.clear()
-                conversation.extend(prev_conversation)
-                console.print(
-                    f"[green]Loaded {len(prev_conversation)} messages from previous session[/green]"
-                )
-            else:
-                # We're in an active conversation, so we'll preserve it
-                # and append the previous conversation history at the beginning
-                current_messages = len(conversation)
-                for msg in reversed(prev_conversation):
-                    conversation.insert(0, msg)
-                console.print(
-                    f"[green]Added {len(prev_conversation)} messages to current conversation[/green]"
-                )
-
-            # Let the user know recovery is complete, return specifically formatted message
-            console.print("\n[bold green]Session recovered successfully.[/bold green]")
-            console.print(
-                "[green]Type your next message to continue with the recovered session.[/green]"
-            )
-            # Return special message that will be recognized as internal
-            return "[INTERNAL_COMMAND_COMPLETED: Session recovery finished. No message to send to Claude.]"
+        # The 'recover' command in interactive mode has been removed
 
         # Handle save command
         if question.strip().lower().startswith(SAVE_COMMAND_PREFIX):
