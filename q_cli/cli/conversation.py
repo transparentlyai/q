@@ -809,12 +809,27 @@ def handle_next_input(
             from q_cli.io.config import read_config_file
             from q_cli.utils.permissions import CommandPermissionManager
             
-            # Get API key (using the one that's already in use for the current session)
-            # Note: In a real implementation, we'd want to handle this more gracefully
-            client = anthropic.Anthropic()
+            # We need to get the API key from the client that's already in use
+            # Since we can't access it directly in the current client due to scoping,
+            # we need to use the same approach used in main.py
+            from q_cli.io.config import read_config_file
+            
+            # Get configuration needed to initialize the client
+            config_api_key, _, config_vars = read_config_file(console)
+            api_key = os.environ.get("ANTHROPIC_API_KEY") or config_api_key
+            
+            if not api_key:
+                console.print("[red]Error: Cannot retrieve API key for recovery[/red]")
+                return ""
+                
+            # Initialize a new client with the API key
+            client = anthropic.Anthropic(api_key=api_key)
+            
+            # Set up permission manager
+            permission_manager = CommandPermissionManager.from_config(config_vars)
             
             # Attempt to recover
-            recovered = recover_session(client, args, prompt_session, console, None)
+            recovered = recover_session(client, args, prompt_session, console, permission_manager)
             if not recovered:
                 console.print("[yellow]Could not recover session. Continuing current conversation.[/yellow]")
             
