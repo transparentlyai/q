@@ -11,6 +11,7 @@ from rich.console import Console
 
 from q_cli.utils.constants import (
     SAVE_COMMAND_PREFIX,
+    RECOVER_COMMAND,
     DEBUG,
     HISTORY_PATH,
     ESSENTIAL_PRIORITY,
@@ -45,6 +46,8 @@ def run_conversation(
     permission_manager: Optional[CommandPermissionManager] = None,
     context_manager: Optional[ContextManager] = None,
     auto_approve: bool = False,
+    conversation: Optional[List[Dict[str, Any]]] = None,
+    session_manager = None,
 ) -> None:
     """
     Run the continuous conversation loop with Claude.
@@ -57,9 +60,14 @@ def run_conversation(
         console: Console for output
         initial_question: First question to send to Claude
         permission_manager: Optional manager for command permissions
+        context_manager: Optional context manager
+        auto_approve: Whether to auto-approve commands
+        conversation: Optional existing conversation to continue
+        session_manager: Optional session manager for saving state
     """
-    # Initialize conversation history
-    conversation: List[Dict[str, Any]] = []
+    # Initialize conversation history or use provided conversation
+    if conversation is None:
+        conversation: List[Dict[str, Any]] = []
     
     # Initialize token rate tracker to monitor rate limits
     token_tracker = TokenRateTracker()
@@ -129,17 +137,18 @@ def run_conversation(
                                         messages=conversation,  # type: ignore
                                     )
                                     
-                                    # Record token usage
+                                    # Record token usage with response completion timestamp
+                                    response_time = time.time()
                                     if hasattr(message, "usage") and message.usage:
                                         # If the API returns actual usage info, use that
                                         if hasattr(message.usage, "input_tokens"):
-                                            token_tracker.add_usage(message.usage.input_tokens)
+                                            token_tracker.add_usage(message.usage.input_tokens, response_time)
                                         else:
                                             # Otherwise use our estimate
-                                            token_tracker.add_usage(total_input_tokens)
+                                            token_tracker.add_usage(total_input_tokens, response_time)
                                     else:
                                         # Fall back to our estimate
-                                        token_tracker.add_usage(total_input_tokens)
+                                        token_tracker.add_usage(total_input_tokens, response_time)
                                     
                                     # Success, break out of the retry loop
                                     break
@@ -229,6 +238,14 @@ def run_conversation(
                             f"Assistant response: {response_summary}",
                             ESSENTIAL_PRIORITY,
                             "Assistant response",
+                        )
+                    
+                    # Save the session after each assistant response
+                    if session_manager:
+                        session_manager.save_session(
+                            conversation=conversation,
+                            system_prompt=system_prompt,
+                            context_manager=context_manager
                         )
 
                     # Process response for display (handle URL markers, file write markers)
@@ -333,7 +350,7 @@ def run_conversation(
 
                     # Get next user input
                     next_question = handle_next_input(
-                        args, prompt_session, conversation, console
+                        args, prompt_session, conversation, console, session_manager
                     )
 
                     # Check for exit command
@@ -760,8 +777,9 @@ def process_response_operations(
 def handle_next_input(
     args,
     prompt_session: PromptSession,
-    conversation: List[Dict[str, str]],
+    conversation: List[Dict[str, Any]],
     console: Console,
+    session_manager = None,
 ) -> str:
     """
     Handle the next input from the user, including save commands.
@@ -771,6 +789,7 @@ def handle_next_input(
         prompt_session: PromptSession for input
         conversation: Current conversation history
         console: Rich console
+        session_manager: Optional session manager for special commands
 
     Returns:
         The next question from the user
@@ -778,6 +797,30 @@ def handle_next_input(
     while True:
         question = get_input("Q> ", session=prompt_session)
 
+        # Handle 'recover' command
+        if question.strip().lower() == RECOVER_COMMAND and session_manager:
+            console.print("[green]Attempting to recover from latest session...[/green]")
+            from q_cli.utils.session.manager import recover_session
+            
+            # Import locally to avoid circular imports
+            import anthropic
+            import os
+            from q_cli.utils.constants import DEFAULT_MODEL
+            from q_cli.io.config import read_config_file
+            from q_cli.utils.permissions import CommandPermissionManager
+            
+            # Get API key (using the one that's already in use for the current session)
+            # Note: In a real implementation, we'd want to handle this more gracefully
+            client = anthropic.Anthropic()
+            
+            # Attempt to recover
+            recovered = recover_session(client, args, prompt_session, console, None)
+            if not recovered:
+                console.print("[yellow]Could not recover session. Continuing current conversation.[/yellow]")
+            
+            # Empty string to trigger new input prompt
+            return ""
+        
         # Handle save command
         if question.strip().lower().startswith(SAVE_COMMAND_PREFIX):
             # Extract the file path from the save command

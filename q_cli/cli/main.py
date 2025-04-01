@@ -37,8 +37,60 @@ def main() -> None:
     # Handle the update command if specified
     if args.update:
         from q_cli.cli.args import update_command
-
         update_command()
+        
+    # Initialize console for output early for recover command
+    console = setup_console()
+        
+    # Handle the recover command if specified
+    if args.recover:
+        from q_cli.utils.session.manager import recover_session
+        
+        # Initialize necessary components for recovery
+        # Get API key and config vars from config file
+        config_api_key, _, config_vars = read_config_file(console)
+        
+        # Use API key from args, config file, or environment variable
+        api_key = args.api_key or config_api_key or os.environ.get("ANTHROPIC_API_KEY")
+        
+        # Set model from args, config file, or default
+        if not args.model:
+            args.model = config_vars.get("MODEL", DEFAULT_MODEL)
+            
+        # Check for API key
+        if not api_key:
+            console.print(
+                "[bold red]Error: Anthropic API key not provided. Add to ~/.config/q.conf, set ANTHROPIC_API_KEY environment variable, or use --api-key[/bold red]"
+            )
+            sys.exit(1)
+            
+        try:
+            # Initialize Anthropic client
+            client = anthropic.Anthropic(api_key=api_key)
+            
+            # Set up prompt session for input
+            prompt_session = create_prompt_session(console)
+            
+            # Set up permission manager
+            permission_manager = CommandPermissionManager.from_config(config_vars)
+            
+            # Always add default commands
+            permission_manager.always_approved_commands.update(DEFAULT_ALWAYS_APPROVED_COMMANDS)
+            permission_manager.always_restricted_commands.update(DEFAULT_ALWAYS_RESTRICTED_COMMANDS)
+            permission_manager.prohibited_commands.update(DEFAULT_PROHIBITED_COMMANDS)
+            
+            # Attempt to recover the session
+            if recover_session(client, args, prompt_session, console, permission_manager):
+                # If recovery was successful and conversation started, exit
+                sys.exit(0)
+            # Otherwise fall through to normal startup
+            
+        except Exception as e:
+            console.print(f"[bold red]Error during session recovery: {str(e)}[/bold red]")
+            if DEBUG:
+                import traceback
+                console.print(f"[red]{traceback.format_exc()}[/red]")
+            # Continue with normal startup
 
     # Initialize console for output
     console = setup_console()
@@ -188,6 +240,10 @@ def main() -> None:
         console.print(dry_run_output)
         sys.exit(0)
 
+    # Initialize session manager for saving conversation state
+    from q_cli.utils.session.manager import SessionManager
+    session_manager = SessionManager(console)
+    
     # Run the conversation with improved error handling
     try:
         run_conversation(
@@ -200,6 +256,7 @@ def main() -> None:
             permission_manager,
             context_manager=context_manager,
             auto_approve=auto_approve,
+            session_manager=session_manager,
         )
     except (KeyboardInterrupt, EOFError):
         # Handle Ctrl+C or Ctrl+D gracefully at the top level
