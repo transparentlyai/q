@@ -51,6 +51,7 @@ class SessionManager:
     ) -> bool:
         """
         Save the current conversation session to a file.
+        Only keeps the most recent MAX_HISTORY_TURNS of conversation history.
 
         Args:
             conversation: List of conversation messages
@@ -60,11 +61,49 @@ class SessionManager:
         Returns:
             True if session was saved successfully, False otherwise
         """
+        from q_cli.utils.constants import MAX_HISTORY_TURNS
+
         try:
+            # Make a copy of the conversation to avoid modifying the original
+            conversation_copy = conversation.copy()
+
+            # Trim conversation to keep only the most recent turns
+            if MAX_HISTORY_TURNS > 0 and conversation_copy:
+                # Count user messages to determine turns
+                user_msg_indexes = [
+                    i
+                    for i, msg in enumerate(conversation_copy)
+                    if msg.get("role") == "user"
+                ]
+
+                # If we have more user messages than our max turns limit
+                if len(user_msg_indexes) > MAX_HISTORY_TURNS:
+                    # Calculate where to start (keep last MAX_HISTORY_TURNS)
+                    # We want to keep user messages from this index and forward
+                    start_index = user_msg_indexes[-(MAX_HISTORY_TURNS)]
+
+                    # If this is not the first message, we need to make sure we start with a user message
+                    if (
+                        start_index > 0
+                        and conversation_copy[start_index - 1].get("role")
+                        == "assistant"
+                    ):
+                        # Adjust to include the preceding assistant message to maintain conversation flow
+                        start_index -= 1
+
+                    # Keep only the most recent messages
+                    conversation_copy = conversation_copy[start_index:]
+
+                    if DEBUG:
+                        self.console.print(
+                            f"[dim]Trimmed conversation history to last {MAX_HISTORY_TURNS} turns "
+                            f"({len(conversation_copy)} messages)[/dim]"
+                        )
+
             # Create session data structure
             session_data = {
                 "timestamp": time.time(),
-                "conversation": conversation,
+                "conversation": conversation_copy,
                 "system_prompt": system_prompt,
             }
 
@@ -108,6 +147,7 @@ class SessionManager:
         Args:
             max_turns: Maximum number of conversation turns to load (default: 5)
                        A turn consists of a user message and its corresponding assistant response
+                       Use 0 to load all available turns
 
         Returns:
             Tuple containing:
@@ -143,6 +183,7 @@ class SessionManager:
                     context_data = session_data.get("context_data", None)
 
                     # Apply max_turns limit - keep only the most recent turns
+                    # Special case: max_turns = 0 means load all available turns
                     if max_turns > 0 and conversation:
                         # Count user messages to determine turns
                         user_msg_indexes = [
@@ -264,23 +305,28 @@ def recover_session(
         True if session was recovered and conversation started, False otherwise
     """
     from q_cli.cli.conversation import run_conversation
+    from q_cli.utils.constants import MAX_HISTORY_TURNS, DEFAULT_MAX_TOKENS
+    from q_cli.io.input import get_input
+
+    # Make sure args has max_tokens attribute
+    if not hasattr(args, "max_tokens"):
+        args.max_tokens = DEFAULT_MAX_TOKENS
 
     # Create session manager
     session_manager = SessionManager(console)
 
-    # Load session
-    conversation, system_prompt, context_data = session_manager.load_session()
+    # Load session first to check if there's anything to recover
+    conversation, system_prompt, context_data = session_manager.load_session(
+        MAX_HISTORY_TURNS
+    )
 
     if not conversation or not system_prompt:
         console.print("[yellow]No previous session found to recover[/yellow]")
         return False
 
-    # Restore context manager if data is available
-    context_manager = (
-        session_manager.restore_context_manager(context_data, console)
-        if context_data
-        else None
-    )
+    # Count available turns
+    user_messages = [msg for msg in conversation if msg.get("role") == "user"]
+    available_turns = len(user_messages)
 
     # Show session info
     last_user_msg = None
@@ -298,6 +344,7 @@ def recover_session(
     # Display recovery information
     console.print("[bold green]Recovering previous session[/bold green]")
     console.print(f"[dim]Found {len(conversation)} messages in the conversation[/dim]")
+    console.print(f"[dim]Available conversation turns: {available_turns}[/dim]")
 
     if last_user_msg:
         console.print("[bold]Last user message:[/bold]")
@@ -309,20 +356,59 @@ def recover_session(
     console.print(
         "\nType 'yes' to continue this conversation, or anything else to start fresh: "
     )
-    
+
     # Use get_input from input module to handle possible EOFError
-    from q_cli.io.input import get_input
     confirm = get_input("", prompt_session).strip().lower()
 
     if confirm != "yes":
         console.print("[yellow]Session recovery cancelled[/yellow]")
         return False
 
+    # Ask how many turns to recover
+    turns_to_recover = MAX_HISTORY_TURNS
+    if available_turns > 1:
+        console.print(
+            f"\n[bold]How many conversation turns would you like to recover (1-{available_turns})? [/bold]"
+        )
+        console.print(
+            f"[dim]Default is {MAX_HISTORY_TURNS} if available, or all available turns otherwise.[/dim]"
+        )
+
+        turn_input = get_input("Turns to recover: ", prompt_session).strip()
+
+        if turn_input:
+            try:
+                requested_turns = int(turn_input)
+                if 1 <= requested_turns <= available_turns:
+                    turns_to_recover = requested_turns
+                else:
+                    console.print(
+                        f"[yellow]Invalid number. Using default ({min(MAX_HISTORY_TURNS, available_turns)} turns).[/yellow]"
+                    )
+                    turns_to_recover = min(MAX_HISTORY_TURNS, available_turns)
+            except ValueError:
+                console.print(
+                    f"[yellow]Invalid input. Using default ({min(MAX_HISTORY_TURNS, available_turns)} turns).[/yellow]"
+                )
+                turns_to_recover = min(MAX_HISTORY_TURNS, available_turns)
+
+    # Reload the session with the requested number of turns
+    conversation, system_prompt, context_data = session_manager.load_session(
+        turns_to_recover
+    )
+
+    # Restore context manager if data is available
+    context_manager = (
+        session_manager.restore_context_manager(context_data, console)
+        if context_data
+        else None
+    )
+
     # Get an initial question to restart the conversation
     console.print(
         "[green]Session recovered. Type your next message to continue:[/green]"
     )
-    
+
     # Use get_input from input module to handle possible EOFError
     initial_question = get_input("Q> ", prompt_session).strip()
 
