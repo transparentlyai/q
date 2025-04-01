@@ -357,6 +357,13 @@ def run_conversation(
                     if next_question.strip().lower() in ["exit", "quit"]:
                         sys.exit(0)
 
+                    # Check for special internal command marker
+                    if next_question.startswith("[INTERNAL_COMMAND_COMPLETED:"):
+                        # This is a special message indicating an internal command completed
+                        # We should not send this to Claude, just continue to the next user input
+                        console.print("[dim]Session recovery complete. Enter your next message.[/dim]")
+                        continue
+                        
                     # Add user input to conversation and context manager
                     if next_question.strip():
                         conversation.append({"role": "user", "content": next_question})
@@ -806,7 +813,8 @@ def handle_next_input(
             
             if not prev_conversation or not prev_system_prompt:
                 console.print("[yellow]No previous session found to recover[/yellow]")
-                return ""
+                # Return a non-empty, non-command string to avoid Claude interpreting it
+                return "The recovery command has completed. No previous session was found."
                 
             # Show session info
             console.print(f"[green]Found previous session with {len(prev_conversation)} messages[/green]")
@@ -817,7 +825,8 @@ def handle_next_input(
             
             if confirm != "yes":
                 console.print("[yellow]Recovery cancelled[/yellow]")
-                return ""
+                # Return a non-empty, non-command string to avoid Claude interpreting it
+                return "The recovery command has completed. The operation was cancelled."
                 
             # Add previous conversation messages to the current conversation
             # Skip if we're at the start of a conversation (don't duplicate)
@@ -834,10 +843,11 @@ def handle_next_input(
                     conversation.insert(0, msg)
                 console.print(f"[green]Added {len(prev_conversation)} messages to current conversation[/green]")
             
-            # Prompt for the next question without sending anything to Claude
-            console.print("\n[bold green]Session recovered. Enter your next question to continue:[/bold green]")
-            next_question = get_input("Q> ", session=prompt_session)
-            return next_question
+            # Let the user know recovery is complete, return specifically formatted message
+            console.print("\n[bold green]Session recovered successfully.[/bold green]")
+            console.print("[green]Type your next message to continue with the recovered session.[/green]")
+            # Return special message that will be recognized as internal
+            return "[INTERNAL_COMMAND_COMPLETED: Session recovery finished. No message to send to Claude.]"
         
         # Handle save command
         if question.strip().lower().startswith(SAVE_COMMAND_PREFIX):
