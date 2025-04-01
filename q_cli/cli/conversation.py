@@ -834,8 +834,10 @@ def handle_next_input(
                     conversation.insert(0, msg)
                 console.print(f"[green]Added {len(prev_conversation)} messages to current conversation[/green]")
             
-            # Empty string to trigger new input prompt
-            return ""
+            # Prompt for the next question without sending anything to Claude
+            console.print("\n[bold green]Session recovered. Enter your next question to continue:[/bold green]")
+            next_question = get_input("Q> ", session=prompt_session)
+            return next_question
         
         # Handle save command
         if question.strip().lower().startswith(SAVE_COMMAND_PREFIX):
