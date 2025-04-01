@@ -1,6 +1,6 @@
 # q - The Command Line LLM Assistant
 
-A simple command-line tool for sending questions to Q AI and getting beautifully formatted responses in your terminal. Now with support for multiple LLM providers via LittleLLM.
+A simple command-line tool for sending questions to Q AI and getting beautifully formatted responses in your terminal. Now with support for multiple LLM providers via LiteLLM.
 
 **Author:** [mauro@transparently.ai](mailto:mauro@transparently.ai)
 
@@ -9,7 +9,7 @@ A simple command-line tool for sending questions to Q AI and getting beautifully
 - 🌟 Interactive mode with persistent conversation history
 - 💻 Beautiful terminal formatting with syntax highlighting, code blocks, and more
 - 📃 Markdown rendering for responses
-- 🤖 Support for multiple LLM providers via LittleLLM (Anthropic, VertexAI, Groq)
+- 🤖 Support for multiple LLM providers via LiteLLM (Anthropic, VertexAI, Groq, OpenAI)
 - 🔐 Multiple API key sources (config file, environment variable, command-line)
 - 📋 Context management via config file with environment variable support
 - 💾 Load questions from file and save responses to file
@@ -55,12 +55,27 @@ For a complete example of all available configuration options, refer to the [exa
 ### Supported Configuration Variables
 
 #### Provider Configuration
-- `PROVIDER`: LLM provider to use (supported: "anthropic", "vertexai", "groq")
+- `PROVIDER`: LLM provider to use (supported: "anthropic", "vertexai", "groq", "openai")
 - `ANTHROPIC_API_KEY`: Your Anthropic API key (for Claude models)
-- `VERTEXAI_API_KEY`: Your VertexAI API key (for Gemini models)
+- `VERTEXAI_API_KEY`: Path to your VertexAI service account JSON file (for Gemini models)
+- `VERTEXAI_PROJECT`: Your Google Cloud project ID (required for VertexAI)
+- `VERTEXAI_LOCATION`: Your Google Cloud region (required for VertexAI, e.g., "us-central1")
 - `GROQ_API_KEY`: Your Groq API key (for Llama and other models)
-- `MODEL`: Default model to use (provider-specific, e.g., "claude-3-7-sonnet-latest", "gemini-1.5-pro", "llama3-70b-8192")
-- `MAX_TOKENS`: Maximum number of tokens in the response (default: 4096)
+- `OPENAI_API_KEY`: Your OpenAI API key (for GPT models)
+- `MODEL`: Default model to use (provider-specific, e.g., "claude-3-7-sonnet-latest", "gemini-2.0-flash-001", "deepseek-r1-distill-llama-70b", "gpt-4o-mini")
+- `MAX_TOKENS`: Global maximum number of tokens in the response (default: 8192)
+- `ANTHROPIC_MAX_TOKENS`: Maximum output tokens specifically for Anthropic provider (default: 8192)
+- `VERTEXAI_MAX_TOKENS`: Maximum output tokens specifically for VertexAI provider (default: 8192)
+- `GROQ_MAX_TOKENS`: Maximum output tokens specifically for Groq provider (default: 8192)
+- `OPENAI_MAX_TOKENS`: Maximum output tokens specifically for OpenAI provider (default: 8192)
+- `ANTHROPIC_MAX_CONTEXT_TOKENS`: Maximum context tokens for Anthropic provider (default: 200000)
+- `VERTEXAI_MAX_CONTEXT_TOKENS`: Maximum context tokens for VertexAI provider (default: 1000000)
+- `GROQ_MAX_CONTEXT_TOKENS`: Maximum context tokens for Groq provider (default: 200000)
+- `OPENAI_MAX_CONTEXT_TOKENS`: Maximum context tokens for OpenAI provider (default: 200000)
+- `ANTHROPIC_MAX_TOKENS_PER_MIN`: Rate limit for Anthropic in tokens per minute (default: 80000)
+- `VERTEXAI_MAX_TOKENS_PER_MIN`: Rate limit for VertexAI in tokens per minute (default: 80000)
+- `GROQ_MAX_TOKENS_PER_MIN`: Rate limit for Groq in tokens per minute (default: 80000)
+- `OPENAI_MAX_TOKENS_PER_MIN`: Rate limit for OpenAI in tokens per minute (default: 80000)
 
 #### Command Permission Configuration
 - `ALWAYS_APPROVED_COMMANDS`: List of commands that will always be executed without asking for permission (JSON array format)
@@ -73,11 +88,39 @@ See the [example configuration file](https://github.com/transparentlyai/q/blob/m
 
 Environment variables in the config file are expanded using the syntax `$VAR` or `${VAR}`.
 
-#### Recommended Models by Provider:
+#### Provider-Specific Information
+
+> **Important Note for VertexAI Users:** VertexAI requires **three** configuration settings to work properly:
+> 1. A service account JSON file path (set as `VERTEXAI_API_KEY`)
+> 2. A Google Cloud project ID (set as `VERTEXAI_PROJECT`)
+> 3. A region/location (set as `VERTEXAI_LOCATION`)
+> 
+> Missing any of these will result in authentication errors.
+
+##### Recommended Models by Provider:
 - **Anthropic**: `claude-3-7-sonnet-latest` (default), `claude-3-haiku-latest`, `claude-3-opus-latest`
   - Check the available Claude models here: https://docs.anthropic.com/en/docs/about-claude/models/all-models
 - **VertexAI**: `gemini-2.0-flash-001` (default), `gemini-1.5-pro`, `gemini-1.5-flash`
+  - Check available Gemini models here: https://cloud.google.com/vertex-ai/docs/generative-ai/learn/models
 - **Groq**: `deepseek-r1-distill-llama-70b` (default), `llama3-70b-8192`, `llama3-8b-8192`, `mixtral-8x7b-32768`
+  - Check Groq's model lineup here: https://console.groq.com/docs/models
+- **OpenAI**: `gpt-4o-mini` (default), `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo`
+  - Check OpenAI models here: https://platform.openai.com/docs/models
+
+##### Context Windows by Provider:
+- **Anthropic Claude**: 200K tokens (Claude 3 models)
+- **VertexAI Gemini**: 1M tokens (Gemini 1.5 and 2.0 models)
+- **Groq models**: Varies by model (8K-32K tokens)
+- **OpenAI models**: Varies by model (8K-128K tokens)
+
+##### Authentication Requirements:
+- **Anthropic**: API key only
+- **VertexAI**: 
+  - Service account JSON file (specified in `VERTEXAI_API_KEY`)
+  - Project ID (required, specified in `VERTEXAI_PROJECT`)
+  - Location (required, specified in `VERTEXAI_LOCATION`)
+- **Groq**: API key only
+- **OpenAI**: API key only
 
 ⚠️ **Security Warning:** 
 - Never include API keys or sensitive information in your context section or context files
@@ -105,6 +148,9 @@ q --provider vertexai "What is the meaning of life?"
 # Specify provider and model
 q --provider groq -m llama3-70b-8192 "What is the meaning of life?"
 
+# Use OpenAI provider
+q --provider openai -m gpt-4o "What is the meaning of life?"
+
 # Disable interactive mode
 q -i "Tell me a joke"
 
@@ -122,6 +168,36 @@ q -e
 
 # Check the version
 q -v
+
+# Provider-specific examples
+# VertexAI with service account
+q --provider vertexai --api-key /path/to/service-account.json \
+  --env VERTEXAI_PROJECT=my-gcp-project --env VERTEXAI_LOCATION=us-central1 \
+  "Tell me about Google Cloud"
+```
+
+### Using Environment Variables for Authentication
+
+You can also set environment variables directly to authenticate with different providers:
+
+```bash
+# Anthropic
+export ANTHROPIC_API_KEY=your_api_key
+q --provider anthropic "Your question here"
+
+# VertexAI 
+export VERTEXAI_API_KEY=/path/to/service-account.json
+export VERTEXAI_PROJECT=your-gcp-project-id
+export VERTEXAI_LOCATION=us-central1
+q --provider vertexai "Your question here"
+
+# Groq
+export GROQ_API_KEY=your_api_key
+q --provider groq "Your question here"
+
+# OpenAI
+export OPENAI_API_KEY=your_api_key
+q --provider openai "Your question here"
 ```
 
 ## Interactive Mode Features

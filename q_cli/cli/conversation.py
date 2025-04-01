@@ -5,8 +5,15 @@ import sys
 import base64
 import time
 from typing import List, Dict, Optional, Any
-import anthropic
+import litellm
 from q_cli.utils.client import LLMClient
+
+# Import anthropic for backward compatibility only
+try:
+    import anthropic
+    has_anthropic = True
+except ImportError:
+    has_anthropic = False
 from prompt_toolkit import PromptSession
 from rich.console import Console
 
@@ -39,7 +46,7 @@ from q_cli.utils.web import process_urls_in_response
 
 
 def run_conversation(
-    client: Any,  # Changed from anthropic.Anthropic to support any client implementation
+    client: Any,  # Client implementation supporting any LLM provider
     system_prompt: str,
     args,
     prompt_session: PromptSession,
@@ -71,8 +78,30 @@ def run_conversation(
     if conversation is None:
         conversation: List[Dict[str, Any]] = []
 
-    # Initialize token rate tracker to monitor rate limits
-    token_tracker = TokenRateTracker()
+    # Initialize token rate tracker to monitor rate limits with provider-specific rate limit
+    from q_cli.utils.constants import (
+        ANTHROPIC_MAX_TOKENS_PER_MIN,
+        VERTEXAI_MAX_TOKENS_PER_MIN,
+        GROQ_MAX_TOKENS_PER_MIN,
+        OPENAI_MAX_TOKENS_PER_MIN,
+        DEFAULT_PROVIDER,
+    )
+    
+    # Set the appropriate rate limit based on the provider
+    provider = getattr(args, "provider", DEFAULT_PROVIDER)
+    if provider == "anthropic":
+        max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
+    elif provider == "vertexai":
+        max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
+    elif provider == "groq":
+        max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
+    elif provider == "openai":
+        max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
+    else:
+        # Default to Anthropic's rate limit
+        max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
+        
+    token_tracker = TokenRateTracker(max_tokens_per_min)
 
     try:
         # The 'recover' command in interactive mode has been removed.
@@ -432,25 +461,25 @@ def run_conversation(
                         # Otherwise add the empty input to trigger a Claude response
                         conversation.append({"role": "user", "content": next_question})
 
-                except (anthropic.APIStatusError, litellm.exceptions.APIError) as e:
+                except litellm.exceptions.APIError as e:
                     # Pass directly to handle_api_error with exit_on_error=True for all API errors
                     # This ensures consistent handling and will exit on non-recoverable errors
                     handle_api_error(e, console)
-
-                    # If we get here (unlikely as handle_api_error with exit_on_error=True should exit),
-                    # add error message to conversation
-                    error_message = f"An error occurred: {str(e)}"
-                    conversation.append({"role": "user", "content": error_message})
+                # For backward compatibility with legacy API usage
                 except Exception as e:
-                    # For non-API errors, handle differently
-                    console.print(f"[bold red]Error: {str(e)}[/bold red]")
+                    # Check if this is a legacy API-specific error
+                    if has_anthropic and isinstance(e, anthropic.APIStatusError):
+                        handle_api_error(e, console)
+                    else:
+                        # For non-API errors, handle differently
+                        console.print(f"[bold red]Error: {str(e)}[/bold red]")
 
-                    if DEBUG:
-                        console.print(f"[bold red]Error details: {e}[/bold red]")
+                        if DEBUG:
+                            console.print(f"[bold red]Error details: {e}[/bold red]")
 
-                    # Add error message to conversation
-                    error_message = f"An error occurred: {str(e)}"
-                    conversation.append({"role": "user", "content": error_message})
+                        # Add error message to conversation
+                        error_message = f"An error occurred: {str(e)}"
+                        conversation.append({"role": "user", "content": error_message})
 
     except (KeyboardInterrupt, EOFError):
         # Handle Ctrl+C or Ctrl+D gracefully

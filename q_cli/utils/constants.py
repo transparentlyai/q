@@ -3,24 +3,40 @@
 import os
 
 # Environment variables
-DEBUG = os.environ.get("Q_DEBUG", "false").lower() == "true"
+DEBUG = os.environ.get("Q_DEBUG", "false").lower() in ["true", "1", "yes", "y", "on"]
 
 # Model Constants
 # Keep model name as is for API compatibility
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
-DEFAULT_MAX_TOKENS = 4096
+DEFAULT_MAX_TOKENS = 8192
 
 # LLM Provider Constants
 DEFAULT_PROVIDER = "anthropic"
-SUPPORTED_PROVIDERS = ["anthropic", "vertexai", "groq"]
+SUPPORTED_PROVIDERS = ["anthropic", "vertexai", "groq", "openai"]
 
 # Provider-specific model defaults
 ANTHROPIC_DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 VERTEXAI_DEFAULT_MODEL = "gemini-2.0-flash-001"
 GROQ_DEFAULT_MODEL = "deepseek-r1-distill-llama-70b"
+OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 
-# Rate limiting
-MAX_TOKENS_PER_MIN = 80000  # Maximum tokens per minute rate limit
+# Provider-specific max token defaults
+ANTHROPIC_MAX_TOKENS = 8192
+VERTEXAI_MAX_TOKENS = 8192
+GROQ_MAX_TOKENS = 8192
+OPENAI_MAX_TOKENS = 8192
+
+# Provider-specific context token limits
+ANTHROPIC_MAX_CONTEXT_TOKENS = 200000
+VERTEXAI_MAX_CONTEXT_TOKENS = 1000000
+GROQ_MAX_CONTEXT_TOKENS = 200000
+OPENAI_MAX_CONTEXT_TOKENS = 200000
+
+# Rate limiting - provider specific
+ANTHROPIC_MAX_TOKENS_PER_MIN = 80000
+VERTEXAI_MAX_TOKENS_PER_MIN = 80000
+GROQ_MAX_TOKENS_PER_MIN = 80000
+OPENAI_MAX_TOKENS_PER_MIN = 80000
 RATE_LIMIT_COOLDOWN = 60  # Seconds to wait after hitting rate limit
 
 # File Paths

@@ -1,11 +1,15 @@
 """Main entry point for the q_cli package."""
 
-import anthropic
-import littlellm
+import litellm
 from q_cli.utils.client import LLMClient
 import os
 import sys
 from q_cli import __version__
+
+def get_debug():
+    """Get the DEBUG value from environment, respecting any recent changes."""
+    debug_val = os.environ.get("Q_DEBUG", "false").lower()
+    return debug_val in ["true", "1", "yes", "y", "on"]
 
 from q_cli.cli.args import setup_argparse
 from q_cli.io.config import read_config_file, build_context
@@ -17,7 +21,25 @@ from q_cli.utils.constants import (
     DEFAULT_ALWAYS_APPROVED_COMMANDS,
     DEFAULT_ALWAYS_RESTRICTED_COMMANDS,
     DEFAULT_PROHIBITED_COMMANDS,
-    DEBUG,
+    ANTHROPIC_DEFAULT_MODEL,
+    VERTEXAI_DEFAULT_MODEL,
+    GROQ_DEFAULT_MODEL,
+    OPENAI_DEFAULT_MODEL,
+    ANTHROPIC_MAX_TOKENS,
+    VERTEXAI_MAX_TOKENS,
+    GROQ_MAX_TOKENS,
+    OPENAI_MAX_TOKENS,
+    ANTHROPIC_MAX_CONTEXT_TOKENS,
+    VERTEXAI_MAX_CONTEXT_TOKENS,
+    GROQ_MAX_CONTEXT_TOKENS,
+    OPENAI_MAX_CONTEXT_TOKENS,
+    DEFAULT_MAX_CONTEXT_TOKENS,
+    ANTHROPIC_MAX_TOKENS_PER_MIN,
+    VERTEXAI_MAX_TOKENS_PER_MIN,
+    GROQ_MAX_TOKENS_PER_MIN,
+    OPENAI_MAX_TOKENS_PER_MIN,
+    DEFAULT_PROVIDER,
+    SUPPORTED_PROVIDERS,
 )
 from q_cli.utils.helpers import sanitize_context
 from q_cli.cli.conversation import run_conversation
@@ -35,6 +57,12 @@ def main() -> None:
         sys.argv.append("--interactive")
 
     args = parser.parse_args()
+    
+    # Set debug mode if requested
+    if args.debug:
+        os.environ["Q_DEBUG"] = "true"
+        # We need to reload the DEBUG constant after changing the environment variable
+        print(f"Debug mode enabled")
 
     # Handle the update command if specified
     if args.update:
@@ -64,8 +92,21 @@ def main() -> None:
             api_key = config_vars.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
         elif provider.lower() == "vertexai":
             api_key = config_vars.get("VERTEXAI_API_KEY") or os.environ.get("VERTEXAI_API_KEY")
+            # Handle VertexAI project ID from config or environment
+            if project_id := config_vars.get("VERTEXAI_PROJECT"):
+                os.environ["VERTEXAI_PROJECT"] = project_id
+            elif project_id := config_vars.get("VERTEX_PROJECT"):
+                os.environ["VERTEX_PROJECT"] = project_id
+                
+            # Handle VertexAI location from config or environment
+            if location := config_vars.get("VERTEXAI_LOCATION"):
+                os.environ["VERTEXAI_LOCATION"] = location
+            elif location := config_vars.get("VERTEX_LOCATION"):
+                os.environ["VERTEX_LOCATION"] = location
         elif provider.lower() == "groq":
             api_key = config_vars.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+        elif provider.lower() == "openai":
+            api_key = config_vars.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
         else:
             # Fallback to generic API key or anthropic key for backward compatibility
             api_key = config_api_key or os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
@@ -78,8 +119,26 @@ def main() -> None:
                 args.model = config_vars.get("MODEL", VERTEXAI_DEFAULT_MODEL)
             elif provider.lower() == "groq":
                 args.model = config_vars.get("MODEL", GROQ_DEFAULT_MODEL)
+            elif provider.lower() == "openai":
+                args.model = config_vars.get("MODEL", OPENAI_DEFAULT_MODEL)
             else:
                 args.model = config_vars.get("MODEL", DEFAULT_MODEL)
+                
+        # Set max_tokens based on provider-specific config or global config or default
+        if provider.lower() == "anthropic":
+            provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", ANTHROPIC_MAX_TOKENS)
+            args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+        elif provider.lower() == "vertexai":
+            provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", VERTEXAI_MAX_TOKENS)
+            args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+        elif provider.lower() == "groq":
+            provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", GROQ_MAX_TOKENS)
+            args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+        elif provider.lower() == "openai":
+            provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", OPENAI_MAX_TOKENS)
+            args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+        else:
+            args.max_tokens = int(config_vars.get("MAX_TOKENS", DEFAULT_MAX_TOKENS))
 
         # Force interactive mode when recovering
         args.no_interactive = False
@@ -123,7 +182,7 @@ def main() -> None:
             console.print(
                 f"[bold red]Error during session recovery: {str(e)}[/bold red]"
             )
-            if DEBUG:
+            if get_debug():
                 import traceback
 
                 console.print(f"[red]{traceback.format_exc()}[/red]")
@@ -138,7 +197,7 @@ def main() -> None:
     update_available, latest_version = check_for_updates(console)
 
     # Debug version check information
-    if os.environ.get("Q_DEBUG"):
+    if get_debug():
         console.print(
             f"[dim]Current version: {__version__}, Latest version from GitHub: {latest_version or 'not found'}[/dim]"
         )
@@ -164,8 +223,30 @@ def main() -> None:
         api_key = config_vars.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     elif provider.lower() == "vertexai":
         api_key = config_vars.get("VERTEXAI_API_KEY") or os.environ.get("VERTEXAI_API_KEY")
+        
+        # Handle VertexAI project ID from config or environment
+        project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT") or os.environ.get("VERTEX_PROJECT")
+        if project_id:
+            os.environ["VERTEXAI_PROJECT"] = project_id
+            os.environ["GOOGLE_PROJECT"] = project_id
+            if get_debug():
+                console.print(f"[info]Using VertexAI project ID: {project_id}[/info]")
+        else:
+            console.print("[bold yellow]WARNING: No project ID specified for VertexAI. Set VERTEXAI_PROJECT in config or environment.[/bold yellow]")
+            
+        # Handle VertexAI location from config or environment
+        location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION") or os.environ.get("VERTEX_LOCATION")
+        if location:
+            os.environ["VERTEXAI_LOCATION"] = location
+            os.environ["VERTEX_LOCATION"] = location
+            if get_debug():
+                console.print(f"[info]Using VertexAI location: {location}[/info]")
+        else:
+            console.print("[bold yellow]WARNING: No location specified for VertexAI. Set VERTEXAI_LOCATION in config or environment.[/bold yellow]")
     elif provider.lower() == "groq":
         api_key = config_vars.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+    elif provider.lower() == "openai":
+        api_key = config_vars.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     else:
         # Fallback to generic API key or anthropic key for backward compatibility
         api_key = config_api_key or os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
@@ -178,11 +259,26 @@ def main() -> None:
             args.model = config_vars.get("MODEL", VERTEXAI_DEFAULT_MODEL)
         elif provider.lower() == "groq":
             args.model = config_vars.get("MODEL", GROQ_DEFAULT_MODEL)
+        elif provider.lower() == "openai":
+            args.model = config_vars.get("MODEL", OPENAI_DEFAULT_MODEL)
         else:
             args.model = config_vars.get("MODEL", DEFAULT_MODEL)
     
-    # Set max_tokens from config file or default
-    args.max_tokens = int(config_vars.get("MAX_TOKENS", DEFAULT_MAX_TOKENS))
+    # Set max_tokens based on provider-specific config or global config or default
+    if provider.lower() == "anthropic":
+        provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", ANTHROPIC_MAX_TOKENS)
+        args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+    elif provider.lower() == "vertexai":
+        provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", VERTEXAI_MAX_TOKENS)
+        args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+    elif provider.lower() == "groq":
+        provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", GROQ_MAX_TOKENS)
+        args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+    elif provider.lower() == "openai":
+        provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", OPENAI_MAX_TOKENS)
+        args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+    else:
+        args.max_tokens = int(config_vars.get("MAX_TOKENS", DEFAULT_MAX_TOKENS))
     
     if not api_key:
         console.print(
@@ -195,7 +291,7 @@ def main() -> None:
         # Initialize our LLM client wrapper
         client = LLMClient(api_key=api_key, model=args.model, provider=provider)
         
-        if DEBUG:
+        if get_debug():
             console.print(f"[dim]Using provider: {provider}, model: {args.model}[/dim]")
     
     except Exception as e:
@@ -226,11 +322,11 @@ def main() -> None:
 
         INCLUDE_FILE_TREE = True
 
-        if DEBUG:
+        if get_debug():
             console.print("[info]File tree will be included in context[/info]")
 
     # Build and sanitize context from config and files
-    context, context_manager = build_context(args, config_context, console)
+    context, context_manager = build_context(args, config_context, console, config_vars)
     sanitized_context = sanitize_context(context, console)
 
     # Set up system prompt with context if available
@@ -329,7 +425,7 @@ def main() -> None:
     except Exception as e:
         # Catch any unexpected exceptions that weren't handled in run_conversation
         console.print(f"\n[bold red]Unexpected error: {str(e)}[/bold red]")
-        if DEBUG:
+        if get_debug():
             import traceback
 
             console.print(f"[red]{traceback.format_exc()}[/red]")
@@ -349,7 +445,7 @@ if __name__ == "__main__":
 
         console = Console()
         console.print(f"\n[bold red]Fatal error: {str(e)}[/bold red]")
-        if os.environ.get("Q_DEBUG", "false").lower() == "true":
+        if get_debug():
             import traceback
 
             console.print(f"[red]{traceback.format_exc()}[/red]")

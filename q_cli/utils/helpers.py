@@ -155,7 +155,8 @@ def handle_api_error(
     e: Exception, console: Console, exit_on_error: bool = True
 ) -> bool:
     """
-    Handle errors from the LLM API in a consistent way.
+    Handle errors from LLM providers in a consistent way.
+    Works with errors from either litellm or direct provider APIs.
 
     Args:
         e: The exception that occurred
@@ -165,17 +166,100 @@ def handle_api_error(
     Returns:
         True if error is a rate limit error that can be retried, False otherwise
     """
-    import anthropic
-    import litellm
     import os
     import sys
     import json
+    import litellm
     from q_cli.utils.constants import DEBUG
+
+    # For backward compatibility with direct Anthropic API usage
+    # This will eventually be removed when full migration to litellm is complete
+    try:
+        import anthropic
+        has_anthropic = True
+    except ImportError:
+        has_anthropic = False
 
     is_rate_limit_error = False
 
-    # Handle Anthropic-specific errors
-    if isinstance(e, anthropic.APIStatusError):
+    # Handle LiteLLM-specific errors first (preferred path)
+    if isinstance(e, litellm.exceptions.BadRequestError):
+        error_str = str(e)
+        # Special handling for VertexAI permission errors in BadRequestError
+        if "Permission" in error_str and "denied" in error_str and ("vertexai" in error_str.lower() or "aiplatform" in error_str.lower()):
+            console.print("[bold red]VertexAI Permission Denied Error[/bold red]")
+            console.print("\n[yellow]This typically means:[/yellow]")
+            console.print("1. Your service account doesn't have sufficient permissions")
+            console.print("2. Required IAM role: 'roles/aiplatform.user' or 'aiplatform.admin'")
+            console.print("3. Make sure the Vertex AI API is enabled in your GCP project")
+            console.print("4. Check if the model is available in your selected region")
+            console.print(f"\n[dim]Original error: {error_str}[/dim]")
+        else:
+            console.print(
+                f"[bold red]Bad request error: {error_str}[/bold red]"
+            )
+    elif isinstance(e, litellm.exceptions.RateLimitError):
+        console.print(
+            f"[bold yellow]Rate limit exceeded: {str(e)}[/bold yellow]"
+        )
+        is_rate_limit_error = True
+        
+        # Only exit if requested
+        if not exit_on_error:
+            console.print(
+                "[yellow]Waiting to retry after rate limit cooldown...[/yellow]"
+            )
+            return is_rate_limit_error
+    elif isinstance(e, litellm.exceptions.AuthenticationError):
+        error_str = str(e)
+        if "vertex" in error_str.lower() or "google" in error_str.lower():
+            console.print("[bold red]VertexAI Authentication Error[/bold red]")
+            console.print("\n[yellow]This could be due to:[/yellow]")
+            console.print("1. Invalid or inaccessible service account JSON file")
+            console.print("2. Missing required environment variables (VERTEXAI_PROJECT, VERTEXAI_LOCATION)")
+            console.print("3. Project ID or location may be incorrect")
+            console.print(f"\n[dim]Original error: {error_str}[/dim]")
+        else:
+            console.print(
+                "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
+            )
+    # Handle content filter errors based on message content
+    elif any(term in str(e).lower() for term in ['content filter', 'contentfilter', 'content_filter', 'inappropriate', 'moderation']):
+        console.print(
+            f"[bold red]Content filter error: {str(e)}[/bold red]"
+        )
+    elif isinstance(e, litellm.exceptions.APIError):
+        if "401" in str(e) or "Unauthorized" in str(e) or "authentication" in str(e).lower():
+            console.print(
+                "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
+            )
+        elif "429" in str(e) or "rate" in str(e).lower() or "limit" in str(e).lower():
+            console.print(
+                f"[bold yellow]Rate limit exceeded: {str(e)}[/bold yellow]"
+            )
+            is_rate_limit_error = True
+            
+            # Only exit if requested
+            if not exit_on_error:
+                console.print(
+                    "[yellow]Waiting to retry after rate limit cooldown...[/yellow]"
+                )
+                return is_rate_limit_error
+        # Special handling for VertexAI permission errors
+        elif "Permission" in str(e) and "denied" in str(e) and ("vertexai" in str(e).lower() or "aiplatform" in str(e).lower()):
+            console.print("[bold red]VertexAI Permission Denied Error[/bold red]")
+            console.print("\n[yellow]This typically means:[/yellow]")
+            console.print("1. Your service account doesn't have sufficient permissions")
+            console.print("2. Required IAM role: 'roles/aiplatform.user' or 'aiplatform.admin'")
+            console.print("3. Make sure the Vertex AI API is enabled in your GCP project")
+            console.print("4. Check if the model is available in your selected region")
+            console.print(f"\n[dim]Original error: {str(e)}[/dim]")
+        else:
+            console.print(
+                f"[bold red]Error communicating with LLM provider: {str(e)}[/bold red]"
+            )
+    # Handle Anthropic-specific errors (for backward compatibility)
+    elif has_anthropic and isinstance(e, anthropic.APIStatusError):
         if e.status_code == 401:
             console.print(
                 "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
@@ -215,56 +299,15 @@ def handle_api_error(
             console.print(
                 f"[bold red]Error communicating with LLM provider (Status {e.status_code}): {e.message}[/bold red]"
             )
-    elif isinstance(e, anthropic.APIConnectionError):
+    elif has_anthropic and isinstance(e, anthropic.APIConnectionError):
         console.print(
             "[bold red]Connection error: Could not connect to LLM provider API. Please check your internet connection.[/bold red]"
         )
-    elif isinstance(e, anthropic.APITimeoutError):
+    elif has_anthropic and isinstance(e, anthropic.APITimeoutError):
         console.print(
             "[bold red]Timeout error: The request to LLM provider API timed out.[/bold red]"
         )
-    # Handle LiteLLM-specific errors
-    elif isinstance(e, litellm.exceptions.APIError):
-        if "401" in str(e) or "Unauthorized" in str(e) or "authentication" in str(e).lower():
-            console.print(
-                "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
-            )
-        elif "429" in str(e) or "rate" in str(e).lower() or "limit" in str(e).lower():
-            console.print(
-                f"[bold yellow]Rate limit exceeded: {str(e)}[/bold yellow]"
-            )
-            is_rate_limit_error = True
-            
-            # Only exit if requested
-            if not exit_on_error:
-                console.print(
-                    "[yellow]Waiting to retry after rate limit cooldown...[/yellow]"
-                )
-                return is_rate_limit_error
-        else:
-            console.print(
-                f"[bold red]Error communicating with LLM provider: {str(e)}[/bold red]"
-            )
-    elif isinstance(e, litellm.exceptions.RateLimitError):
-        console.print(
-            f"[bold yellow]Rate limit exceeded: {str(e)}[/bold yellow]"
-        )
-        is_rate_limit_error = True
-        
-        # Only exit if requested
-        if not exit_on_error:
-            console.print(
-                "[yellow]Waiting to retry after rate limit cooldown...[/yellow]"
-            )
-            return is_rate_limit_error
-    elif isinstance(e, litellm.exceptions.ContentFilterError):
-        console.print(
-            f"[bold red]Content filter error: {str(e)}[/bold red]"
-        )
-    elif isinstance(e, litellm.exceptions.AuthenticationError):
-        console.print(
-            "[bold red]Authentication error: Your API key appears to be invalid. Please check your API key.[/bold red]"
-        )
+    # Generic fallback for any other error
     else:
         console.print(f"[bold red]Error communicating with LLM provider: {e}[/bold red]")
 

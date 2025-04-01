@@ -45,8 +45,8 @@ def setup_argparse() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=["anthropic", "vertexai", "groq"],
-        help="LLM provider to use (defaults to anthropic)",
+        choices=["anthropic", "vertexai", "groq", "openai"],
+        help="LLM provider to use (defaults to config variable DEFAULT_PROVIDER)",
     )
     # Use a mutually exclusive group for interactive mode options
     interactive_group = parser.add_mutually_exclusive_group()
@@ -143,11 +143,16 @@ def setup_argparse() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print the full message that would be sent to Claude and exit",
+        help="Print the full message that would be sent to the LLM and exit",
     )
     parser.add_argument(
         "--yes",
         action="store_true",
         help="Automatically approve all file operations (WARNING: use only for new projects with nothing to override)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode with additional diagnostic output",
     )
     return parser

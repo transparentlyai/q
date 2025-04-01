@@ -19,7 +19,6 @@ from q_cli.utils.constants import (
     ESSENTIAL_TOKEN_ALLOCATION,
     IMPORTANT_TOKEN_ALLOCATION,
     SUPPLEMENTARY_TOKEN_ALLOCATION,
-    MAX_TOKENS_PER_MIN,
 )
 
 
@@ -535,10 +534,10 @@ class TokenRateTracker:
     Tracks token usage rate for API rate limiting compliance.
     
     Maintains a sliding window of token usage to ensure we don't exceed
-    the Anthropic rate limit of MAX_TOKENS_PER_MIN tokens per minute.
+    the provider-specific rate limit tokens per minute.
     """
     
-    def __init__(self, max_tokens_per_min: int = MAX_TOKENS_PER_MIN):
+    def __init__(self, max_tokens_per_min: int = 80000):
         """
         Initialize the token rate tracker.
         

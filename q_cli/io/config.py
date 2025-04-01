@@ -91,13 +91,26 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                             key, value = line.split("=", 1)
                             key = key.strip().upper()
                             value = value.strip()
-
+                            
+                            # Strip any inline comments (anything after a # that's not quoted)
+                            if "#" in value and not value.startswith('"') and not value.startswith("'"):
+                                value = value.split("#", 1)[0].strip()
+                            
                             # Expand environment variables in value
                             if "$" in value:
                                 value = expand_env_vars(value)
 
                             # Store in config vars
                             config_vars[key] = value
+                            
+                            # Debug output for VertexAI settings
+                            if key in ["VERTEXAI_PROJECT", "VERTEXAI_LOCATION", "VERTEXAI_API_KEY"]:
+                                print(f"DEBUG: Loaded {key}={value} from config file")
+                                
+                            # Make sure to set VERTEXAI_LOCATION in the environment if found in config
+                            if key == "VERTEXAI_LOCATION" and value:
+                                os.environ["VERTEXAI_LOCATION"] = value
+                                os.environ["VERTEX_LOCATION"] = value
 
                             # Check for API keys for various providers
                             if key == "ANTHROPIC_API_KEY":
@@ -141,17 +154,45 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                 minimal_config = """# Configuration file for q - AI Command Line Assistant
 # Edit this file to customize behavior
 
-# API keys for different providers (recommended to use environment variables)
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-# VERTEXAI_API_KEY=${VERTEXAI_API_KEY}
-# GROQ_API_KEY=${GROQ_API_KEY}
+# API keys and credentials for different providers
+# Uncomment and set one of these for your preferred provider
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}  # Direct API key
+# VERTEXAI_API_KEY=/path/to/service-account.json  # Path to service account JSON file
+# VERTEXAI_PROJECT=your-google-cloud-project-id  # Required for VertexAI
+# VERTEXAI_LOCATION=us-central1  # Required for VertexAI (region where API is deployed)
+# GROQ_API_KEY=${GROQ_API_KEY}  # Direct API key
+# OPENAI_API_KEY=${OPENAI_API_KEY}  # Direct API key
 
 # Provider and model settings
-PROVIDER=anthropic
-MODEL=claude-3.7-latest
-# Uncomment and set one of these for a specific provider:
-# MODEL=gemini-2.0-flash-001  # For VertexAI
+PROVIDER=anthropic  # Choose from: anthropic, vertexai, groq, openai
+
+# Select a model appropriate for your chosen provider:
+MODEL=claude-3-7-sonnet-latest  # For Anthropic
+# MODEL=gemini-2.0-flash-001    # For VertexAI
 # MODEL=deepseek-r1-distill-llama-70b  # For Groq
+# MODEL=gpt-4o-mini  # For OpenAI
+
+# Maximum tokens in response 
+# Global setting for all providers (default: 8192)
+MAX_TOKENS=8192
+
+# Provider-specific token limits (optional)
+# ANTHROPIC_MAX_TOKENS=8192
+# VERTEXAI_MAX_TOKENS=8192
+# GROQ_MAX_TOKENS=8192
+# OPENAI_MAX_TOKENS=8192
+
+# Provider-specific context token limits (optional)
+# ANTHROPIC_MAX_CONTEXT_TOKENS=200000
+# VERTEXAI_MAX_CONTEXT_TOKENS=200000 
+# GROQ_MAX_CONTEXT_TOKENS=200000
+# OPENAI_MAX_CONTEXT_TOKENS=200000
+
+# Rate limits per provider (tokens per minute)
+ANTHROPIC_MAX_TOKENS_PER_MIN=80000
+# VERTEXAI_MAX_TOKENS_PER_MIN=80000
+# GROQ_MAX_TOKENS_PER_MIN=80000
+# OPENAI_MAX_TOKENS_PER_MIN=80000
 
 # Command permission settings (JSON arrays)
 ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "date", "whoami", "cat"]
@@ -171,7 +212,7 @@ PROHIBITED_COMMANDS=["rm -rf /", "shutdown", "reboot"]
                 )
 
             console.print(
-                "Make sure your API key is set either in the config file or as ANTHROPIC_API_KEY environment variable.",
+                "Make sure the appropriate API key is set either in the config file or as an environment variable like ANTHROPIC_API_KEY, VERTEXAI_API_KEY, GROQ_API_KEY, or OPENAI_API_KEY.",
                 style="info",
             )
         except Exception as e:
@@ -222,7 +263,7 @@ def read_context_file(file_path: str, console: Console) -> str:
 
 
 def build_context(
-    args, config_context: str, console: Console
+    args, config_context: str, console: Console, config_vars: Dict[str, str] = None
 ) -> Tuple[str, ContextManager]:
     """
     Build the context from config and additional context files using priority-based management.
@@ -237,8 +278,64 @@ def build_context(
         - Combined context string
         - ContextManager instance
     """
-    # Initialize context manager with args or default values
-    max_tokens = getattr(args, "max_context_tokens", None)
+    # Import provider-specific constants
+    from q_cli.utils.constants import (
+        DEFAULT_PROVIDER,
+        ANTHROPIC_MAX_CONTEXT_TOKENS,
+        VERTEXAI_MAX_CONTEXT_TOKENS,
+        GROQ_MAX_CONTEXT_TOKENS,
+        OPENAI_MAX_CONTEXT_TOKENS,
+        DEFAULT_MAX_CONTEXT_TOKENS,
+    )
+    
+    # Initialize with empty dict if not provided
+    config_vars = config_vars or {}
+    
+    # Initialize context manager with args or provider-specific or default values
+    provider = getattr(args, "provider", DEFAULT_PROVIDER)
+    
+    # Get provider-specific context token limit or global limit
+    if not provider:
+        provider = DEFAULT_PROVIDER
+        
+    # Set max_context_tokens based on provider
+    if max_tokens := getattr(args, "max_context_tokens", None):
+        # User explicitly specified value, use it
+        pass
+    elif provider.lower() == "anthropic":
+        # Config value or default
+        anthropic_max = config_vars.get("ANTHROPIC_MAX_CONTEXT_TOKENS")
+        if anthropic_max and "#" in anthropic_max:
+            # Remove inline comments from the value
+            anthropic_max = anthropic_max.split("#")[0].strip()
+        max_tokens = int(anthropic_max or ANTHROPIC_MAX_CONTEXT_TOKENS)
+    elif provider.lower() == "vertexai":
+        vertex_max = config_vars.get("VERTEXAI_MAX_CONTEXT_TOKENS")
+        if vertex_max and "#" in vertex_max:
+            # Remove inline comments from the value
+            vertex_max = vertex_max.split("#")[0].strip()
+        max_tokens = int(vertex_max or VERTEXAI_MAX_CONTEXT_TOKENS)
+        if DEBUG:
+            console.print(f"[info]Using VertexAI context limit: {max_tokens} tokens[/info]")
+    elif provider.lower() == "groq":
+        groq_max = config_vars.get("GROQ_MAX_CONTEXT_TOKENS")
+        if groq_max and "#" in groq_max:
+            # Remove inline comments from the value
+            groq_max = groq_max.split("#")[0].strip()
+        max_tokens = int(groq_max or GROQ_MAX_CONTEXT_TOKENS)
+    elif provider.lower() == "openai":
+        openai_max = config_vars.get("OPENAI_MAX_CONTEXT_TOKENS")
+        if openai_max and "#" in openai_max:
+            # Remove inline comments from the value
+            openai_max = openai_max.split("#")[0].strip()
+        max_tokens = int(openai_max or OPENAI_MAX_CONTEXT_TOKENS)
+    else:
+        default_max = config_vars.get("MAX_CONTEXT_TOKENS")
+        if default_max and "#" in default_max:
+            # Remove inline comments from the value
+            default_max = default_max.split("#")[0].strip()
+        max_tokens = int(default_max or DEFAULT_MAX_CONTEXT_TOKENS)
+    
     priority_mode = getattr(
         args, "context_priority_mode", DEFAULT_CONTEXT_PRIORITY_MODE
     )
