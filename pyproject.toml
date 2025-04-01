@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "q-cli-assistant"
-version = "0.12.2"
+version = "0.12.3"
 description = "A command Line AI Assistant for interacting with Claude"
 authors = [{name = "Mauro", email = "mauro@transparently.ai"}]
 readme = "README.md"
@@ -43,7 +43,7 @@ q = "q_cli:main"
 
 [tool.setuptools]
 py-modules = ["q"]
-packages = ["q_cli", "q_cli.cli", "q_cli.io", "q_cli.utils", "q_cli.assets"]
+packages = ["q_cli", "q_cli.cli", "q_cli.io", "q_cli.utils", "q_cli.utils.session", "q_cli.assets"]
 
 [tool.setuptools.package-data]
 q_cli = ["assets/*.md", "example_config.conf"]
