@@ -551,14 +551,15 @@ class TokenRateTracker:
         self.usage_window: Deque[Tuple[float, int]] = deque()
         self.total_tokens_in_window = 0
     
-    def add_usage(self, token_count: int) -> None:
+    def add_usage(self, token_count: int, timestamp: float = None) -> None:
         """
-        Record token usage at the current time.
+        Record token usage at the current time or specified timestamp.
         
         Args:
             token_count: Number of tokens used
+            timestamp: Optional specific timestamp to use (e.g., after API response completion)
         """
-        current_time = time.time()
+        current_time = timestamp if timestamp is not None else time.time()
         
         # First clean up expired entries older than our window
         self._clean_expired_entries(current_time)

@@ -17,6 +17,7 @@ RATE_LIMIT_COOLDOWN = 60  # Seconds to wait after hitting rate limit
 # File Paths
 CONFIG_PATH = os.path.expanduser("~/.config/q.conf")
 HISTORY_PATH = os.path.expanduser("~/.qhistory")
+SESSION_PATH = os.path.expanduser("~/.qsession")
 
 # Security
 SENSITIVE_PATTERNS = ["sk-ant", "api_key", "apikey", "token", "secret", "key"]
@@ -54,6 +55,8 @@ PROMPTS_DIR = os.path.join(
 # Commands
 EXIT_COMMANDS = ["exit", "quit", "q"]
 SAVE_COMMAND_PREFIX = "save "
+RECOVER_COMMAND = "recover"
+MAX_HISTORY_TURNS = 5  # Maximum number of conversation turns to keep in history
 
 # Default permission-related values in JSON format
 
