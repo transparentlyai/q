@@ -306,12 +306,12 @@ def recover_session(
         True if session was recovered and conversation started, False otherwise
     """
     from q_cli.cli.conversation import run_conversation
-    from q_cli.utils.constants import MAX_HISTORY_TURNS, DEFAULT_MAX_TOKENS
+    from q_cli.utils.constants import MAX_HISTORY_TURNS, ANTHROPIC_MAX_TOKENS
     from q_cli.io.input import get_input
 
     # Make sure args has max_tokens attribute
     if not hasattr(args, "max_tokens"):
-        args.max_tokens = DEFAULT_MAX_TOKENS
+        args.max_tokens = ANTHROPIC_MAX_TOKENS
 
     # Create session manager
     session_manager = SessionManager(console)

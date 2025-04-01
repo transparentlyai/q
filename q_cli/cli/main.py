@@ -15,7 +15,6 @@ from q_cli.io.input import create_prompt_session, get_initial_question, confirm_
 from q_cli.io.output import setup_console
 from q_cli.utils.constants import (
     DEFAULT_MODEL,
-    DEFAULT_MAX_TOKENS,
     DEFAULT_ALWAYS_APPROVED_COMMANDS,
     DEFAULT_ALWAYS_RESTRICTED_COMMANDS,
     DEFAULT_PROHIBITED_COMMANDS,
@@ -122,21 +121,17 @@ def main() -> None:
             else:
                 args.model = config_vars.get("MODEL", DEFAULT_MODEL)
                 
-        # Set max_tokens based on provider-specific config or global config or default
+        # Set max_tokens based on provider-specific config or default
         if provider.lower() == "anthropic":
-            provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", ANTHROPIC_MAX_TOKENS)
-            args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+            args.max_tokens = int(config_vars.get("ANTHROPIC_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
         elif provider.lower() == "vertexai":
-            provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", VERTEXAI_MAX_TOKENS)
-            args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+            args.max_tokens = int(config_vars.get("VERTEXAI_MAX_TOKENS", VERTEXAI_MAX_TOKENS))
         elif provider.lower() == "groq":
-            provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", GROQ_MAX_TOKENS)
-            args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+            args.max_tokens = int(config_vars.get("GROQ_MAX_TOKENS", GROQ_MAX_TOKENS))
         elif provider.lower() == "openai":
-            provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", OPENAI_MAX_TOKENS)
-            args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+            args.max_tokens = int(config_vars.get("OPENAI_MAX_TOKENS", OPENAI_MAX_TOKENS))
         else:
-            args.max_tokens = int(config_vars.get("MAX_TOKENS", DEFAULT_MAX_TOKENS))
+            args.max_tokens = int(config_vars.get(f"{provider.upper()}_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
 
         # Force interactive mode when recovering
         args.no_interactive = False
@@ -272,21 +267,17 @@ def main() -> None:
         else:
             args.model = config_vars.get("MODEL", DEFAULT_MODEL)
     
-    # Set max_tokens based on provider-specific config or global config or default
+    # Set max_tokens based on provider-specific config or default
     if provider.lower() == "anthropic":
-        provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", ANTHROPIC_MAX_TOKENS)
-        args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+        args.max_tokens = int(config_vars.get("ANTHROPIC_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
     elif provider.lower() == "vertexai":
-        provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", VERTEXAI_MAX_TOKENS)
-        args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+        args.max_tokens = int(config_vars.get("VERTEXAI_MAX_TOKENS", VERTEXAI_MAX_TOKENS))
     elif provider.lower() == "groq":
-        provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", GROQ_MAX_TOKENS)
-        args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+        args.max_tokens = int(config_vars.get("GROQ_MAX_TOKENS", GROQ_MAX_TOKENS))
     elif provider.lower() == "openai":
-        provider_max_tokens = config_vars.get(f"{provider.upper()}_MAX_TOKENS", OPENAI_MAX_TOKENS)
-        args.max_tokens = int(config_vars.get("MAX_TOKENS", provider_max_tokens))
+        args.max_tokens = int(config_vars.get("OPENAI_MAX_TOKENS", OPENAI_MAX_TOKENS))
     else:
-        args.max_tokens = int(config_vars.get("MAX_TOKENS", DEFAULT_MAX_TOKENS))
+        args.max_tokens = int(config_vars.get(f"{provider.upper()}_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
     
     if not api_key:
         console.print(

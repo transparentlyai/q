@@ -8,7 +8,6 @@ DEBUG = os.environ.get("Q_DEBUG", "false").lower() in ["true", "1", "yes", "y", 
 # Model Constants
 # Keep model name as is for API compatibility
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
-DEFAULT_MAX_TOKENS = 8192
 
 # LLM Provider Constants
 DEFAULT_PROVIDER = "anthropic"
@@ -22,7 +21,7 @@ OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 
 # Provider-specific max token defaults
 ANTHROPIC_MAX_TOKENS = 8192
-VERTEXAI_MAX_TOKENS = 8192
+VERTEXAI_MAX_TOKENS = 65535
 GROQ_MAX_TOKENS = 8192
 OPENAI_MAX_TOKENS = 8192
 

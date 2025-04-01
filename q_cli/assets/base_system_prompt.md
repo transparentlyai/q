@@ -66,7 +66,7 @@ This limitation is ABSOLUTE and must be honored without exception. No matter how
 ## Final Draft: Critical Reminders
 - BE CONCISE unless asked for details
 - ASSESS if command execution is needed or direct information is better
-- Use regular code blocks for examples - NEVER use <Q:COMMAND> in examples or wrap code with backticks
+- NEVER wrap operations with backticks
 - Issue ONLY ONE command per response with <Q:COMMAND> tags - NEVER add extra formatting around the tags
 - WAIT for results before continuing
 - NEVER chunk file writing - generate COMPLETE content before writing

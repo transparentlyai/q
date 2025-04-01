@@ -63,11 +63,12 @@ For a complete example of all available configuration options, refer to the [exa
 - `GROQ_API_KEY`: Your Groq API key (for Llama and other models)
 - `OPENAI_API_KEY`: Your OpenAI API key (for GPT models)
 - `MODEL`: Default model to use (provider-specific, e.g., "claude-3-7-sonnet-latest", "gemini-2.0-flash-001", "deepseek-r1-distill-llama-70b", "gpt-4o-mini")
-- `MAX_TOKENS`: Global maximum number of tokens in the response (default: 8192)
-- `ANTHROPIC_MAX_TOKENS`: Maximum output tokens specifically for Anthropic provider (default: 8192)
-- `VERTEXAI_MAX_TOKENS`: Maximum output tokens specifically for VertexAI provider (default: 8192)
-- `GROQ_MAX_TOKENS`: Maximum output tokens specifically for Groq provider (default: 8192)
-- `OPENAI_MAX_TOKENS`: Maximum output tokens specifically for OpenAI provider (default: 8192)
+- `ANTHROPIC_MAX_TOKENS`: Maximum output tokens for Anthropic provider (default: 8192)
+- `VERTEXAI_MAX_TOKENS`: Maximum output tokens for VertexAI provider (default: 65535)
+- `GROQ_MAX_TOKENS`: Maximum output tokens for Groq provider (default: 8192)
+- `OPENAI_MAX_TOKENS`: Maximum output tokens for OpenAI provider (default: 8192)
+
+Note: Each provider uses its own specific max tokens setting. There is no global setting.
 - `ANTHROPIC_MAX_CONTEXT_TOKENS`: Maximum context tokens for Anthropic provider (default: 200000)
 - `VERTEXAI_MAX_CONTEXT_TOKENS`: Maximum context tokens for VertexAI provider (default: 1000000)
 - `GROQ_MAX_CONTEXT_TOKENS`: Maximum context tokens for Groq provider (default: 200000)
