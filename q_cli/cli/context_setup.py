@@ -53,19 +53,44 @@ def setup_context_and_prompts(
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r") as f:
             content = f.read()
-            # Find the CONTEXT section
+            # Find the CONTEXT section - look for both [CONTEXT] and #CONTEXT formats
             context_match = re.search(r'\[CONTEXT\](.*?)(\n\[|\Z)', content, re.DOTALL)
+            if not context_match:
+                # Try the alternate format with # instead of []
+                # This captures everything after the #CONTEXT line until the end of file 
+                # Using a more robust pattern that is specific to the structure of the config file
+                # Skip comment lines to get to the actual content
+                context_match = re.search(r'#CONTEXT.*?\n((?:- .*\n)+)', content, re.DOTALL)
+            
             if context_match:
                 user_context = context_match.group(1).strip()
     
-    # Get project context from .Q/project.md
+    # Get project context from .Q/project.md and list available files in .Q directory
     project_context = ""
     q_dir_path = os.path.join(os.getcwd(), ".Q")
     project_md_path = os.path.join(q_dir_path, "project.md")
+    
+    # Read project.md content if exists
     if os.path.isdir(q_dir_path) and os.path.isfile(project_md_path):
         try:
             with open(project_md_path, "r") as f:
                 project_context = f.read().strip()
+        except Exception:
+            pass
+            
+    # Add list of files in .Q directory if it exists
+    if os.path.isdir(q_dir_path):
+        try:
+            q_files = os.listdir(q_dir_path)
+            if q_files:
+                # Filter out project.md as it's already included in content
+                other_files = [f for f in q_files if f != "project.md"]
+                if other_files:
+                    file_list = "\n".join([f"- {file}" for file in other_files])
+                    # Add file list to project_context
+                    if project_context:
+                        project_context += "\n\n"
+                    project_context += f"Additional project information can be found in the following files:\n{file_list}"
         except Exception:
             pass
     

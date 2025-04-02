@@ -70,13 +70,15 @@ class TestPrompts:
         # This should not raise a KeyError with exact matching variable names
 
     @patch("builtins.open", new_callable=mock_open, read_data="User context:\n{usercontext}\n\nProject context:\n{projectcontext}")
-    def test_missing_variable_raises_keyerror(self, mock_file):
-        """Test that missing a required variable raises KeyError."""
-        # Test with misspelled variable name (what was happening in the bug)
-        with pytest.raises(KeyError):
-            get_prompt("/path/to/prompt.md", 
-                      usercontex="This has a typo in the parameter name", 
-                      projectcontext="Project guidelines")
+    def test_missing_variable_adds_placeholder(self, mock_file):
+        """Test that missing a required variable adds a placeholder instead of raising KeyError."""
+        # Test with misspelled variable name
+        result = get_prompt("/path/to/prompt.md", 
+                          usercontex="This has a typo in the parameter name", 
+                          projectcontext="Project guidelines")
+        
+        # Verify the placeholder was added
+        assert "[Missing value for usercontext]" in result
 
     @patch("os.path.join")
     @patch("q_cli.utils.prompts.get_prompt")

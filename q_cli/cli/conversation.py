@@ -162,9 +162,16 @@ def run_conversation(
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r") as f:
                 content = f.read()
-                # Find the CONTEXT section
+                # Find the CONTEXT section - look for both [CONTEXT] and #CONTEXT formats
                 import re  # Import re module to ensure it's available in this scope
                 context_match = re.search(r'\[CONTEXT\](.*?)(\n\[|\Z)', content, re.DOTALL)
+                if not context_match:
+                    # Try the alternate format with # instead of []
+                    # This captures everything after the #CONTEXT line until the end of file
+                    # Using a more robust pattern that is specific to the structure of the config file
+                    # Skip comment lines to get to the actual content
+                    context_match = re.search(r'#CONTEXT.*?\n((?:- .*\n)+)', content, re.DOTALL)
+                
                 if context_match:
                     user_context = context_match.group(1).strip()
         
@@ -729,6 +736,25 @@ def run_conversation(
                                     
                                     # Update global prompt with corrected version for future API calls
                                     set_global_system_prompt(system_prompt_to_use)
+                                    
+                                    # Log prompt preparation in debug mode
+                                    if get_debug():
+                                        console.print(f"[dim]System prompt prepared for API call[/dim]")
+                                    
+                                    # Fix to ensure user context is included
+                                    if user_context:
+                                        # Use regex to find the User context section that has no content
+                                        import re
+                                        user_context_pattern = r'User context:\s*?\n\s*?\n'
+                                        if re.search(user_context_pattern, system_prompt_to_use):
+                                            # Fix it by directly modifying the system prompt
+                                            fixed_system_prompt = re.sub(
+                                                user_context_pattern, 
+                                                f"User context:\n{user_context}\n\n", 
+                                                system_prompt_to_use,
+                                                flags=re.DOTALL
+                                            )
+                                            system_prompt_to_use = fixed_system_prompt
                                     
                                     # Use the final modified prompt in the API call
                                     message = client.messages_create(

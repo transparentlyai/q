@@ -113,6 +113,47 @@ class LLMClient:
                     console.print(f"[blue]Message content (preview):[/blue] [blue]{content_preview}[/blue]")
                 print(f"Using provider config: {self.provider_config.get_config()}")
                 
+                # Fix for empty user context in system prompt
+                if system and request_params.get('messages'):
+                    from q_cli.utils.constants import CONFIG_PATH
+                    import os
+                    import re
+                    
+                    # If system prompt has empty user context section
+                    user_context_pattern = r'User context:\s*?\n\s*?\n'
+                    if re.search(user_context_pattern, system):
+                        # Try to get user context directly from config file
+                        user_context = ""
+                        if os.path.exists(CONFIG_PATH):
+                            try:
+                                with open(CONFIG_PATH, "r") as f:
+                                    content = f.read()
+                                    # Try to find CONTEXT section with list items
+                                    context_match = re.search(r'#CONTEXT.*?\n((?:- .*\n)+)', content, re.DOTALL)
+                                    if context_match:
+                                        user_context = context_match.group(1).strip()
+                                        
+                                        # Fix the system prompt directly
+                                        fixed_system = re.sub(
+                                            user_context_pattern, 
+                                            f"User context:\n{user_context}\n\n", 
+                                            system,
+                                            flags=re.DOTALL
+                                        )
+                                        
+                                        # Update the system in request_params if fixed
+                                        if fixed_system != system:
+                                            request_params['messages'][0]['content'] = fixed_system
+                            except Exception:
+                                pass
+                
+                # Log call details when in debug mode
+                if get_debug():
+                    # Log a concise message about API call
+                    if system:
+                        console.print(f"[dim]System prompt length: {len(system)} characters[/dim]")
+                    console.print(f"[dim]Sending {len(transformed_messages)} messages to model[/dim]")
+                
             response = self.client.completion(**request_params)
 
             # Convert the response to match the expected format by existing code

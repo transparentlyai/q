@@ -145,10 +145,10 @@ class TestVertexAIProviderConfig:
         provider = VertexAIProviderConfig(project_id="test-project")
         
         # Test with no prefix
-        assert provider.format_model_name("gemini-2.0-pro") == "google/gemini-2.0-pro"
+        assert provider.format_model_name("gemini-2.0-pro") == "vertex_ai/gemini-2.0-pro"
         
         # Test with existing prefix
-        assert provider.format_model_name("google/gemini-2.0-pro") == "google/gemini-2.0-pro"
+        assert provider.format_model_name("vertex_ai/gemini-2.0-pro") == "vertex_ai/gemini-2.0-pro"
         
         # Test with other prefix format
         assert provider.format_model_name("gemini:2.0-pro") == "gemini:2.0-pro"

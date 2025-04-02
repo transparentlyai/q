@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "q-cli-assistant"
-version = "0.12.11"
+version = "0.12.13"
 description = "A command Line AI Assistant for interacting with Claude"
 authors = [{name = "Mauro", email = "mauro@transparently.ai"}]
 readme = "README.md"
@@ -52,6 +52,13 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+    "ignore::DeprecationWarning:importlib.resources",
+    "ignore::DeprecationWarning:litellm.utils"
+]
 
 [tool.setuptools.package-data]
 q_cli = ["prompts/*.md"]
