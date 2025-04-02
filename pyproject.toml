@@ -47,5 +47,11 @@ q = "q_cli:main"
 py-modules = ["q"]
 packages = ["q_cli", "q_cli.cli", "q_cli.io", "q_cli.utils", "q_cli.utils.session", "q_cli.prompts", "q_cli.config"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
 [tool.setuptools.package-data]
 q_cli = ["prompts/*.md"]
