@@ -19,7 +19,6 @@ from q_cli.io.config import read_config_file, build_context
 from q_cli.io.input import create_prompt_session, get_initial_question, confirm_context
 from q_cli.io.output import setup_console
 from q_cli.utils.constants import (
-    DEFAULT_MODEL,
     DEFAULT_ALWAYS_APPROVED_COMMANDS,
     DEFAULT_ALWAYS_RESTRICTED_COMMANDS,
     DEFAULT_PROHIBITED_COMMANDS,
@@ -54,8 +53,8 @@ def initialize_cli() -> Tuple[Namespace, Console]:
     # Set debug mode if requested
     if args.debug:
         os.environ["Q_DEBUG"] = "true"
-        # We need to reload the DEBUG constant after changing the environment variable
-        print(f"Debug mode enabled")
+        # Just print a basic message for now - detailed logs will come from individual components
+        print("Debug mode enabled")
 
     # Initialize console for output
     console = setup_console()
@@ -106,30 +105,44 @@ def get_config_for_recovery(args: Namespace, console: Console) -> Tuple[str, Dic
         # Fallback to generic API key or anthropic key for backward compatibility
         api_key = config_api_key or os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     
-    # Set model based on provider if not explicitly specified
+    # Set model based on provider-specific model configuration
     if not args.model:
-        if provider.lower() == "anthropic":
-            args.model = config_vars.get("MODEL", ANTHROPIC_DEFAULT_MODEL)
-        elif provider.lower() == "vertexai":
-            args.model = config_vars.get("MODEL", VERTEXAI_DEFAULT_MODEL)
-        elif provider.lower() == "groq":
-            args.model = config_vars.get("MODEL", GROQ_DEFAULT_MODEL)
-        elif provider.lower() == "openai":
-            args.model = config_vars.get("MODEL", OPENAI_DEFAULT_MODEL)
+        provider_lower = provider.lower()
+        provider_upper = provider.upper()
+        
+        # Use specific provider model configuration
+        if provider_lower == "anthropic":
+            args.model = config_vars.get("ANTHROPIC_MODEL", ANTHROPIC_DEFAULT_MODEL)
+        elif provider_lower == "vertexai":
+            args.model = config_vars.get("VERTEXAI_MODEL", VERTEXAI_DEFAULT_MODEL)
+        elif provider_lower == "groq":
+            args.model = config_vars.get("GROQ_MODEL", GROQ_DEFAULT_MODEL)
+        elif provider_lower == "openai":
+            args.model = config_vars.get("OPENAI_MODEL", OPENAI_DEFAULT_MODEL)
         else:
-            args.model = config_vars.get("MODEL", DEFAULT_MODEL)
+            # For non-standard providers, use their specific config
+            args.model = config_vars.get(f"{provider_upper}_MODEL")
+            if not args.model:
+                raise ValueError(f"No model specified for provider {provider}. Add {provider_upper}_MODEL to config.")
             
-    # Set max_tokens based on provider-specific config or default
-    if provider.lower() == "anthropic":
+    # Set max_tokens based on provider-specific config
+    provider_lower = provider.lower()
+    if provider_lower == "anthropic":
         args.max_tokens = int(config_vars.get("ANTHROPIC_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
-    elif provider.lower() == "vertexai":
+    elif provider_lower == "vertexai":
         args.max_tokens = int(config_vars.get("VERTEXAI_MAX_TOKENS", VERTEXAI_MAX_TOKENS))
-    elif provider.lower() == "groq":
+    elif provider_lower == "groq":
         args.max_tokens = int(config_vars.get("GROQ_MAX_TOKENS", GROQ_MAX_TOKENS))
-    elif provider.lower() == "openai":
+    elif provider_lower == "openai":
         args.max_tokens = int(config_vars.get("OPENAI_MAX_TOKENS", OPENAI_MAX_TOKENS))
     else:
-        args.max_tokens = int(config_vars.get(f"{provider.upper()}_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
+        # For non-standard providers, use their specific config
+        max_tokens_key = f"{provider.upper()}_MAX_TOKENS"
+        if max_tokens_key in config_vars:
+            args.max_tokens = int(config_vars.get(max_tokens_key))
+        else:
+            # Default to a reasonable value if not specified
+            args.max_tokens = 8192
 
     # Force interactive mode when recovering
     args.no_interactive = False
@@ -221,8 +234,26 @@ def check_updates_async(console: Console) -> None:
 
 def setup_api_credentials(args: Namespace, config_vars: Dict[str, Any], console: Console, config_api_key: str) -> Tuple[str, str]:
     """Set up API credentials and provider-specific configuration."""
+    # Validate the configuration
+    from q_cli.io.config import validate_config
+    try:
+        validate_config(config_vars, console)
+    except ValueError as e:
+        if not args.provider:  # Only fail if user didn't override provider via args
+            console.print(f"[bold red]Error: {str(e)}[/bold red]")
+            sys.exit(1)
+        else:
+            # User specified provider via args, so just warn about config issues
+            console.print(f"[bold yellow]Warning: Config validation failed but continuing with provided args: {str(e)}[/bold yellow]")
+    
     # Get provider from args, config file, or default
     provider = args.provider or config_vars.get("PROVIDER", DEFAULT_PROVIDER)
+    
+    # Validate that provider is supported
+    if provider.lower() not in SUPPORTED_PROVIDERS:
+        allowed = ", ".join(sorted(SUPPORTED_PROVIDERS))
+        console.print(f"[bold red]Error: Provider '{provider}' is not supported. Allowed providers: {allowed}[/bold red]")
+        sys.exit(1)
     
     # Initialize provider_kwargs for any provider-specific settings
     provider_kwargs = {}
@@ -243,7 +274,8 @@ def setup_api_credentials(args: Namespace, config_vars: Dict[str, Any], console:
             if get_debug():
                 console.print(f"[info]Using VertexAI project ID: {project_id}[/info]")
         else:
-            console.print("[bold yellow]WARNING: No project ID specified for VertexAI. Set VERTEXAI_PROJECT in config or environment.[/bold yellow]")
+            console.print("[bold red]ERROR: No project ID specified for VertexAI. Set VERTEXAI_PROJECT in config or environment.[/bold red]")
+            sys.exit(1)
             
         # Handle VertexAI location from config or environment
         location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION") or os.environ.get("VERTEX_LOCATION")
@@ -252,7 +284,8 @@ def setup_api_credentials(args: Namespace, config_vars: Dict[str, Any], console:
             if get_debug():
                 console.print(f"[info]Using VertexAI location: {location}[/info]")
         else:
-            console.print("[bold yellow]WARNING: No location specified for VertexAI. Set VERTEXAI_LOCATION in config or environment.[/bold yellow]")
+            console.print("[bold red]ERROR: No location specified for VertexAI. Set VERTEXAI_LOCATION in config or environment.[/bold red]")
+            sys.exit(1)
     elif provider.lower() == "groq":
         api_key = config_vars.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
     elif provider.lower() == "openai":
@@ -269,35 +302,84 @@ def setup_api_credentials(args: Namespace, config_vars: Dict[str, Any], console:
 
 def configure_model_settings(args: Namespace, provider: str, config_vars: Dict[str, Any]) -> None:
     """Configure model and token settings based on provider."""
-    # Set model based on provider if not explicitly specified
+    # Set model based on provider-specific configuration if not explicitly specified
     if not args.model:
-        if provider.lower() == "anthropic":
-            args.model = config_vars.get("MODEL", ANTHROPIC_DEFAULT_MODEL)
-        elif provider.lower() == "vertexai":
-            args.model = config_vars.get("MODEL", VERTEXAI_DEFAULT_MODEL)
-        elif provider.lower() == "groq":
-            args.model = config_vars.get("MODEL", GROQ_DEFAULT_MODEL)
-        elif provider.lower() == "openai":
-            args.model = config_vars.get("MODEL", OPENAI_DEFAULT_MODEL)
+        provider_lower = provider.lower()
+        provider_upper = provider.upper()
+        
+        # Use provider-specific model setting without fallbacks
+        if provider_lower == "anthropic":
+            args.model = config_vars.get("ANTHROPIC_MODEL", ANTHROPIC_DEFAULT_MODEL)
+        elif provider_lower == "vertexai":
+            args.model = config_vars.get("VERTEXAI_MODEL", VERTEXAI_DEFAULT_MODEL)
+        elif provider_lower == "groq":
+            args.model = config_vars.get("GROQ_MODEL", GROQ_DEFAULT_MODEL)
+        elif provider_lower == "openai":
+            args.model = config_vars.get("OPENAI_MODEL", OPENAI_DEFAULT_MODEL)
         else:
-            args.model = config_vars.get("MODEL", DEFAULT_MODEL)
+            # For non-standard providers, use their specific config
+            args.model = config_vars.get(f"{provider_upper}_MODEL")
+            if not args.model:
+                raise ValueError(f"No model specified for provider {provider}. Add {provider_upper}_MODEL to config.")
     
-    # Set max_tokens based on provider-specific config or default
-    if provider.lower() == "anthropic":
+    # Set max_tokens based on provider-specific config
+    provider_lower = provider.lower()
+    if provider_lower == "anthropic":
         args.max_tokens = int(config_vars.get("ANTHROPIC_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
-    elif provider.lower() == "vertexai":
+    elif provider_lower == "vertexai":
         args.max_tokens = int(config_vars.get("VERTEXAI_MAX_TOKENS", VERTEXAI_MAX_TOKENS))
-    elif provider.lower() == "groq":
+    elif provider_lower == "groq":
         args.max_tokens = int(config_vars.get("GROQ_MAX_TOKENS", GROQ_MAX_TOKENS))
-    elif provider.lower() == "openai":
+    elif provider_lower == "openai":
         args.max_tokens = int(config_vars.get("OPENAI_MAX_TOKENS", OPENAI_MAX_TOKENS))
     else:
-        args.max_tokens = int(config_vars.get(f"{provider.upper()}_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
+        # For non-standard providers, use their specific config
+        max_tokens_key = f"{provider.upper()}_MAX_TOKENS"
+        if max_tokens_key in config_vars:
+            args.max_tokens = int(config_vars.get(max_tokens_key))
+        else:
+            # Default to a reasonable value if not specified
+            args.max_tokens = 8192
+
+
+def validate_model_for_provider(model: str, provider: str, console: Console) -> bool:
+    """
+    Validate that the model is compatible with the provider.
+    
+    Args:
+        model: Model name
+        provider: Provider name
+        console: Console instance for output
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    model_lower = model.lower()
+    provider_lower = provider.lower()
+    
+    # Check model compatibility based on provider
+    if provider_lower == "anthropic" and not any(name in model_lower for name in ["claude", "anthropic"]):
+        console.print(f"[bold yellow]Warning: Model '{model}' doesn't appear to be an Anthropic model. This may cause errors.[/bold yellow]")
+        return False
+    elif provider_lower == "vertexai" and not any(name in model_lower for name in ["gemini", "gecko", "gemma", "palm", "google", "vertex"]):
+        console.print(f"[bold yellow]Warning: Model '{model}' doesn't appear to be a VertexAI model. This may cause errors.[/bold yellow]")
+        return False
+    elif provider_lower == "groq" and not any(name in model_lower for name in ["groq", "llama", "mixtral", "falcon", "deepseek"]):
+        console.print(f"[bold yellow]Warning: Model '{model}' doesn't appear to be a Groq model. This may cause errors.[/bold yellow]")
+        return False
+    elif provider_lower == "openai" and not any(name in model_lower for name in ["gpt", "ft:gpt", "text-davinci", "openai", "dall-e"]):
+        console.print(f"[bold yellow]Warning: Model '{model}' doesn't appear to be an OpenAI model. This may cause errors.[/bold yellow]")
+        return False
+    
+    return True
 
 
 def initialize_llm_client(api_key: str, args: Namespace, provider: str, console: Console):
     """Initialize LLM client with error handling."""
     try:
+        # Validate model compatibility with provider
+        validate_model_for_provider(args.model, provider, console)
+        
         # Lazy import LLMClient only when needed
         from q_cli.utils.client import LLMClient
         import litellm  # Only import when we're about to use it
@@ -340,10 +422,9 @@ def configure_file_tree(args: Namespace, config_vars: Dict[str, Any], console: C
 
     # Set the constant if needed
     if include_file_tree:
-        # Set the constant directly
-        from q_cli.utils.constants import INCLUDE_FILE_TREE
-
-        INCLUDE_FILE_TREE = True
+        # Set the constant directly - need to modify module attribute
+        import q_cli.utils.constants
+        q_cli.utils.constants.INCLUDE_FILE_TREE = True
 
         if get_debug():
             console.print("[info]File tree will be included in context[/info]")
@@ -473,6 +554,7 @@ def execute_conversation(client, system_prompt, args, prompt_session, console, q
         sys.exit(1)
 
 
+
 def main() -> None:
     """Main entry point for the CLI."""
     # Initialize CLI arguments and console
@@ -496,6 +578,8 @@ def main() -> None:
     # Configure model and token settings
     configure_model_settings(args, provider, config_vars)
     
+    # Use actual model name for display
+    
     # Check for API key
     if not api_key:
         console.print(
@@ -509,6 +593,12 @@ def main() -> None:
     # Set up prompt session and history
     prompt_session = create_prompt_session(console)
     history = prompt_session.history
+    
+    # Display version and model info with absolute minimal visibility
+    if not get_debug():  # Only print ultra-dim in regular mode
+        version_str = f"Q ver. {__version__} - Brain: {args.model}"
+        # Lightest possible gray that's still barely visible
+        console.print(f"[dim #aaaaaa]{version_str}[/dim #aaaaaa]")
     
     # Configure file tree inclusion
     configure_file_tree(args, config_vars, console)

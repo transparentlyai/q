@@ -12,7 +12,7 @@ except ImportError:
     DEPENDENCIES_INSTALLED = False
 
 from rich.console import Console
-from q_cli.utils.constants import DEBUG
+from q_cli.utils.constants import get_debug
 
 
 def is_pdf_file(file_path: str) -> bool:
@@ -57,8 +57,8 @@ def extract_text_from_pdf(
     # First, check dependencies
     deps_installed, error_msg = check_dependencies()
     if not deps_installed:
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+        if get_debug():
+            console.print(f"[yellow]{error_msg}[/yellow]")
         return False, error_msg, None
 
     try:
@@ -66,9 +66,9 @@ def extract_text_from_pdf(
         expanded_path = os.path.expanduser(file_path)
         expanded_path = os.path.expandvars(expanded_path)
 
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Processing PDF: {expanded_path}[/yellow]"
+                f"[yellow]Processing PDF: {expanded_path}[/yellow]"
             )
 
         # Make sure the path is absolute
@@ -96,9 +96,9 @@ def extract_text_from_pdf(
                 page_text = page.get_text("text")
                 page_texts.append(page_text)
 
-                if DEBUG:
+                if get_debug():
                     console.print(
-                        f"[yellow]DEBUG: Extracted {len(page_text)} "
+                        f"[yellow]Extracted {len(page_text)} "
                         f"chars from page {i+1}[/yellow]"
                     )
 
@@ -109,9 +109,9 @@ def extract_text_from_pdf(
                 tables = page.extract_tables()
 
                 if tables:
-                    if DEBUG:
+                    if get_debug():
                         console.print(
-                            f"[yellow]DEBUG: Found {len(tables)} "
+                            f"[yellow]Found {len(tables)} "
                             f"tables on page {i+1}[/yellow]"
                         )
 
@@ -139,9 +139,9 @@ def extract_text_from_pdf(
         # Combine all page texts
         extracted_text = "\n\n".join(page_texts)
 
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Total extracted text: "
+                f"[yellow]Total extracted text: "
                 f"{len(extracted_text)} chars[/yellow]"
             )
 
@@ -150,8 +150,8 @@ def extract_text_from_pdf(
 
     except Exception as e:
         error_msg = f"Error processing PDF: {str(e)}"
-        if DEBUG:
-            console.print(f"[red]DEBUG: {error_msg}[/red]")
+        if get_debug():
+            console.print(f"[red]{error_msg}[/red]")
             import traceback
-            console.print(f"[yellow]DEBUG: {traceback.format_exc()}[/yellow]")
+            console.print(f"[yellow]{traceback.format_exc()}[/yellow]")
         return False, error_msg, None

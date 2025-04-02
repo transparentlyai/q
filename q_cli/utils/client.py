@@ -4,7 +4,7 @@ import os
 from typing import Dict, List, Optional, Any, Union
 import litellm
 
-from q_cli.utils.constants import DEFAULT_MODEL, DEBUG
+from q_cli.utils.constants import get_debug, ANTHROPIC_DEFAULT_MODEL
 from q_cli.utils.provider_factory import ProviderFactory, BaseProviderConfig
 
 
@@ -27,7 +27,8 @@ class LLMClient:
             provider: LLM provider (anthropic, vertexai, groq, openai) - optional, can be inferred
             **kwargs: Additional provider-specific configuration parameters
         """
-        self.model = model or DEFAULT_MODEL
+        # Use the model provided or let the provider factory handle defaults
+        self.model = model or ANTHROPIC_DEFAULT_MODEL
         
         # Create provider configuration using factory
         self.provider_config = ProviderFactory.create_provider(
@@ -50,7 +51,7 @@ class LLMClient:
         # Initialize litellm
         self.client = litellm
 
-        if DEBUG:
+        if get_debug():
             print(f"Initialized LLMClient with provider={self.provider}, model={self.model}")
 
     def messages_create(
@@ -95,7 +96,7 @@ class LLMClient:
         
         try:
             # Make the API call
-            if DEBUG:
+            if get_debug():
                 print(f"LiteLLM request: model={model}, max_tokens={max_tokens}, stream={stream}")
                 
             response = self.client.completion(**request_params)
@@ -104,7 +105,7 @@ class LLMClient:
             return self._transform_response(response, stream=stream)
             
         except litellm.exceptions.BadRequestError as e:
-            if DEBUG:
+            if get_debug():
                 print(f"LiteLLM bad request error: {str(e)}")
             
             # Use provider-specific error handling
@@ -118,12 +119,12 @@ class LLMClient:
             raise e
             
         except litellm.exceptions.RateLimitError as e:
-            if DEBUG:
+            if get_debug():
                 print(f"LiteLLM rate limit error: {str(e)}")
             raise e
             
         except litellm.exceptions.AuthenticationError as e:
-            if DEBUG:
+            if get_debug():
                 print(f"LiteLLM authentication error: {str(e)}")
             
             # Use provider-specific error handling
@@ -138,24 +139,24 @@ class LLMClient:
             raise Exception(f"{error_msg}\n\nOriginal error: {str(e)}")
             
         except litellm.exceptions.APIError as e:
-            if DEBUG:
+            if get_debug():
                 print(f"LiteLLM API error: {str(e)}")
             raise e
             
         except litellm.exceptions.ServiceUnavailableError as e:
-            if DEBUG:
+            if get_debug():
                 print(f"LiteLLM service unavailable error: {str(e)}")
             raise e
             
         # Generic exception handler for all other cases including ContentFilterError
         except Exception as e:
-            if DEBUG:
+            if get_debug():
                 print(f"LiteLLM error: {str(e)}")
             
             # Check if this might be a content filter error based on the error message
             error_str = str(e).lower()
             if any(term in error_str for term in ['content filter', 'content_filter', 'contentfilter']):
-                if DEBUG:
+                if get_debug():
                     print(f"Content filter triggered: {str(e)}")
                 raise Exception(f"Content filter triggered: {str(e)}")
             
@@ -234,7 +235,7 @@ class LLMClient:
                 # Simple text message
                 transformed.append({"role": role, "content": content})
         
-        if DEBUG:
+        if get_debug():
             print(f"Transformed {len(messages)} messages for LiteLLM")
         
         return transformed

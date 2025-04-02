@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple, Optional
 from rich.console import Console
 from rich.markdown import Markdown
 
-from q_cli.utils.constants import SENSITIVE_PATTERNS, REDACTED_TEXT, DEBUG
+from q_cli.utils.constants import SENSITIVE_PATTERNS, REDACTED_TEXT, get_debug
 
 # Type definitions for better code clarity
 Message = Dict[str, str]
@@ -135,10 +135,10 @@ def check_for_updates(console: Optional[Console] = None) -> Tuple[bool, str]:
             github_version = version_match.group(1)
             current_version = __version__
 
-            # Use console for debug output if DEBUG enabled
-            if DEBUG and console:
+            # Use console for debug output if debug mode is enabled
+            if get_debug() and console:
                 console.print(
-                    f"[dim]DEBUG: Current version: {current_version}, GitHub version: {github_version}[/dim]"
+                    f"[dim]Current version: {current_version}, GitHub version: {github_version}[/dim]"
                 )
 
             # Check if GitHub version is newer
@@ -146,9 +146,9 @@ def check_for_updates(console: Optional[Console] = None) -> Tuple[bool, str]:
                 return True, github_version
     except Exception as e:
         # Silently fail on any error - don't disrupt the user experience
-        if DEBUG and console:
+        if get_debug() and console:
             console.print(
-                f"[yellow]DEBUG: Error checking for updates: {str(e)}[/yellow]"
+                f"[yellow]Error checking for updates: {str(e)}[/yellow]"
             )
 
     return False, ""
@@ -171,7 +171,7 @@ def handle_api_error(
     """
     import os
     import sys
-    from q_cli.utils.constants import DEBUG
+    # Already imported get_debug at top of file
     
     # Lazy imports to reduce startup time
     import litellm
@@ -262,7 +262,7 @@ def handle_api_error(
     else:
         console.print(f"[bold red]Error communicating with LLM provider: {e}[/bold red]")
 
-    if DEBUG or os.environ.get("Q_DEBUG"):
+    if get_debug():
         console.print(f"[bold red]Error details: {e}[/bold red]")
 
     if exit_on_error:

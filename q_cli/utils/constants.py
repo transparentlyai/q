@@ -3,11 +3,15 @@
 import os
 
 # Environment variables
-DEBUG = os.environ.get("Q_DEBUG", "false").lower() in ["true", "1", "yes", "y", "on"]
+def get_debug():
+    """Get DEBUG value from environment variables, ensuring it's current."""
+    return os.environ.get("Q_DEBUG", "false").lower() in ["true", "1", "yes", "y", "on"]
 
-# Model Constants
-# Keep model name as is for API compatibility
-DEFAULT_MODEL = "claude-3-7-sonnet-latest"
+# Note: This is a module-level constant that won't reflect changes to Q_DEBUG
+# environment variable after module load. Use get_debug() to get current value.
+DEBUG = get_debug()
+
+# Model Constants - Removed general DEFAULT_MODEL
 
 # LLM Provider Constants
 DEFAULT_PROVIDER = "anthropic"

@@ -8,7 +8,7 @@ import magic
 from typing import Tuple, List, Optional, Dict, Any
 from rich.console import Console
 from bs4 import BeautifulSoup
-from q_cli.utils.constants import DEBUG
+from q_cli.utils.constants import get_debug
 
 # Define the special format for web content fetching
 URL_BLOCK_MARKER = "Q:COMMAND type=\"fetch\""  # Code block format
@@ -88,9 +88,9 @@ def process_urls_in_response(
             # Show fetching message without interrupt hint
             console.print(f"[dim]Fetching {url}[/dim]")
 
-            # Show additional debug info if in DEBUG mode
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Requesting URL {url}[/yellow]")
+            # Show additional debug info if in debug mode
+            if get_debug():
+                console.print(f"[yellow]Requesting URL {url}[/yellow]")
 
             try:
                 # Fetch the URL once
@@ -155,8 +155,8 @@ def process_urls_in_response(
                 # For model's text context, just include basic info
                 content_for_model = f"Image fetched from {url} ({len(binary_content)} bytes, content-type: {content_type})"
                 
-                if DEBUG:
-                    console.print(f"[yellow]DEBUG: Added image from {url} to multimodal content[/yellow]")
+                if get_debug():
+                    console.print(f"[yellow]Added image from {url} to multimodal content[/yellow]")
                 
             # Handle text/HTML content
             elif "text/html" in content_type:
@@ -191,10 +191,10 @@ def process_urls_in_response(
                 mime_type = magic.from_buffer(binary_content, mime=True)
                 file_type = magic.from_buffer(binary_content)
                 
-                if DEBUG:
-                    console.print(f"[yellow]DEBUG: Content-Type header: {content_type}[/yellow]")
-                    console.print(f"[yellow]DEBUG: Magic detected MIME: {mime_type}[/yellow]")
-                    console.print(f"[yellow]DEBUG: Magic detected type: {file_type}[/yellow]")
+                if get_debug():
+                    console.print(f"[yellow]Content-Type header: {content_type}[/yellow]")
+                    console.print(f"[yellow]Magic detected MIME: {mime_type}[/yellow]")
+                    console.print(f"[yellow]Magic detected type: {file_type}[/yellow]")
                 
                 # Check if it's a text file based on mime type
                 is_text = mime_type.startswith('text/') or \
@@ -219,13 +219,13 @@ def process_urls_in_response(
                         if len(text) > 15000:
                             text = text[:15000] + "\n\n[Content truncated due to length]"
                         content_for_model = f"Content from {url}:\n{text}"
-                        if DEBUG:
-                            console.print(f"[yellow]DEBUG: Magic identified content as text: {file_type}[/yellow]")
+                        if get_debug():
+                            console.print(f"[yellow]Magic identified content as text: {file_type}[/yellow]")
                     except UnicodeDecodeError:
                         # If we can't decode as text despite magic's guess, treat as binary
                         content_for_model = f"Binary content fetched from {url} ({len(binary_content)} bytes, detected type: {file_type})"
-                        if DEBUG:
-                            console.print(f"[yellow]DEBUG: Failed to decode as text despite magic detection[/yellow]")
+                        if get_debug():
+                            console.print(f"[yellow]Failed to decode as text despite magic detection[/yellow]")
                 
                 # Check if it's an image despite the content-type header
                 elif "image" in mime_type:
@@ -246,21 +246,21 @@ def process_urls_in_response(
                     # For model's text context, just include basic info
                     content_for_model = f"Image fetched from {url} ({len(binary_content)} bytes, detected type: {file_type})"
                     
-                    if DEBUG:
-                        console.print(f"[yellow]DEBUG: Magic detected image: {mime_type}[/yellow]")
+                    if get_debug():
+                        console.print(f"[yellow]Magic detected image: {mime_type}[/yellow]")
                 
                 else:
                     # This is definitely a binary file according to magic
                     content_for_model = f"Binary content fetched from {url} ({len(binary_content)} bytes, detected type: {file_type})"
                     
-                    if DEBUG:
-                        console.print(f"[yellow]DEBUG: Magic confirmed binary content: {file_type}[/yellow]")
+                    if get_debug():
+                        console.print(f"[yellow]Magic confirmed binary content: {file_type}[/yellow]")
 
             # Remove the code block completely from the response
             processed_response = processed_response.replace(marker, "", 1)
 
-            # Only display a confirmation message in DEBUG mode
-            if DEBUG:
+            # Only display a confirmation message in debug mode
+            if get_debug():
                 console.print(content_for_user)
             # Save content for model context
             model_url_content[url] = content_for_model
@@ -271,8 +271,8 @@ def process_urls_in_response(
             error_msg = f"Error fetching URL {url}: {str(e)}"
 
             # Only show debug info
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]{error_msg}[/yellow]")
 
             # Remove the code block completely from the response
             processed_response = processed_response.replace(marker, "", 1)

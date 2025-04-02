@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 from colorama import Fore, Style
-from q_cli.utils.constants import DEBUG, MAX_FILE_DISPLAY_LENGTH
+from q_cli.utils.constants import get_debug, MAX_FILE_DISPLAY_LENGTH
 
 # Global flag for "approve all" operations that persists between function calls
 # This is set to True when user selects "a" option and ensures all subsequent operations
@@ -66,23 +66,23 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
         Tuple containing (return_code, stdout, stderr)
     """
     # Debug output
-    if DEBUG:
-        console.print(f"[yellow]DEBUG: Executing command: {command}[/yellow]")
+    if get_debug():
+        console.print(f"[yellow]Executing command: {command}[/yellow]")
 
     # Check for dangerous commands
     if is_dangerous_command(command):
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Command blocked as dangerous: {command}[/yellow]"
+                f"[yellow]Command blocked as dangerous: {command}[/yellow]"
             )
         return (-1, "", "This command has been blocked for security reasons.")
 
     # Check if this is a heredoc command
     heredoc_match = re.search(r'<<\s*[\'"]*([^\'"\s<]*)[\'"]*', command)
     if heredoc_match:
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Heredoc command detected: {command}[/yellow]"
+                f"[yellow]Heredoc command detected: {command}[/yellow]"
             )
             console.print(
                 "[yellow]Heredoc commands (with <<EOF) are not directly supported.[/yellow]"
@@ -104,14 +104,14 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
             return (-1, "", "Path traversal attempts are not allowed")
             
     except Exception as e:
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: Command parsing error: {str(e)}[/yellow]")
+        if get_debug():
+            console.print(f"[yellow]Command parsing error: {str(e)}[/yellow]")
         return (-1, "", f"Error parsing command: {str(e)}")
 
     try:
         # Execute the command and capture output
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: Starting subprocess for: {command}[/yellow]")
+        if get_debug():
+            console.print(f"[yellow]Starting subprocess for: {command}[/yellow]")
         process = subprocess.Popen(
             command,
             shell=True,  # Note: shell=True is still a potential risk but permission system mitigates this
@@ -148,28 +148,28 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
                 "STOP. The operation was cancelled by user. Do not proceed with any additional commands or operations. Wait for new instructions from the user.",
             )
 
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Command completed with return code: {return_code}[/yellow]"
+                f"[yellow]Command completed with return code: {return_code}[/yellow]"
             )
             if stdout and len(stdout) > 0:
                 console.print(
-                    f"[yellow]DEBUG: Command stdout length: {len(stdout)} bytes[/yellow]"
+                    f"[yellow]Command stdout length: {len(stdout)} bytes[/yellow]"
                 )
             if stderr and len(stderr) > 0:
                 console.print(
-                    f"[yellow]DEBUG: Command stderr length: {len(stderr)} bytes[/yellow]"
+                    f"[yellow]Command stderr length: {len(stderr)} bytes[/yellow]"
                 )
 
         return (return_code, stdout, stderr)
 
     except subprocess.TimeoutExpired:
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: Command timed out: {command}[/yellow]")
+        if get_debug():
+            console.print(f"[yellow]Command timed out: {command}[/yellow]")
         return (-1, "", "Command timed out after 30 seconds")
     except Exception as e:
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: Command error: {str(e)}[/yellow]")
+        if get_debug():
+            console.print(f"[yellow]Command error: {str(e)}[/yellow]")
         return (-1, "", f"Error executing command: {str(e)}")
 
 
@@ -205,37 +205,37 @@ def ask_command_confirmation(
     # Check for heredoc pattern before anything else
     heredoc_match = re.search(r'<<\s*[\'"]*([^\'"\s<]*)[\'"]*', command)
     if heredoc_match:
-        if DEBUG:
-            console.print("\n[yellow]DEBUG: Q suggested a heredoc command:[/yellow]")
-            console.print(f"[yellow]DEBUG: {command}[/yellow]")
+        if get_debug():
+            console.print("\n[yellow]Q suggested a heredoc command:[/yellow]")
+            console.print(f"[yellow]{command}[/yellow]")
             console.print(
-                "[yellow]DEBUG: Heredoc commands cannot be executed directly.[/yellow]"
+                "[yellow]Heredoc commands cannot be executed directly.[/yellow]"
             )
             console.print(
-                "[yellow]DEBUG: Use the 'cat > file' command followed by a separate content block instead.[/yellow]"
+                "[yellow]Use the 'cat > file' command followed by a separate content block instead.[/yellow]"
             )
         return False, False
 
     # Check if we need to ask for permission
     if permission_manager and not permission_manager.needs_permission(command):
         # Get context if available for debug output
-        if DEBUG:
+        if get_debug():
             context = None
             try:
                 context = permission_manager.context_manager.get_approval_context(command, 
                                                                                  permission_manager.extract_command_type(command))
                 if context:
                     remaining = int(context.time_remaining)
-                    console.print(f"[yellow]DEBUG: Command pre-approved with {remaining} seconds remaining[/yellow]")
+                    console.print(f"[yellow]Command pre-approved with {remaining} seconds remaining[/yellow]")
             except Exception:
                 pass
         return True, False  # Command is pre-approved, no need to remember
 
     # If command is prohibited, don't even ask
     if permission_manager and permission_manager.is_command_prohibited(command):
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Command '{command}' is prohibited and cannot be executed.[/yellow]"
+                f"[yellow]Command '{command}' is prohibited and cannot be executed.[/yellow]"
             )
         return False, False
 
@@ -632,23 +632,23 @@ def read_file_from_marker(
         binary_content is only provided for non-text files
     """
     try:
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Reading file from marker: {file_path}[/yellow]"
+                f"[yellow]Reading file from marker: {file_path}[/yellow]"
             )
 
         # Expand the file path (handle ~ and environment variables)
         expanded_path = os.path.expanduser(file_path)
         expanded_path = os.path.expandvars(expanded_path)
 
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: Expanded path: {expanded_path}[/yellow]")
+        if get_debug():
+            console.print(f"[yellow]Expanded path: {expanded_path}[/yellow]")
 
         # Make sure the path is relative to the current working directory if not absolute
         if not os.path.isabs(expanded_path):
             expanded_path = os.path.join(os.getcwd(), expanded_path)
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Absolute path: {expanded_path}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]Absolute path: {expanded_path}[/yellow]")
                 
         # Security: Validate the path doesn't use path traversal to escape current directory
         cwd = os.getcwd()
@@ -662,16 +662,16 @@ def read_file_from_marker(
             
             if not (in_current_dir or in_home_dir):
                 # Path is outside of safe directories
-                if DEBUG:
-                    console.print(f"[yellow]DEBUG: Path traversal attempt - path points outside of allowed directories: {real_path}[/yellow]")
+                if get_debug():
+                    console.print(f"[yellow]Path traversal attempt - path points outside of allowed directories: {real_path}[/yellow]")
                 return False, "", "Operation rejected: For security reasons, file operations are restricted to the current directory and home directory.", None, None
                 
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Validated safe path: {real_path}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]Validated safe path: {real_path}[/yellow]")
                 
         except Exception as e:
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Path validation error: {str(e)}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]Path validation error: {str(e)}[/yellow]")
             return False, "", f"Error validating path: {str(e)}", None, None
 
         # Check if file exists
@@ -690,9 +690,9 @@ def read_file_from_marker(
             file_type = magic.from_file(expanded_path)
             mime_type = magic.from_file(expanded_path, mime=True)
             
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Magic detected type: {file_type}[/yellow]")
-                console.print(f"[yellow]DEBUG: Magic detected MIME: {mime_type}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]Magic detected type: {file_type}[/yellow]")
+                console.print(f"[yellow]Magic detected MIME: {mime_type}[/yellow]")
             
             # Check if it's a text file based on mime type and description
             is_text_file = mime_type.startswith('text/') or \
@@ -711,9 +711,9 @@ def read_file_from_marker(
             mime_type_result = mimetypes.guess_type(expanded_path)[0]
             mime_type = mime_type_result if mime_type_result is not None else ""
             
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Magic not available, using extension-based detection[/yellow]")
-                console.print(f"[yellow]DEBUG: Extension: {file_ext}, MIME: {mime_type}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]Magic not available, using extension-based detection[/yellow]")
+                console.print(f"[yellow]Extension: {file_ext}, MIME: {mime_type}[/yellow]")
             
             # Determine if this is a text file or binary file based on extension
             text_extensions = ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.xml', 
@@ -754,8 +754,8 @@ def read_file_from_marker(
                     is_image = file_ext in image_extensions
                 
                 if is_pdf:
-                    if DEBUG:
-                        console.print(f"[yellow]DEBUG: PDF file detected, processing with PDF module: {expanded_path}[/yellow]")
+                    if get_debug():
+                        console.print(f"[yellow]PDF file detected, processing with PDF module: {expanded_path}[/yellow]")
                     
                     # Handle PDF with specialized PDF module
                     try:
@@ -764,8 +764,8 @@ def read_file_from_marker(
                         # Check if PDF dependencies are installed
                         deps_installed, error_msg = check_dependencies()
                         if not deps_installed:
-                            if DEBUG:
-                                console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                            if get_debug():
+                                console.print(f"[yellow]{error_msg}[/yellow]")
                             console.print(f"[bold green]PDF file read as text (missing PDF libraries): {expanded_path}[/bold green]")
                             return True, file_info, "", "text", None
                         
@@ -782,8 +782,8 @@ def read_file_from_marker(
                             return True, file_info, "", "text", None
                     except ImportError:
                         # PDF module not available or dependencies missing
-                        if DEBUG:
-                            console.print(f"[yellow]DEBUG: PDF module not available, handling as binary[/yellow]")
+                        if get_debug():
+                            console.print(f"[yellow]PDF module not available, handling as binary[/yellow]")
                         console.print(f"[bold green]PDF file read as text: {expanded_path}[/bold green]")
                         return True, file_info, "", "text", None
                 
@@ -817,8 +817,8 @@ def read_file_from_marker(
                         console.print(f"[bold green]Image file read successfully: {expanded_path}[/bold green]")
                         return True, file_info, "", "image", binary_content
                     
-                    if DEBUG:
-                        console.print(f"[yellow]DEBUG: UnicodeDecodeError but magic says: {file_type}[/yellow]")
+                    if get_debug():
+                        console.print(f"[yellow]UnicodeDecodeError but magic says: {file_type}[/yellow]")
                 except ImportError:
                     # No magic available, just continue with binary handling
                     pass
@@ -837,10 +837,10 @@ def read_file_from_marker(
     except Exception as e:
         error_msg = f"Error reading file: {str(e)}"
         # Only show error details in debug mode
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+        if get_debug():
+            console.print(f"[yellow]{error_msg}[/yellow]")
             import traceback
-            console.print(f"[yellow]DEBUG: {traceback.format_exc()}[/yellow]")
+            console.print(f"[yellow]{traceback.format_exc()}[/yellow]")
         # Make sure this detailed error is returned so it can be sent to the model
         return False, "", error_msg, None, None
 
@@ -872,36 +872,36 @@ def write_file_from_marker(
         # Check for global approvals (time-based)
         if permission_manager.context_manager.global_approval and permission_manager.context_manager.global_approval.is_valid:
             has_context_approval = True
-            if DEBUG:
+            if get_debug():
                 remaining = int(permission_manager.context_manager.global_approval.time_remaining)
-                console.print(f"[yellow]DEBUG: File operation auto-approved via global context (remaining: {remaining}s)[/yellow]")
+                console.print(f"[yellow]File operation auto-approved via global context (remaining: {remaining}s)[/yellow]")
     
     # Use either the command-line auto_approve, approve_all flag, or contextual approval
     effective_approve_all = auto_approve or approve_all or has_context_approval
     
-    if DEBUG and effective_approve_all:
-        console.print(f"[yellow]DEBUG: Auto-approving file operations (auto_approve={auto_approve}, approve_all={approve_all}, context_approval={has_context_approval})[/yellow]")
+    if get_debug() and effective_approve_all:
+        console.print(f"[yellow]Auto-approving file operations (auto_approve={auto_approve}, approve_all={approve_all}, context_approval={has_context_approval})[/yellow]")
     try:
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Writing file from marker: {file_path}[/yellow]"
+                f"[yellow]Writing file from marker: {file_path}[/yellow]"
             )
             console.print(
-                f"[yellow]DEBUG: Content length: {len(content)} bytes[/yellow]"
+                f"[yellow]Content length: {len(content)} bytes[/yellow]"
             )
 
         # Expand the file path (handle ~ and environment variables)
         expanded_path = os.path.expanduser(file_path)
         expanded_path = os.path.expandvars(expanded_path)
 
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: Expanded path: {expanded_path}[/yellow]")
+        if get_debug():
+            console.print(f"[yellow]Expanded path: {expanded_path}[/yellow]")
 
         # Make sure the path is relative to the current working directory if not absolute
         if not os.path.isabs(expanded_path):
             expanded_path = os.path.join(os.getcwd(), expanded_path)
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Absolute path: {expanded_path}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]Absolute path: {expanded_path}[/yellow]")
                 
         # Security: Validate the path doesn't use path traversal to escape current directory
         cwd = os.getcwd()
@@ -915,24 +915,24 @@ def write_file_from_marker(
             
             if not (in_current_dir or in_home_dir):
                 # Path is outside of safe directories
-                if DEBUG:
-                    console.print(f"[yellow]DEBUG: Path traversal attempt - path points outside of allowed directories: {real_path}[/yellow]")
+                if get_debug():
+                    console.print(f"[yellow]Path traversal attempt - path points outside of allowed directories: {real_path}[/yellow]")
                 return False, "", "Operation rejected: For security reasons, file operations are restricted to the current directory and home directory."
                 
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Validated safe path: {real_path}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]Validated safe path: {real_path}[/yellow]")
                 
         except Exception as e:
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: Path validation error: {str(e)}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]Path validation error: {str(e)}[/yellow]")
             return False, "", f"Error validating path: {str(e)}"
 
         # Ensure the directory exists
         directory = os.path.dirname(expanded_path)
         if directory and not os.path.exists(directory):
-            if DEBUG:
+            if get_debug():
                 console.print(
-                    f"[yellow]DEBUG: Creating directory: {directory}[/yellow]"
+                    f"[yellow]Creating directory: {directory}[/yellow]"
                 )
             os.makedirs(directory, exist_ok=True)
 
@@ -944,9 +944,9 @@ def write_file_from_marker(
                 with open(expanded_path, "r", encoding="utf-8") as f:
                     existing_content = f.read()
             except Exception as e:
-                if DEBUG:
+                if get_debug():
                     console.print(
-                        f"[yellow]DEBUG: Could not read existing file: {str(e)}[/yellow]"
+                        f"[yellow]Could not read existing file: {str(e)}[/yellow]"
                     )
 
         # Ensure the content maintains consistent newlines
@@ -959,9 +959,9 @@ def write_file_from_marker(
             if not content.endswith("\r\n") and "\r\n" not in content:
                 content = content.replace("\n", "\r\n")
 
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Content size after newline normalization: {len(content)} bytes[/yellow]"
+                f"[yellow]Content size after newline normalization: {len(content)} bytes[/yellow]"
             )
 
         # Show the file details to the user
@@ -1085,8 +1085,8 @@ def write_file_from_marker(
                     new_filename = input("\nEnter new filename: ").strip()
                     if not new_filename:
                         error_msg = "File writing skipped - no filename provided"
-                        if DEBUG:
-                            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                        if get_debug():
+                            console.print(f"[yellow]{error_msg}[/yellow]")
                         return False, "", error_msg
 
                     # Expand the new file path
@@ -1127,14 +1127,14 @@ def write_file_from_marker(
                         return "cancel_all", "", ""
                     elif not confirm.startswith("y"):
                         error_msg = "File writing skipped by user"
-                        if DEBUG:
-                            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                        if get_debug():
+                            console.print(f"[yellow]{error_msg}[/yellow]")
                         return False, "", error_msg
                 elif not response.startswith("y"):
                     error_msg = "File writing skipped by user"
                     # Only show error details in debug mode
-                    if DEBUG:
-                        console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                    if get_debug():
+                        console.print(f"[yellow]{error_msg}[/yellow]")
                     # Make sure this error is returned so it can be sent to the model
                     return False, "", error_msg
         except KeyboardInterrupt:
@@ -1147,12 +1147,12 @@ def write_file_from_marker(
             )
 
         # Write the file atomically to prevent truncation if interrupted
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Writing content to file: {expanded_path}[/yellow]"
+                f"[yellow]Writing content to file: {expanded_path}[/yellow]"
             )
             console.print(
-                f"[yellow]DEBUG: Content length for writing: {len(content)} bytes[/yellow]"
+                f"[yellow]Content length for writing: {len(content)} bytes[/yellow]"
             )
 
         try:
@@ -1196,9 +1196,9 @@ def write_file_from_marker(
                 # Now atomically move the temp file to the target
                 shutil.move(temp_path, expanded_path)
 
-                if DEBUG:
+                if get_debug():
                     console.print(
-                        f"[yellow]DEBUG: File written successfully via atomic operation[/yellow]"
+                        f"[yellow]File written successfully via atomic operation[/yellow]"
                     )
             finally:
                 # Clean up the temp file if it still exists
@@ -1225,9 +1225,9 @@ def write_file_from_marker(
             f"[bold green]File {action} successfully: {expanded_path}[/bold green]"
         )
         console.print("")  # Add empty line after success message
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[green]DEBUG: File write successful: {expanded_path}[/green]"
+                f"[green]File write successful: {expanded_path}[/green]"
             )
             
         # Return approve_all status in third position
@@ -1241,11 +1241,11 @@ def write_file_from_marker(
     except Exception as e:
         error_msg = f"Error writing file: {str(e)}"
         # Only show error details in debug mode
-        if DEBUG:
-            console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+        if get_debug():
+            console.print(f"[yellow]{error_msg}[/yellow]")
             import traceback
 
-            console.print(f"[yellow]DEBUG: {traceback.format_exc()}[/yellow]")
+            console.print(f"[yellow]{traceback.format_exc()}[/yellow]")
         # Make sure this detailed error is returned so it can be sent to the model
         return False, "", error_msg
 
@@ -1271,25 +1271,25 @@ def process_file_reads(
         - List of dictionaries with multimodal file results (images/binary)
     """
     # Extract all file reading markers
-    if DEBUG:
+    if get_debug():
         console.print(
-            "[yellow]DEBUG: Looking for file reading markers in response[/yellow]"
+            "[yellow]Looking for file reading markers in response[/yellow]"
         )
     file_matches = extract_read_file_markers_from_response(response)
 
     if not file_matches:
-        if DEBUG:
-            console.print("[yellow]DEBUG: No file reading markers found[/yellow]")
+        if get_debug():
+            console.print("[yellow]No file reading markers found[/yellow]")
         return response, [], False, []
 
-    if DEBUG:
+    if get_debug():
         console.print(
-            f"[yellow]DEBUG: Found {len(file_matches)} file reading markers[/yellow]"
+            f"[yellow]Found {len(file_matches)} file reading markers[/yellow]"
         )
         # Log details about each file marker
         for idx, (file_path, _) in enumerate(file_matches):
             console.print(
-                f"[yellow]DEBUG: Marker {idx+1}: Path={file_path}[/yellow]"
+                f"[yellow]Marker {idx+1}: Path={file_path}[/yellow]"
             )
 
     processed_response = response
@@ -1329,7 +1329,7 @@ def process_file_reads(
                 }
                 multimodal_results.append(multimodal_result)
             elif file_type == "binary" and DEBUG:
-                console.print(f"[yellow]DEBUG: Binary file {file_path} not sent as multimodal content[/yellow]")
+                console.print(f"[yellow]Binary file {file_path} not sent as multimodal content[/yellow]")
             
             # For multimodal files, we only include basic info in the regular results
             # The actual binary content will be handled via multimodal messaging
@@ -1390,25 +1390,25 @@ def process_file_writes(
     use_approve_all = approve_all
     
     # Extract all file writing markers
-    if DEBUG:
+    if get_debug():
         console.print(
-            "[yellow]DEBUG: Looking for file writing markers in response[/yellow]"
+            "[yellow]Looking for file writing markers in response[/yellow]"
         )
     file_matches = extract_file_markers_from_response(response)
 
     if not file_matches:
-        if DEBUG:
-            console.print("[yellow]DEBUG: No file writing markers found[/yellow]")
+        if get_debug():
+            console.print("[yellow]No file writing markers found[/yellow]")
         return response, [], False
 
-    if DEBUG:
+    if get_debug():
         console.print(
-            f"[yellow]DEBUG: Found {len(file_matches)} file writing markers[/yellow]"
+            f"[yellow]Found {len(file_matches)} file writing markers[/yellow]"
         )
         # Log details about each file marker
         for idx, (file_path, content, _) in enumerate(file_matches):
             console.print(
-                f"[yellow]DEBUG: Marker {idx+1}: Path={file_path}, Content length={len(content)} bytes[/yellow]"
+                f"[yellow]Marker {idx+1}: Path={file_path}, Content length={len(content)} bytes[/yellow]"
             )
 
     processed_response = response
@@ -1432,8 +1432,8 @@ def process_file_writes(
             if permission_manager:
                 # Default timeout is 30 minutes
                 permission_manager.approve_all(timeout=None, context="User selected 'approve all' during file operations")
-                if DEBUG:
-                    console.print(f"[yellow]DEBUG: Activated time-based approval for all operations (30 minutes)[/yellow]")
+                if get_debug():
+                    console.print(f"[yellow]Activated time-based approval for all operations (30 minutes)[/yellow]")
                     
             stderr = ""  # No error
         else:

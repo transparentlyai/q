@@ -11,7 +11,7 @@ from rich.console import Console
 from q_cli.utils.client import LLMClient
 from prompt_toolkit import PromptSession
 
-from q_cli.utils.constants import DEBUG, SESSION_PATH
+from q_cli.utils.constants import get_debug, SESSION_PATH
 from q_cli.utils.context import ContextManager
 
 
@@ -35,7 +35,7 @@ class SessionManager:
         if not os.path.exists(session_dir):
             try:
                 os.makedirs(session_dir, exist_ok=True)
-                if DEBUG:
+                if get_debug():
                     self.console.print(
                         f"[dim]Created session directory: {session_dir}[/dim]"
                     )
@@ -95,7 +95,7 @@ class SessionManager:
                     # Keep only the most recent messages
                     conversation_copy = conversation_copy[start_index:]
 
-                    if DEBUG:
+                    if get_debug():
                         self.console.print(
                             f"[dim]Trimmed conversation history to last {MAX_HISTORY_TURNS} turns "
                             f"({len(conversation_copy)} messages)[/dim]"
@@ -129,13 +129,13 @@ class SessionManager:
             # Atomic rename
             os.replace(temp_path, self.session_file)
 
-            if DEBUG:
+            if get_debug():
                 self.console.print(f"[dim]Session saved to {self.session_file}[/dim]")
 
             return True
 
         except Exception as e:
-            if DEBUG:
+            if get_debug():
                 self.console.print(f"[yellow]Error saving session: {str(e)}[/yellow]")
             return False
 
@@ -157,7 +157,7 @@ class SessionManager:
             - Context data dictionary (or None if not found)
         """
         if not os.path.exists(self.session_file):
-            if DEBUG:
+            if get_debug():
                 self.console.print(
                     f"[yellow]No session file found at {self.session_file}[/yellow]"
                 )
@@ -211,13 +211,13 @@ class SessionManager:
                             # Keep only the most recent messages
                             conversation = conversation[start_index:]
 
-                            if DEBUG:
+                            if get_debug():
                                 self.console.print(
                                     f"[dim]Trimmed conversation history to last {max_turns} turns "
                                     f"({len(conversation)} messages)[/dim]"
                                 )
 
-                    if DEBUG:
+                    if get_debug():
                         self.console.print(
                             f"[dim]Loaded session from {self.session_file} "
                             f"({len(conversation)} messages)[/dim]"
@@ -225,7 +225,7 @@ class SessionManager:
 
                     return conversation, system_prompt, context_data
                 else:
-                    if DEBUG:
+                    if get_debug():
                         self.console.print(f"[yellow]Session file is empty[/yellow]")
                     return None, None, None
 
@@ -272,13 +272,13 @@ class SessionManager:
             # We don't restore the actual context items since they'll be rebuilt
             # when the conversation is loaded into run_conversation
 
-            if DEBUG:
+            if get_debug():
                 self.console.print("[dim]Context manager restored from session[/dim]")
 
             return context_manager
 
         except Exception as e:
-            if DEBUG:
+            if get_debug():
                 self.console.print(
                     f"[yellow]Error restoring context manager: {str(e)}[/yellow]"
                 )
@@ -434,7 +434,7 @@ def recover_session(
         )
     except Exception as e:
         console.print(f"[bold red]Error in conversation: {str(e)}[/bold red]")
-        if DEBUG:
+        if get_debug():
             import traceback
 
             console.print(f"[dim]{traceback.format_exc()}[/dim]")

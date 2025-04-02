@@ -6,7 +6,7 @@ import json
 from abc import ABC, abstractmethod
 
 from q_cli.utils.constants import (
-    DEBUG,
+    get_debug,
     DEFAULT_PROVIDER,
     SUPPORTED_PROVIDERS,
     ANTHROPIC_DEFAULT_MODEL,
@@ -110,7 +110,7 @@ class VertexAIProviderConfig(BaseProviderConfig):
     def setup_environment(self) -> None:
         """Set up VertexAI environment variables."""
         if not self.api_key:
-            if DEBUG:
+            if get_debug():
                 print("WARNING: No API key provided for VertexAI")
             return
             
@@ -124,7 +124,7 @@ class VertexAIProviderConfig(BaseProviderConfig):
                 abs_path = os.path.abspath(self.api_key)
                 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = abs_path
                 
-            if DEBUG:
+            if get_debug():
                 print(f"Set GOOGLE_APPLICATION_CREDENTIALS to {os.environ['GOOGLE_APPLICATION_CREDENTIALS']}")
                 
             # Try to extract project ID from credentials file
@@ -133,7 +133,7 @@ class VertexAIProviderConfig(BaseProviderConfig):
             # Fallback to using as a direct key (though not standard for VertexAI)
             print(f"WARNING: API key '{self.api_key}' is not a file path. VertexAI typically expects a JSON service account file.")
             os.environ["VERTEXAI_API_KEY"] = self.api_key
-            if DEBUG:
+            if get_debug():
                 print(f"Using direct API key for VertexAI (not recommended)")
         
         # Set up project ID
@@ -151,11 +151,11 @@ class VertexAIProviderConfig(BaseProviderConfig):
                     creds_data = json.load(f)
                     if 'project_id' in creds_data:
                         self.project_id = creds_data['project_id']
-                        if DEBUG:
+                        if get_debug():
                             print(f"Extracted project_id from credentials file: {self.project_id}")
                         return self.project_id
             except Exception as e:
-                if DEBUG:
+                if get_debug():
                     print(f"Error extracting project_id from credentials file: {str(e)}")
         
         # Try to extract from filename
@@ -164,12 +164,12 @@ class VertexAIProviderConfig(BaseProviderConfig):
                 filename = os.path.basename(self.api_key)
                 if "-" in filename and (filename.endswith(".json") or filename.endswith(".JSON")):
                     possible_project = filename.split(".json")[0].split(".JSON")[0]
-                    if DEBUG:
+                    if get_debug():
                         print(f"Possible project ID from filename: {possible_project}")
                     self.project_id = possible_project
                     return self.project_id
             except Exception as e:
-                if DEBUG:
+                if get_debug():
                     print(f"Error extracting project_id from filename: {str(e)}")
         
         # Special case handling
@@ -177,14 +177,14 @@ class VertexAIProviderConfig(BaseProviderConfig):
             # If celeritas-eng-dev is in the service account path, use it
             if "celeritas-eng-dev" in self.api_key:
                 self.project_id = "celeritas-eng-dev"
-                if DEBUG:
+                if get_debug():
                     print(f"Using project ID from path: {self.project_id}")
                 return self.project_id
                 
             # Special case for q-for-mauro.json
             if "q-for-mauro.json" in str(self.api_key):
                 self.project_id = "celeritas-eng-dev"
-                if DEBUG:
+                if get_debug():
                     print(f"Using hardcoded project ID for q-for-mauro.json: {self.project_id}")
                 return self.project_id
         
@@ -197,7 +197,7 @@ class VertexAIProviderConfig(BaseProviderConfig):
             for env_var in ["VERTEXAI_PROJECT", "VERTEX_PROJECT", "GOOGLE_PROJECT", "PROJECT_ID", "GCP_PROJECT"]:
                 if env_var in os.environ and os.environ[env_var].strip():
                     self.project_id = os.environ[env_var].strip()
-                    if DEBUG:
+                    if get_debug():
                         print(f"Found project ID in {env_var}: {self.project_id}")
                     break
         
@@ -205,13 +205,13 @@ class VertexAIProviderConfig(BaseProviderConfig):
         if self.project_id:
             for env_var in ["GOOGLE_PROJECT", "VERTEXAI_PROJECT", "PROJECT_ID", "GCP_PROJECT"]:
                 os.environ[env_var] = self.project_id
-            if DEBUG:
+            if get_debug():
                 print(f"Set all project environment variables to: {self.project_id}")
         else:
             print("ERROR: VERTEXAI_PROJECT not set in environment (required for VertexAI)")
             print("Please set VERTEXAI_PROJECT in your config file or environment variables")
             
-            if DEBUG:
+            if get_debug():
                 print(f"API key: {self.api_key}")
                 print(f"Current environment variables:")
                 for key in sorted(os.environ.keys()):
@@ -226,7 +226,7 @@ class VertexAIProviderConfig(BaseProviderConfig):
             for env_var in ["VERTEXAI_LOCATION", "VERTEX_LOCATION", "GOOGLE_LOCATION", "LOCATION_ID", "GCP_LOCATION"]:
                 if env_var in os.environ and os.environ[env_var].strip():
                     self.location = os.environ[env_var].strip()
-                    if DEBUG:
+                    if get_debug():
                         print(f"Found location in {env_var}: {self.location}")
                     break
         
@@ -235,7 +235,7 @@ class VertexAIProviderConfig(BaseProviderConfig):
             for env_var in ["VERTEX_LOCATION", "VERTEXAI_LOCATION", "LOCATION_ID", "GCP_LOCATION", "GOOGLE_LOCATION"]:
                 os.environ[env_var] = self.location
                 
-            if DEBUG:
+            if get_debug():
                 print(f"Set all location environment variables to: {self.location}")
     
     def format_model_name(self, model_name: str) -> str:
@@ -375,6 +375,9 @@ class ProviderFactory:
         
         Returns:
             Provider configuration instance
+        
+        Raises:
+            ValueError: If provider is not supported or configuration is invalid
         """
         # If provider not specified, infer from model name
         if not provider_name and model:
@@ -386,19 +389,34 @@ class ProviderFactory:
         
         # Verify provider is supported
         if provider_name not in cls._provider_registry:
-            supported = ", ".join(cls._provider_registry.keys())
+            supported = ", ".join(sorted(cls._provider_registry.keys()))
             raise ValueError(f"Unsupported provider: {provider_name}. Supported providers: {supported}")
+        
+        # Verify provider is in the allowed list
+        if provider_name not in SUPPORTED_PROVIDERS:
+            allowed = ", ".join(sorted(SUPPORTED_PROVIDERS))
+            raise ValueError(f"Provider '{provider_name}' is not in the allowed providers list: {allowed}")
         
         # Create provider configuration
         provider_class = cls._provider_registry[provider_name]
         
         # Special handling for VertexAI which has additional parameters
         if provider_name == "vertexai":
+            # Check for required additional parameters for VertexAI
+            project_id = kwargs.get("project_id")
+            location = kwargs.get("location")
+            
+            if not project_id:
+                raise ValueError("VertexAI provider requires a project_id")
+                
+            if not location:
+                raise ValueError("VertexAI provider requires a location")
+                
             return provider_class(
                 api_key=api_key,
                 model=model,
-                project_id=kwargs.get("project_id"),
-                location=kwargs.get("location")
+                project_id=project_id,
+                location=location
             )
         
         # Standard provider configuration

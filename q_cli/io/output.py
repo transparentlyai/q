@@ -14,6 +14,7 @@ def setup_console() -> Console:
             "warning": "magenta",
             "error": "bold red",
             "prompt": "orange1",
+            "subdued": "dim dim",
         }
     )
 

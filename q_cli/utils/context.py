@@ -10,7 +10,7 @@ from collections import deque
 from rich.console import Console
 
 from q_cli.utils.constants import (
-    DEBUG,
+    get_debug,
     DEFAULT_MAX_CONTEXT_TOKENS,
     DEFAULT_CONTEXT_PRIORITY_MODE,
     ESSENTIAL_PRIORITY,
@@ -199,7 +199,7 @@ class ContextManager:
             return
 
         if priority not in self.context_items:
-            if DEBUG:
+            if get_debug():
                 self.console.print(
                     f"[yellow]Invalid priority: {priority}, using supplementary[/yellow]"
                 )
@@ -208,7 +208,7 @@ class ContextManager:
         item = ContextItem(content, priority, description)
         self.context_items[priority].append(item)
 
-        if DEBUG:
+        if get_debug():
             self.console.print(
                 f"[info]Added {description} context: {item.token_count} tokens[/info]"
             )
@@ -223,7 +223,7 @@ class ContextManager:
         self.system_prompt = prompt
         self.system_prompt_tokens = num_tokens_from_string(prompt)
 
-        if DEBUG:
+        if get_debug():
             self.console.print(
                 f"[info]System prompt: {self.system_prompt_tokens} tokens[/info]"
             )
@@ -336,12 +336,12 @@ class ContextManager:
                             result.insert(0, truncated_item)
                             total_tokens += truncated_item.token_count
 
-                if DEBUG:
+                if get_debug():
                     self.console.print(
                         f"[yellow]Dropping {item.description} to fit token limit[/yellow]"
                     )
 
-        if DEBUG and len(result) < len(items):
+        if get_debug() and len(result) < len(items):
             dropped = len(items) - len(result)
             self.console.print(
                 f"[yellow]Dropped {dropped} items from {priority} priority[/yellow]"
@@ -357,7 +357,7 @@ class ContextManager:
         # We need both max_tokens and a valid system_prompt_tokens value
         if self.max_tokens is None:
             self.max_tokens = DEFAULT_MAX_CONTEXT_TOKENS
-            if DEBUG:
+            if get_debug():
                 self.console.print(
                     f"[yellow]Using default max tokens: {self.max_tokens}[/yellow]"
                 )
@@ -365,7 +365,7 @@ class ContextManager:
         token_budget = self.max_tokens - self.system_prompt_tokens
         if token_budget <= 0:
             # System prompt alone exceeds token limit
-            if DEBUG:
+            if get_debug():
                 self.console.print(
                     f"[red]Warning: System prompt alone exceeds token limit[/red]"
                 )
@@ -403,7 +403,7 @@ class ContextManager:
             SUPPLEMENTARY_PRIORITY, supplementary_target
         )
 
-        if DEBUG:
+        if get_debug():
             total_after = sum(
                 sum(item.token_count for item in items)
                 for items in self.context_items.values()

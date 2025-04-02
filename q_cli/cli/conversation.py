@@ -17,7 +17,7 @@ from q_cli.utils.constants import (
     SAVE_COMMAND_PREFIX,
     RECOVER_COMMAND,
     MAX_HISTORY_TURNS,
-    DEBUG,
+    get_debug,
     HISTORY_PATH,
     ESSENTIAL_PRIORITY,
     DEFAULT_MAX_CONTEXT_TOKENS,
@@ -132,7 +132,7 @@ def run_conversation(
                     current_system_prompt = system_prompt
                     if context_manager and len(conversation) > 3:
                         # For longer conversations, optimize the context
-                        if DEBUG:
+                        if get_debug():
                             console.print(
                                 "[info]Optimizing context for long conversation[/info]"
                             )
@@ -161,7 +161,7 @@ def run_conversation(
                             )
                             total_input_tokens = system_tokens + conversation_tokens
 
-                            if DEBUG:
+                            if get_debug():
                                 # Show token usage stats
                                 current_usage = token_tracker.get_current_usage()
                                 console.print(
@@ -278,9 +278,9 @@ def run_conversation(
                     # Get Claude's response
                     response = message.content[0].text  # type: ignore
 
-                    if DEBUG:
+                    if get_debug():
                         console.print(
-                            f"[yellow]DEBUG: Received model response ({len(response)} chars)[/yellow]"
+                            f"[yellow]Received model response ({len(response)} chars)[/yellow]"
                         )
                         console.print(f"[red]DEBUG RESPONSE: {response}[/red]")
                         # Log full message object to expose all fields including stop_reason
@@ -346,9 +346,9 @@ def run_conversation(
                         )  # Use 50% of max context
 
                         if result_tokens > max_allowed_tokens:
-                            if DEBUG:
+                            if get_debug():
                                 console.print(
-                                    f"[yellow]DEBUG: Operation results too large ({result_tokens} tokens), exceeding limit of {max_allowed_tokens} tokens[/yellow]"
+                                    f"[yellow]Operation results too large ({result_tokens} tokens), exceeding limit of {max_allowed_tokens} tokens[/yellow]"
                                 )
 
                             # Inform Claude about the size issue instead of sending full results
@@ -416,7 +416,7 @@ def run_conversation(
                             break
                         else:
                             # Debug output
-                            if DEBUG:
+                            if get_debug():
                                 console.print(
                                     "[dim]Interactive mode forced for recovery[/dim]"
                                 )
@@ -466,7 +466,7 @@ def run_conversation(
                     # For non-API errors, handle differently
                     console.print(f"[bold red]Error: {str(e)}[/bold red]")
 
-                    if DEBUG:
+                    if get_debug():
                         console.print(f"[bold red]Error details: {e}[/bold red]")
 
                     # Add error message to conversation
@@ -478,7 +478,7 @@ def run_conversation(
         pass
     finally:
         # prompt_toolkit's FileHistory automatically saves history
-        if os.environ.get("Q_DEBUG") or DEBUG:
+        if get_debug():
             # Check if history has a filename attribute (FileHistory does)
             history_file = getattr(prompt_session.history, "filename", HISTORY_PATH)
             console.print(f"[info]History saved to {history_file}[/info]")
@@ -524,8 +524,8 @@ def process_commands(
         # Check if the command is prohibited
         if permission_manager and permission_manager.is_command_prohibited(command):
             error_msg = f"Command '{command}' is prohibited and cannot be executed."
-            if DEBUG:
-                console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+            if get_debug():
+                console.print(f"[yellow]{error_msg}[/yellow]")
             # Add this error to the results for the model
             results.append(f"Command: {command}\nError: {error_msg}")
             has_error = True
@@ -533,9 +533,9 @@ def process_commands(
 
         # Check if auto-approve is enabled (either from command line or previous approve-all selection)
         if use_auto_approve:
-            if DEBUG:
+            if get_debug():
                 console.print(
-                    f"[yellow]DEBUG: Auto-approving command: {command}[/yellow]"
+                    f"[yellow]Auto-approving command: {command}[/yellow]"
                 )
             execute = True
             remember = False  # Don't need to remember with auto-approve
@@ -548,17 +548,17 @@ def process_commands(
 
             # Special handling for "cancel_all" operation
             if execute == "cancel_all":
-                if DEBUG:
+                if get_debug():
                     console.print(
-                        f"[yellow]DEBUG: User cancelled all operations[/yellow]"
+                        f"[yellow]User cancelled all operations[/yellow]"
                     )
                 # Return empty to avoid sending anything to Claude
                 return None, False
 
             if not execute:
                 error_msg = "Command execution skipped by user"
-                if DEBUG:
-                    console.print(f"[yellow]DEBUG: {error_msg}[/yellow]")
+                if get_debug():
+                    console.print(f"[yellow]{error_msg}[/yellow]")
                 # Add this information to the results for Claude
                 results.append(f"Command: {command}\nStatus: {error_msg}")
                 has_error = True
@@ -570,17 +570,17 @@ def process_commands(
                 use_auto_approve = True
                 # Add notification in results to let calling code know approve_all was activated
                 results.append("Approve-all mode activated for all operations")
-                if DEBUG:
+                if get_debug():
                     console.print(
-                        f"[yellow]DEBUG: Command approve-all mode activated for this batch[/yellow]"
+                        f"[yellow]Command approve-all mode activated for this batch[/yellow]"
                     )
             # Remember this command type if requested (the "Y" option) as permanent session approval
             elif remember and permission_manager:
                 # For the "Y" option, this adds permanent session approval (not time-based)
                 permission_manager.approve_command_type(command)
-                if DEBUG:
+                if get_debug():
                     console.print(
-                        f"[yellow]DEBUG: Command type permanently approved for this session[/yellow]"
+                        f"[yellow]Command type permanently approved for this session[/yellow]"
                     )
         else:
             # Command is pre-approved
@@ -665,9 +665,9 @@ def process_response_operations(
         if web_multimodal_content:
             multimodal_content.extend(web_multimodal_content)
 
-            if DEBUG:
+            if get_debug():
                 console.print(
-                    f"[yellow]DEBUG: Added {len(web_multimodal_content)} multimodal items from web fetching[/yellow]"
+                    f"[yellow]Added {len(web_multimodal_content)} multimodal items from web fetching[/yellow]"
                 )
 
         if url_content:
@@ -687,8 +687,8 @@ def process_response_operations(
     file_read_results_data = None
     if not getattr(args, "no_file_read", False) and not operation_interrupted:
         # Check for file read operations
-        if DEBUG:
-            console.print("[yellow]DEBUG: Checking file read operations...[/yellow]")
+        if get_debug():
+            console.print("[yellow]Checking file read operations...[/yellow]")
         (
             file_processed_response,
             file_read_results,
@@ -737,29 +737,29 @@ def process_response_operations(
                         # Add to multimodal content list
                         multimodal_content.append(image_obj)
 
-                        if DEBUG:
+                        if get_debug():
                             console.print(
-                                f"[yellow]DEBUG: Added image {file_info['file_path']} to multimodal content[/yellow]"
+                                f"[yellow]Added image {file_info['file_path']} to multimodal content[/yellow]"
                             )
                     except Exception as e:
-                        if DEBUG:
+                        if get_debug():
                             console.print(
-                                f"[yellow]DEBUG: Error preparing image: {str(e)}[/yellow]"
+                                f"[yellow]Error preparing image: {str(e)}[/yellow]"
                             )
                 elif file_info["file_type"] == "binary":
                     # For other binary files, we could potentially convert some types later
                     # Currently we'll just skip them for multimodal handling
-                    if DEBUG:
+                    if get_debug():
                         console.print(
-                            f"[yellow]DEBUG: Binary file {file_info['file_path']} not sent as multimodal content[/yellow]"
+                            f"[yellow]Binary file {file_info['file_path']} not sent as multimodal content[/yellow]"
                         )
 
     # 3. Process file write operations if enabled
     file_write_results_data = None
     if not getattr(args, "no_file_write", False) and not operation_interrupted:
         # Check for file write operations - don't use spinner to avoid conflict with approval prompts
-        if DEBUG:
-            console.print("[yellow]DEBUG: Checking file write operations...[/yellow]")
+        if get_debug():
+            console.print("[yellow]Checking file write operations...[/yellow]")
         file_processed_response, file_write_results, file_write_has_error = (
             process_file_writes(response, console, False, auto_approve, approve_all, permission_manager)
         )
@@ -777,9 +777,9 @@ def process_response_operations(
         for result in file_write_results:
             # Check for special "cancel_all" marker
             if result.get("success") == "cancel_all":
-                if DEBUG:
+                if get_debug():
                     console.print(
-                        f"[yellow]DEBUG: File operation was cancelled completely by user[/yellow]"
+                        f"[yellow]File operation was cancelled completely by user[/yellow]"
                     )
                 # Return empty values to avoid sending anything to Claude
                 return [], False, []
@@ -826,8 +826,8 @@ def process_response_operations(
         if filtered_commands:
             # First get user approval for all commands without showing spinner
             # Then process the approved commands with the spinner
-            if DEBUG:
-                console.print("[yellow]DEBUG: Checking command approvals...[/yellow]")
+            if get_debug():
+                console.print("[yellow]Checking command approvals...[/yellow]")
             # Use either auto_approve from args or approve_all from file operations
             command_results_str, cmd_has_error = process_commands(
                 filtered_commands,

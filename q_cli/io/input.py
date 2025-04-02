@@ -16,7 +16,7 @@ from prompt_toolkit.completion import Completer, Completion, PathCompleter
 from prompt_toolkit.document import Document
 from rich.console import Console
 
-from q_cli.utils.constants import HISTORY_PATH, EXIT_COMMANDS
+from q_cli.utils.constants import HISTORY_PATH, EXIT_COMMANDS, get_debug
 from q_cli.utils.helpers import format_markdown
 
 
@@ -182,7 +182,7 @@ def create_prompt_session(console: Console) -> PromptSession:
         completer=smart_completer,  # Use our smart path completer
     )
 
-    if os.environ.get("Q_DEBUG"):
+    if get_debug():
         console.print(f"[info]Using history file: {HISTORY_PATH}[/info]")
 
     return prompt_session

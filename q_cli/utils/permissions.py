@@ -7,7 +7,7 @@ import shlex
 import time
 from typing import Dict, List, Set, Optional, Tuple, Any
 
-from q_cli.utils.constants import DEBUG
+from q_cli.utils.constants import get_debug
 from q_cli.utils.permissions_context import PermissionContextManager, ApprovalContext
 
 
@@ -358,10 +358,10 @@ class CommandPermissionManager:
 
         # Global approval check - if active and valid, bypass all checks
         if self.context_manager.global_approval and self.context_manager.global_approval.is_valid:
-            if DEBUG:
+            if get_debug():
                 from rich.console import Console
                 console = Console()
-                console.print(f"[yellow]DEBUG: Command '{command}' approved via global approval context[/yellow]")
+                console.print(f"[yellow]Command '{command}' approved via global approval context[/yellow]")
             return False  # No permission needed, globally approved
 
         # Extract all command types from the command string
@@ -374,10 +374,10 @@ class CommandPermissionManager:
 
         # Check for exact command match in contextual approvals
         if self.context_manager.is_command_approved(command, first_cmd_type):
-            if DEBUG:
+            if get_debug():
                 from rich.console import Console
                 console = Console()
-                console.print(f"[yellow]DEBUG: Command '{command}' approved via contextual approval[/yellow]")
+                console.print(f"[yellow]Command '{command}' approved via contextual approval[/yellow]")
             return False  # No permission needed, contextually approved
 
         # Check if any command is restricted

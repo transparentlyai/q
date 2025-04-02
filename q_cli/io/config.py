@@ -10,7 +10,7 @@ from rich.console import Console
 from q_cli.utils.constants import (
     CONFIG_PATH,
     REDACTED_TEXT,
-    DEBUG,
+    get_debug,
     INCLUDE_FILE_TREE,
     MAX_FILE_TREE_ENTRIES,
     DEFAULT_MAX_CONTEXT_TOKENS,
@@ -21,6 +21,54 @@ from q_cli.utils.constants import (
 )
 from q_cli.utils.helpers import contains_sensitive_info, expand_env_vars
 from q_cli.utils.context import ContextManager
+
+
+def validate_config(config_vars: Dict[str, str], console: Console) -> None:
+    """
+    Validate configuration variables for consistency and correctness.
+    
+    Args:
+        config_vars: Dictionary of configuration variables
+        console: Console instance for output
+        
+    Raises:
+        ValueError: If configuration is invalid
+    """
+    from q_cli.utils.constants import SUPPORTED_PROVIDERS
+    
+    # Check if provider is specified and valid
+    if "PROVIDER" in config_vars:
+        provider = config_vars["PROVIDER"].lower()
+        if provider not in SUPPORTED_PROVIDERS:
+            allowed = ", ".join(sorted(SUPPORTED_PROVIDERS))
+            error_msg = f"Invalid provider '{provider}' in config. Supported providers: {allowed}"
+            console.print(f"[bold red]Error: {error_msg}[/bold red]")
+            raise ValueError(error_msg)
+            
+        # Check for required provider-specific settings
+        if provider == "vertexai":
+            # VertexAI requires project ID and location
+            project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT")
+            if not project_id:
+                console.print("[bold yellow]Warning: VERTEXAI_PROJECT not set in config file (required for VertexAI)[/bold yellow]")
+                
+            location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION")
+            if not location:
+                console.print("[bold yellow]Warning: VERTEXAI_LOCATION not set in config file (required for VertexAI)[/bold yellow]")
+        
+        # Check if provider has API key
+        api_key_var = f"{provider.upper()}_API_KEY"
+        if api_key_var not in config_vars or not config_vars[api_key_var]:
+            console.print(f"[bold yellow]Warning: {api_key_var} not set in config file[/bold yellow]")
+    
+    # Check for environment variables that might conflict with config
+    for provider in SUPPORTED_PROVIDERS:
+        env_key = f"{provider.upper()}_API_KEY"
+        config_key = env_key
+        
+        if env_key in os.environ and config_key in config_vars:
+            if get_debug():
+                console.print(f"[yellow]Note: {env_key} found in both environment and config file. Environment variable takes precedence.[/yellow]")
 
 
 def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, str]]:
@@ -103,9 +151,13 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                             # Store in config vars
                             config_vars[key] = value
                             
-                            # Debug output for VertexAI settings only when debug is enabled
-                            if DEBUG and key in ["VERTEXAI_PROJECT", "VERTEXAI_LOCATION", "VERTEXAI_API_KEY"]:
-                                print(f"DEBUG: Loaded {key}={value} from config file")
+                            # Debug output for config settings when debug is enabled
+                            debug_enabled = get_debug()
+                            if debug_enabled:
+                                if key.endswith("API_KEY"):
+                                    console.print(f"Loaded {key}={value[:5]}... from config file")
+                                else:
+                                    console.print(f"Loaded {key}={value} from config file")
                                 
                             # Make sure to set VERTEXAI_LOCATION in the environment if found in config
                             if key == "VERTEXAI_LOCATION" and value:
@@ -140,7 +192,7 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
             # Ensure directory exists
             os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
 
-            # If example config exists, use it as template, otherwise create minimal config
+            # Always use example config if it exists
             if example_config_path and os.path.exists(example_config_path):
                 with open(example_config_path, "r") as src, open(
                     CONFIG_PATH, "w"
@@ -150,65 +202,12 @@ def read_config_file(console: Console) -> Tuple[Optional[str], str, Dict[str, st
                     f"[green]Created config file at {CONFIG_PATH} using example template.[/green]"
                 )
             else:
-                # Create minimal config with default values as fallback
-                minimal_config = """# Configuration file for q - AI Command Line Assistant
-# Edit this file to customize behavior
-
-# API keys and credentials for different providers
-# Uncomment and set one of these for your preferred provider
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}  # Direct API key
-# VERTEXAI_API_KEY=/path/to/service-account.json  # Path to service account JSON file
-# VERTEXAI_PROJECT=your-google-cloud-project-id  # Required for VertexAI
-# VERTEXAI_LOCATION=us-central1  # Required for VertexAI (region where API is deployed)
-# GROQ_API_KEY=${GROQ_API_KEY}  # Direct API key
-# OPENAI_API_KEY=${OPENAI_API_KEY}  # Direct API key
-
-# Provider and model settings
-PROVIDER=anthropic  # Choose from: anthropic, vertexai, groq, openai
-
-# Select a model appropriate for your chosen provider:
-MODEL=claude-3-7-sonnet-latest  # For Anthropic
-# MODEL=gemini-2.0-flash-001    # For VertexAI
-# MODEL=deepseek-r1-distill-llama-70b  # For Groq
-# MODEL=gpt-4o-mini  # For OpenAI
-
-# Maximum tokens in response per provider
-# Each provider uses its own specific max tokens setting
-# Uncomment and adjust based on your needs
-# ANTHROPIC_MAX_TOKENS=8192    # Default limit for Claude models
-# VERTEXAI_MAX_TOKENS=65535    # Default limit for Gemini models
-# GROQ_MAX_TOKENS=8192         # Default limit for Groq-hosted models
-# OPENAI_MAX_TOKENS=8192       # Default limit for GPT models
-
-# Provider-specific context token limits
-# Maximum context size varies by model and provider
-# ANTHROPIC_MAX_CONTEXT_TOKENS=200000    # For Claude models
-# VERTEXAI_MAX_CONTEXT_TOKENS=1000000    # For Gemini models
-# GROQ_MAX_CONTEXT_TOKENS=200000         # For Groq-hosted models
-# OPENAI_MAX_CONTEXT_TOKENS=200000       # For GPT models
-
-# Rate limits per provider (tokens per minute)
-# Helps manage API usage and prevent rate limiting
-ANTHROPIC_MAX_TOKENS_PER_MIN=80000       # For Claude models
-# VERTEXAI_MAX_TOKENS_PER_MIN=80000      # For Gemini models
-# GROQ_MAX_TOKENS_PER_MIN=80000          # For Groq-hosted models
-# OPENAI_MAX_TOKENS_PER_MIN=80000        # For GPT models
-
-# Command permission settings (JSON arrays)
-ALWAYS_APPROVED_COMMANDS=["ls", "pwd", "echo", "date", "whoami", "cat"]
-ALWAYS_RESTRICTED_COMMANDS=["sudo", "rm", "mv"]
-PROHIBITED_COMMANDS=["rm -rf /", "shutdown", "reboot"]
-
-# Display settings
-# INCLUDE_FILE_TREE=true # Uncomment to include file tree in context
-
-#CONTEXT
-- Be concise in your answers unless asked for detail
-"""
-                with open(CONFIG_PATH, "w") as f:
-                    f.write(minimal_config)
+                # No example config found - this is an error condition
                 console.print(
-                    f"[green]Created minimal config file at {CONFIG_PATH}.[/green]"
+                    f"[red]Error: Could not find example_config.conf in any expected location.[/red]"
+                )
+                console.print(
+                    f"[yellow]This is likely an installation issue. Please report this bug.[/yellow]"
                 )
 
             console.print(
@@ -315,7 +314,7 @@ def build_context(
             # Remove inline comments from the value
             vertex_max = vertex_max.split("#")[0].strip()
         max_tokens = int(vertex_max or VERTEXAI_MAX_CONTEXT_TOKENS)
-        if DEBUG:
+        if get_debug():
             console.print(f"[info]Using VertexAI context limit: {max_tokens} tokens[/info]")
     elif provider.lower() == "groq":
         groq_max = config_vars.get("GROQ_MAX_CONTEXT_TOKENS")
@@ -371,7 +370,7 @@ def build_context(
                 "File tree",
             )
 
-            if DEBUG:
+            if get_debug():
                 console.print("[info]Added file tree to context[/info]")
 
     # Check for .Q directory in current working directory
@@ -387,12 +386,12 @@ def build_context(
                     IMPORTANT_PRIORITY,
                     ".Q directory files",
                 )
-                if DEBUG:
+                if get_debug():
                     console.print(
                         f"[info]Added {len(q_files)} files from .Q directory to context[/info]"
                     )
         except Exception as e:
-            if DEBUG:
+            if get_debug():
                 console.print(f"[yellow]Error reading .Q directory: {str(e)}[/yellow]")
 
     # Check for project.md file inside the .Q directory
@@ -406,10 +405,10 @@ def build_context(
                     IMPORTANT_PRIORITY,
                     "project.md content",
                 )
-                if DEBUG:
+                if get_debug():
                     console.print("[info]Added .Q/project.md content to context[/info]")
         except Exception as e:
-            if DEBUG:
+            if get_debug():
                 console.print(f"[yellow]Error reading .Q/project.md: {str(e)}[/yellow]")
 
     # Build the final context string
@@ -464,16 +463,16 @@ def generate_file_tree(console: Console) -> str:
 
             if result.returncode == 0 and result.stdout.strip():
                 tree_output = result.stdout.strip()
-                if DEBUG:
+                if get_debug():
                     console.print(
                         f"[info]Generated file tree using 'tree' command[/info]"
                     )
                 return tree_output
         except FileNotFoundError:
             # Tree command not available, we'll use the fallback method
-            if DEBUG:
+            if get_debug():
                 console.print(
-                    "[yellow]DEBUG: 'tree' command not found, using fallback method[/yellow]"
+                    "[yellow]get_debug(): 'tree' command not found, using fallback method[/yellow]"
                 )
             pass
 
@@ -512,9 +511,9 @@ def generate_file_tree(console: Console) -> str:
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
         if result.returncode != 0:
-            if DEBUG:
+            if get_debug():
                 console.print(
-                    f"[yellow]DEBUG: Error generating file tree: {result.stderr}[/yellow]"
+                    f"[yellow]get_debug(): Error generating file tree: {result.stderr}[/yellow]"
                 )
             return ""
 
@@ -580,9 +579,9 @@ def generate_file_tree(console: Console) -> str:
 
         # Limit the number of entries if needed
         if len(tree_lines) > MAX_FILE_TREE_ENTRIES:
-            if DEBUG:
+            if get_debug():
                 console.print(
-                    f"[yellow]DEBUG: Limiting file tree from {len(tree_lines)} to {MAX_FILE_TREE_ENTRIES} entries[/yellow]"
+                    f"[yellow]get_debug(): Limiting file tree from {len(tree_lines)} to {MAX_FILE_TREE_ENTRIES} entries[/yellow]"
                 )
             truncated_lines = tree_lines[:MAX_FILE_TREE_ENTRIES]
             truncated_lines.append(
@@ -592,7 +591,7 @@ def generate_file_tree(console: Console) -> str:
 
         tree_text = "\n".join(tree_lines)
 
-        if DEBUG:
+        if get_debug():
             console.print(
                 f"[info]Generated file tree with {len(tree_lines)} entries[/info]"
             )
@@ -600,8 +599,8 @@ def generate_file_tree(console: Console) -> str:
         return tree_text
 
     except Exception as e:
-        if DEBUG:
+        if get_debug():
             console.print(
-                f"[yellow]DEBUG: Error generating file tree: {str(e)}[/yellow]"
+                f"[yellow]get_debug(): Error generating file tree: {str(e)}[/yellow]"
             )
         return ""
