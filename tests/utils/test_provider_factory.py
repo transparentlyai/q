@@ -66,9 +66,9 @@ class TestAnthropicProviderConfig:
     
     def test_initialization_with_values(self):
         """Test initialization with provided values."""
-        provider = AnthropicProviderConfig(api_key="test_api_key", model="claude-3-opus-latest")
+        provider = AnthropicProviderConfig(api_key="test_api_key", model="claude-3-7-sonnet-latest")
         assert provider.api_key == "test_api_key"
-        assert provider.model == "claude-3-opus-latest"
+        assert provider.model == "claude-3-7-sonnet-latest"
     
     @patch.dict(os.environ, {}, clear=True)
     def test_setup_environment(self):

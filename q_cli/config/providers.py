@@ -10,7 +10,7 @@ DEFAULT_PROVIDER = "anthropic"
 SUPPORTED_PROVIDERS = ["anthropic", "vertexai", "groq", "openai"]
 
 # Model defaults by provider
-ANTHROPIC_DEFAULT_MODEL = "claude-3-opus-20240229"
+ANTHROPIC_DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 VERTEXAI_DEFAULT_MODEL = "gemini-1.5-flash-001"
 GROQ_DEFAULT_MODEL = "llama3-70b-8192"
 OPENAI_DEFAULT_MODEL = "gpt-4o"

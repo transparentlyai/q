@@ -34,24 +34,24 @@ class TestLLMClient:
         # Setup provider mock
         mock_provider = MagicMock(spec=AnthropicProviderConfig)
         mock_provider.get_provider_name.return_value = "anthropic"
-        mock_provider.format_model_name.return_value = "anthropic/claude-3-opus-latest"
+        mock_provider.format_model_name.return_value = "anthropic/claude-3-7-sonnet-latest"
         mock_create_provider.return_value = mock_provider
         
         # Create client with custom values
         client = LLMClient(
             api_key="test_api_key",
-            model="claude-3-opus-latest",
+            model="claude-3-7-sonnet-latest",
             provider="anthropic"
         )
         
         # Verify provider creation
         mock_create_provider.assert_called_once_with(
             provider_name="anthropic",
-            model="claude-3-opus-latest",
+            model="claude-3-7-sonnet-latest",
             api_key="test_api_key"
         )
         assert client.provider == "anthropic"
-        assert client.model == "anthropic/claude-3-opus-latest"
+        assert client.model == "anthropic/claude-3-7-sonnet-latest"
     
     @patch('q_cli.utils.provider_factory.ProviderFactory.create_provider')
     @patch('litellm.completion')
