@@ -92,7 +92,7 @@ SUPPLEMENTARY_TOKEN_ALLOCATION = 0.30  # 30% for supplementary context
 # Prompts directory
 PROMPTS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "assets",
+    "prompts",
 )
 
 # Commands

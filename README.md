@@ -50,7 +50,7 @@ The first time you run Q, it will automatically create a configuration file at `
 
 You can customize this file at any time to change Q's behavior. No need to restart Q - changes will be applied the next time you run a command.
 
-For a complete example of all available configuration options, refer to the [example configuration file](https://github.com/transparentlyai/q/blob/main/q_cli/example_config.conf) in the repository.
+For a complete example of all available configuration options, refer to the [example configuration file](https://github.com/transparentlyai/q/blob/main/example_config.conf) in the repository.
 
 ### Supported Configuration Variables
 
@@ -86,7 +86,7 @@ Note: Each provider uses its own specific max tokens setting. There is no global
 - `ALWAYS_RESTRICTED_COMMANDS`: List of commands that will always require explicit permission (JSON array format)
 - `PROHIBITED_COMMANDS`: List of commands that will never be executed (JSON array format)
 
-See the [example configuration file](https://github.com/transparentlyai/q/blob/main/q_cli/example_config.conf) for recommended values.
+See the [example configuration file](https://github.com/transparentlyai/q/blob/main/example_config.conf) for recommended values.
 
 **Note:** Command lists in your configuration file are added to the built-in defaults, not replacing them. This ensures core security features remain active while allowing you to customize permissions.
 
