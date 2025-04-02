@@ -3,6 +3,8 @@
 This module handles the setup of context data for LLM queries.
 """
 
+import os
+import re
 from typing import Any, Dict, Optional, Tuple
 from rich.console import Console
 
@@ -42,22 +44,38 @@ def setup_context_and_prompts(
     # Get the model name from args to substitute in the prompt
     model_name = getattr(args, "model", None)
     
-    base_system_prompt = get_system_prompt(
-        include_command_execution=include_command_execution,
-        context=None,  # We'll set context separately
-        model=model_name,
-    )
+    # Get base system prompt (needed only for testing)
+    # Not used directly, but needed to test variable subsitutiton
 
-    # Set system prompt and add conversation context
-    if sanitized_context:
-        # Context is now managed by the ContextManager
-        system_prompt = get_system_prompt(
-            include_command_execution=include_command_execution,
-            context=sanitized_context,
-            model=model_name,
-        )
-    else:
-        system_prompt = base_system_prompt
+    # Get user context from q.conf
+    user_context = ""
+    from q_cli.utils.constants import CONFIG_PATH
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r") as f:
+            content = f.read()
+            # Find the CONTEXT section
+            context_match = re.search(r'\[CONTEXT\](.*?)(\n\[|\Z)', content, re.DOTALL)
+            if context_match:
+                user_context = context_match.group(1).strip()
+    
+    # Get project context from .Q/project.md
+    project_context = ""
+    q_dir_path = os.path.join(os.getcwd(), ".Q")
+    project_md_path = os.path.join(q_dir_path, "project.md")
+    if os.path.isdir(q_dir_path) and os.path.isfile(project_md_path):
+        try:
+            with open(project_md_path, "r") as f:
+                project_context = f.read().strip()
+        except Exception:
+            pass
+    
+    # Use variables instead of appending context
+    system_prompt = get_system_prompt(
+        include_command_execution=include_command_execution,
+        model=model_name,
+        usercontext=user_context,
+        projectcontext=project_context
+    )
 
     # Make sure the context manager knows about the system prompt
     context_manager.set_system_prompt(system_prompt)
@@ -84,8 +102,15 @@ def handle_context_confirmation(
     Returns:
         True if context was confirmed or confirmation not needed, False to exit
     """
-    # If confirm-context is specified, show the context and ask for confirmation
-    if args.confirm_context and sanitized_context:
+    # If confirm-context is specified, show the full context information and ask for confirmation
+    if args.confirm_context:
+        # Show both the sanitized context and the system prompt
+        if sanitized_context:
+            console.print("\n[bold cyan]Sanitized Context:[/bold cyan]")
+            console.print(sanitized_context)
+            console.print("")
+        
+        # Always show the system prompt, even if no sanitized context
         if not confirm_context(prompt_session, system_prompt, console):
             console.print("Context rejected. Exiting.", style="info")
             return False

@@ -491,14 +491,14 @@ def get_initial_question(args, prompt_session: PromptSession, history) -> str:
 def confirm_context(
     prompt_session: PromptSession, system_prompt: str, console: Console
 ) -> bool:
-    """Show the context and ask for user confirmation."""
-    console.print("\n[bold]System prompt that will be sent to Q:[/bold]")
+    """Show the system prompt and ask for user confirmation."""
+    console.print("\n[bold magenta]System prompt that will be sent to Q:[/bold magenta]")
     console.print(format_markdown(system_prompt))
     console.print("")
 
     while True:
         response = (
-            get_input("Send this context to Q? [Y/n] ", session=prompt_session)
+            get_input("Proceed with this system prompt? [Y/n] ", session=prompt_session)
             .strip()
             .lower()
         )
