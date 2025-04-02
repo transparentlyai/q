@@ -181,8 +181,8 @@ def run_conversation(
                 
         # Get system prompt with user and project context
         system_prompt = get_prompt(prompt_path, model=display_model, 
-                                 usercontex=user_context, 
-                                 projectcontex=project_context)
+                                 usercontext=user_context, 
+                                 projectcontext=project_context)
         
         # If we have context, add it back
         if context_manager and context_manager.get_current_context():
@@ -203,8 +203,8 @@ def run_conversation(
             try:
                 # Make sure to include user and project context
                 base_system_prompt = get_prompt(prompt_path, model=display_model,
-                                             usercontex=user_context,
-                                             projectcontex=project_context)
+                                             usercontext=user_context,
+                                             projectcontext=project_context)
                 session_manager.save_session(
                     conversation=conversation if conversation else [],
                     system_prompt=base_system_prompt,
@@ -1772,8 +1772,8 @@ def handle_next_input(
                                     
                             # Get fresh prompt with all context variables
                             fresh_system_prompt = get_prompt(prompt_path, model=clean_model.lower(),
-                                                           usercontex=user_context,
-                                                           projectcontex=project_context)
+                                                           usercontext=user_context,
+                                                           projectcontext=project_context)
                             current_system_prompt = fresh_system_prompt
                             set_global_system_prompt(fresh_system_prompt)
                             
