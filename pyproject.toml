@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "q-cli-assistant"
-version = "0.12.9"
+version = "0.12.10"
 description = "A command Line AI Assistant for interacting with Claude"
 authors = [{name = "Mauro", email = "mauro@transparently.ai"}]
 readme = "README.md"
