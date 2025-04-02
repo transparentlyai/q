@@ -139,6 +139,26 @@ class TestVertexAIProviderConfig:
         assert os.environ.get("GCP_PROJECT") == "test-project"
         assert os.environ.get("VERTEX_LOCATION") == "us-central1"
         assert os.environ.get("VERTEXAI_LOCATION") == "us-central1"
+        
+    @patch.dict(os.environ, {}, clear=True)
+    def test_setup_environment_with_adc(self):
+        """Test environment setup with Application Default Credentials."""
+        provider = VertexAIProviderConfig(
+            api_key="ADC",
+            project_id="test-project",
+            location="us-central1"
+        )
+        provider.setup_environment()
+        
+        # Check environment variables - ADC should NOT set GOOGLE_APPLICATION_CREDENTIALS
+        assert os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") is None
+        # Project and location should still be set
+        assert os.environ.get("GOOGLE_PROJECT") == "test-project"
+        assert os.environ.get("VERTEXAI_PROJECT") == "test-project"
+        assert os.environ.get("PROJECT_ID") == "test-project"
+        assert os.environ.get("GCP_PROJECT") == "test-project"
+        assert os.environ.get("VERTEX_LOCATION") == "us-central1"
+        assert os.environ.get("VERTEXAI_LOCATION") == "us-central1"
     
     def test_format_model_name(self):
         """Test model name formatting."""
@@ -272,6 +292,16 @@ class TestProviderFactory:
             location="us-central1"
         )
         assert isinstance(provider, VertexAIProviderConfig)
+        
+        # VertexAI provider with ADC
+        provider = ProviderFactory.create_provider(
+            provider_name="vertexai", 
+            api_key="ADC",
+            project_id="test-project",
+            location="us-central1"
+        )
+        assert isinstance(provider, VertexAIProviderConfig)
+        assert provider.api_key == "ADC"
     
     def test_create_provider_with_model_inference(self):
         """Test creating provider by inferring from model name."""

@@ -98,7 +98,7 @@ class VertexAIProviderConfig(BaseProviderConfig):
         Initialize VertexAI provider configuration.
         
         Args:
-            api_key: Path to service account JSON file or API key
+            api_key: Path to service account JSON file, API key, or "ADC" to use Application Default Credentials
             model: Model name to use
             project_id: GCP project ID
             location: GCP region (e.g., "us-west4")
@@ -114,8 +114,14 @@ class VertexAIProviderConfig(BaseProviderConfig):
                 print("WARNING: No API key provided for VertexAI")
             return
             
+        # Handle Application Default Credentials
+        if self.api_key.upper() == "ADC":
+            if get_debug():
+                print("Using Application Default Credentials (ADC) for VertexAI")
+            # ADC uses the credentials configured in the environment
+            # No need to set GOOGLE_APPLICATION_CREDENTIALS
         # Handle service account JSON file
-        if os.path.isfile(self.api_key):
+        elif os.path.isfile(self.api_key):
             # Set credentials path
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.api_key
             
@@ -253,7 +259,8 @@ class VertexAIProviderConfig(BaseProviderConfig):
                     "VertexAI permission denied error. This typically means:\n"
                     "1. The service account doesn't have sufficient permissions\n"
                     "2. Required IAM role: 'roles/aiplatform.user' or 'aiplatform.admin'\n" 
-                    "3. Make sure the Vertex AI API is enabled in your project"
+                    "3. Make sure the Vertex AI API is enabled in your project\n"
+                    "4. If using ADC, ensure your default credentials have proper permissions"
                 ),
                 "resolution": "Check service account permissions and API enablement."
             },
@@ -263,7 +270,8 @@ class VertexAIProviderConfig(BaseProviderConfig):
                     "VertexAI authentication error. Please check:\n"
                     "1. Your service account JSON file is valid\n"
                     "2. Project ID is correct\n"
-                    "3. Location is correct"
+                    "3. Location is correct\n"
+                    "4. If using ADC, ensure you're properly authenticated (run 'gcloud auth application-default login')"
                 ),
                 "resolution": "Verify your credentials and project settings."
             },
