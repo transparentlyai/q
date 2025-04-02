@@ -86,17 +86,19 @@ def run_conversation(
     
     # Set the appropriate rate limit based on the provider
     provider = getattr(args, "provider", DEFAULT_PROVIDER)
-    if provider == "anthropic":
+    if provider == "anthropic" and 'ANTHROPIC_MAX_TOKENS_PER_MIN' in globals():
         max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
-    elif provider == "vertexai":
+    elif provider == "vertexai" and 'VERTEXAI_MAX_TOKENS_PER_MIN' in globals():
         max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
-    elif provider == "groq":
+    elif provider == "groq" and 'GROQ_MAX_TOKENS_PER_MIN' in globals():
         max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
-    elif provider == "openai":
+    elif provider == "openai" and 'OPENAI_MAX_TOKENS_PER_MIN' in globals():
         max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
     else:
-        # Default to Anthropic's rate limit
-        max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
+        # If no rate limit is defined for the provider, disable rate limiting
+        max_tokens_per_min = 0
+        if get_debug():
+            console.print(f"[yellow]No rate limit defined for provider '{provider}'. Rate limiting disabled.[/yellow]")
         
     token_tracker = TokenRateTracker(max_tokens_per_min)
     # Make token_tracker available in globals for access by transplant command
@@ -281,14 +283,19 @@ def run_conversation(
                                 # Get the token tracker from the parent scope if possible
                                 if 'token_tracker' in globals():
                                     # Set the appropriate rate limit based on the new provider
-                                    if new_provider == "anthropic":
+                                    if new_provider == "anthropic" and 'ANTHROPIC_MAX_TOKENS_PER_MIN' in globals():
                                         globals()['token_tracker'].max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
-                                    elif new_provider == "vertexai":
+                                    elif new_provider == "vertexai" and 'VERTEXAI_MAX_TOKENS_PER_MIN' in globals():
                                         globals()['token_tracker'].max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
-                                    elif new_provider == "groq":
+                                    elif new_provider == "groq" and 'GROQ_MAX_TOKENS_PER_MIN' in globals():
                                         globals()['token_tracker'].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
-                                    elif new_provider == "openai":
+                                    elif new_provider == "openai" and 'OPENAI_MAX_TOKENS_PER_MIN' in globals():
                                         globals()['token_tracker'].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
+                                    else:
+                                        # If no rate limit is defined for the provider, disable rate limiting
+                                        globals()['token_tracker'].max_tokens_per_min = 0
+                                        if get_debug():
+                                            console.print(f"[yellow]No rate limit defined for provider '{new_provider}'. Rate limiting disabled.[/yellow]")
                                 
                                 # Update context manager if it exists
                                 if 'context_manager' in globals():
@@ -1316,14 +1323,19 @@ def handle_next_input(
                             # Get the token tracker from the parent scope if possible
                             if 'token_tracker' in globals():
                                 # Set the appropriate rate limit based on the new provider
-                                if new_provider == "anthropic":
+                                if new_provider == "anthropic" and 'ANTHROPIC_MAX_TOKENS_PER_MIN' in globals():
                                     globals()['token_tracker'].max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
-                                elif new_provider == "vertexai":
+                                elif new_provider == "vertexai" and 'VERTEXAI_MAX_TOKENS_PER_MIN' in globals():
                                     globals()['token_tracker'].max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
-                                elif new_provider == "groq":
+                                elif new_provider == "groq" and 'GROQ_MAX_TOKENS_PER_MIN' in globals():
                                     globals()['token_tracker'].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
-                                elif new_provider == "openai":
+                                elif new_provider == "openai" and 'OPENAI_MAX_TOKENS_PER_MIN' in globals():
                                     globals()['token_tracker'].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
+                                else:
+                                    # If no rate limit is defined for the provider, disable rate limiting
+                                    globals()['token_tracker'].max_tokens_per_min = 0
+                                    if get_debug():
+                                        console.print(f"[yellow]No rate limit defined for provider '{new_provider}'. Rate limiting disabled.[/yellow]")
                             
                             # Update context manager if it exists
                             if 'context_manager' in globals():

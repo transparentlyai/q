@@ -535,6 +535,7 @@ class TokenRateTracker:
     
     Maintains a sliding window of token usage to ensure we don't exceed
     the provider-specific rate limit tokens per minute.
+    When max_tokens_per_min is not defined or set to 0, rate limiting is disabled.
     """
     
     def __init__(self, max_tokens_per_min: int = 80000):
@@ -542,7 +543,7 @@ class TokenRateTracker:
         Initialize the token rate tracker.
         
         Args:
-            max_tokens_per_min: Maximum tokens allowed per minute
+            max_tokens_per_min: Maximum tokens allowed per minute. If None or 0, rate limiting is disabled.
         """
         self.max_tokens_per_min = max_tokens_per_min
         self.window_size = 60  # 1 minute in seconds
@@ -553,11 +554,16 @@ class TokenRateTracker:
     def add_usage(self, token_count: int, timestamp: float = None) -> None:
         """
         Record token usage at the current time or specified timestamp.
+        Does nothing if rate limiting is disabled.
         
         Args:
             token_count: Number of tokens used
             timestamp: Optional specific timestamp to use (e.g., after API response completion)
         """
+        # Skip tracking if rate limiting is disabled
+        if not self.max_tokens_per_min:
+            return
+            
         current_time = timestamp if timestamp is not None else time.time()
         
         # First clean up expired entries older than our window
@@ -587,7 +593,11 @@ class TokenRateTracker:
         
         Returns:
             Total tokens used in the current window
+            Returns 0 when rate limiting is disabled
         """
+        if not self.max_tokens_per_min:
+            return 0
+            
         self._clean_expired_entries(time.time())
         return self.total_tokens_in_window
     
@@ -600,7 +610,11 @@ class TokenRateTracker:
             
         Returns:
             True if tokens can be used, False if it would exceed rate limit
+            Always returns True when rate limiting is disabled (max_tokens_per_min is None or 0)
         """
+        if not self.max_tokens_per_min:
+            return True
+            
         current_usage = self.get_current_usage()
         return (current_usage + token_count) <= self.max_tokens_per_min
     
@@ -614,7 +628,12 @@ class TokenRateTracker:
             
         Returns:
             Seconds waited (0 if no wait was needed)
+            Always returns 0 when rate limiting is disabled (max_tokens_per_min is None or 0)
         """
+        # Skip rate limiting entirely if disabled
+        if not self.max_tokens_per_min:
+            return 0.0
+            
         current_time = time.time()
         self._clean_expired_entries(current_time)
         
