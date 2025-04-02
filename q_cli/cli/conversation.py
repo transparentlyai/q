@@ -670,6 +670,11 @@ def run_conversation(
                             "[dim]Session recovery complete. Enter your next message.[/dim]"
                         )
                         continue
+                        
+                    # Check for special provider change no-notify marker
+                    if next_question == "INTERNAL_PROVIDER_CHANGE_NO_NOTIFY":
+                        # Skip adding to conversation to avoid notifying the model
+                        continue
 
                     # Add user input to conversation and context manager
                     if next_question.strip():
@@ -1366,7 +1371,7 @@ def handle_next_input(
                                 pass
                             else:
                                 console.print(f"[yellow]Note: Could not update config file, changes will only apply to this session[/yellow]")
-                            return f"The provider has been changed to {new_provider} with model {args.model}. Please continue our conversation with this in mind."
+                            return "INTERNAL_PROVIDER_CHANGE_NO_NOTIFY"
                             
                         except Exception as e:
                             console.print(f"[red]Error initializing new provider: {str(e)}[/red]")

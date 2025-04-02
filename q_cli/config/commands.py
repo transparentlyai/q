@@ -5,7 +5,7 @@ from typing import List, Set
 # Command execution special markers
 SAVE_COMMAND_PREFIX = "/save"
 RECOVER_COMMAND = "/recover"
-TRANSPLANT_COMMAND = "/provider"
+TRANSPLANT_COMMAND = "/transplant"
 
 # Default always-approved commands (safe to run without confirmation)
 DEFAULT_ALWAYS_APPROVED_COMMANDS: Set[str] = {
