@@ -78,6 +78,9 @@ def get_config_for_recovery(args: Namespace, console: Console) -> Tuple[str, Dic
     # Get provider from args, config file, or default
     provider = args.provider or config_vars.get("PROVIDER", DEFAULT_PROVIDER)
     
+    # Initialize provider_kwargs for provider-specific settings
+    provider_kwargs = {}
+    
     # Get API key based on provider
     if args.api_key:
         # Use API key from args
@@ -86,17 +89,28 @@ def get_config_for_recovery(args: Namespace, console: Console) -> Tuple[str, Dic
         api_key = config_vars.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     elif provider.lower() == "vertexai":
         api_key = config_vars.get("VERTEXAI_API_KEY") or os.environ.get("VERTEXAI_API_KEY")
+        
         # Handle VertexAI project ID from config or environment
-        if project_id := config_vars.get("VERTEXAI_PROJECT"):
+        project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT") or os.environ.get("VERTEX_PROJECT")
+        if project_id:
+            provider_kwargs["project_id"] = project_id
             os.environ["VERTEXAI_PROJECT"] = project_id
-        elif project_id := config_vars.get("VERTEX_PROJECT"):
             os.environ["VERTEX_PROJECT"] = project_id
+            if get_debug():
+                console.print(f"[info]Using VertexAI project ID: {project_id}[/info]")
+        else:
+            raise ValueError("VertexAI provider requires a project_id")
             
         # Handle VertexAI location from config or environment
-        if location := config_vars.get("VERTEXAI_LOCATION"):
+        location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION") or os.environ.get("VERTEX_LOCATION")
+        if location:
+            provider_kwargs["location"] = location
             os.environ["VERTEXAI_LOCATION"] = location
-        elif location := config_vars.get("VERTEX_LOCATION"):
             os.environ["VERTEX_LOCATION"] = location
+            if get_debug():
+                console.print(f"[info]Using VertexAI location: {location}[/info]")
+        else:
+            raise ValueError("VertexAI provider requires a location")
     elif provider.lower() == "groq":
         api_key = config_vars.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
     elif provider.lower() == "openai":
@@ -144,6 +158,9 @@ def get_config_for_recovery(args: Namespace, console: Console) -> Tuple[str, Dic
             # Default to a reasonable value if not specified
             args.max_tokens = 8192
 
+    # Store provider_kwargs in args for later use when initializing client
+    args.provider_kwargs = provider_kwargs
+    
     # Force interactive mode when recovering
     args.no_interactive = False
     args.interactive = True
@@ -169,9 +186,17 @@ def handle_recover_command(args: Namespace, console: Console) -> None:
                 f"[bold red]Error: API key for {provider} not provided. Add to ~/.config/q.conf, set {provider.upper()}_API_KEY environment variable, or use --api-key[/bold red]"
             )
             sys.exit(1)
-            
+        
+        # Get provider_kwargs from args if available    
+        provider_kwargs = getattr(args, "provider_kwargs", {})
+        
         # Initialize LLM client wrapper
-        client = LLMClient(api_key=api_key, model=args.model, provider=provider)
+        client = LLMClient(
+            api_key=api_key, 
+            model=args.model, 
+            provider=provider,
+            **provider_kwargs
+        )
 
         # Set up prompt session for input
         prompt_session = create_prompt_session(console)
