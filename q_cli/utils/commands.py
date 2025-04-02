@@ -54,13 +54,14 @@ def is_dangerous_command(command: str) -> bool:
     return any(blocked in command_lower for blocked in BLOCKED_COMMANDS)
 
 
-def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
+def execute_command(command: str, console: Console, skip_dangerous_check: bool = False) -> Tuple[int, str, str]:
     """
     Execute a shell command and return the results.
 
     Args:
         command: The command to execute
         console: Console for output
+        skip_dangerous_check: Whether to skip the dangerous command check (if already approved via permission system)
 
     Returns:
         Tuple containing (return_code, stdout, stderr)
@@ -69,8 +70,8 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
     if get_debug():
         console.print(f"[yellow]Executing command: {command}[/yellow]")
 
-    # Check for dangerous commands
-    if is_dangerous_command(command):
+    # Check for dangerous commands - but skip if the command was already approved by permission manager
+    if not skip_dangerous_check and is_dangerous_command(command):
         if get_debug():
             console.print(
                 f"[yellow]Command blocked as dangerous: {command}[/yellow]"

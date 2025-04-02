@@ -813,7 +813,10 @@ def process_commands(
 
         # Execute the command
         console.print(f"[bold green]Executing:[/bold green] {command}")
-        return_code, stdout, stderr = execute_command(command, console)
+        # Pass along the permission check result to avoid redundant dangerous command checks
+        # when a command is already approved by the permission system
+        is_pre_approved = permission_manager and not permission_manager.needs_permission(command)
+        return_code, stdout, stderr = execute_command(command, console, skip_dangerous_check=is_pre_approved)
 
         # Check if the command failed
         if return_code != 0:
