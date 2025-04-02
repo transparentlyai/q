@@ -3,44 +3,47 @@
 import os
 import sys
 from typing import Tuple, Dict, Any, Optional, List
-from q_cli import __version__
-from argparse import Namespace
 from rich.console import Console
+from q_cli import __version__
 
-
-def get_debug():
-    """Get the DEBUG value from environment, respecting any recent changes."""
-    debug_val = os.environ.get("Q_DEBUG", "false").lower()
-    return debug_val in ["true", "1", "yes", "y", "on"]
-
-
+# Import refactored modules
+from q_cli.config.manager import ConfigManager
 from q_cli.cli.args import setup_argparse
-from q_cli.io.config import read_config_file, build_context
-from q_cli.io.input import create_prompt_session, get_initial_question, confirm_context
-from q_cli.io.output import setup_console
-from q_cli.utils.constants import (
-    DEFAULT_ALWAYS_APPROVED_COMMANDS,
-    DEFAULT_ALWAYS_RESTRICTED_COMMANDS,
-    DEFAULT_PROHIBITED_COMMANDS,
-    ANTHROPIC_DEFAULT_MODEL,
-    VERTEXAI_DEFAULT_MODEL,
-    GROQ_DEFAULT_MODEL,
-    OPENAI_DEFAULT_MODEL,
-    ANTHROPIC_MAX_TOKENS,
-    VERTEXAI_MAX_TOKENS,
-    GROQ_MAX_TOKENS,
-    OPENAI_MAX_TOKENS,
-    DEFAULT_PROVIDER,
-    SUPPORTED_PROVIDERS,
+from q_cli.cli.updates import handle_update_command, check_updates_async
+from q_cli.cli.context_setup import (
+    setup_context_and_prompts, 
+    handle_context_confirmation,
+    configure_file_tree
 )
-from q_cli.utils.helpers import sanitize_context
+from q_cli.cli.session_handlers import (
+    handle_recover_command,
+    initialize_session_manager,
+    setup_permission_manager
+)
+from q_cli.cli.llm_setup import (
+    setup_api_credentials,
+    initialize_llm_client
+)
+from q_cli.cli.dry_run import handle_dry_run
+from q_cli.io.input import (
+    create_prompt_session,
+    get_initial_question
+)
+from q_cli.io.output import setup_console
 from q_cli.cli.conversation import run_conversation
-from q_cli.utils.permissions import CommandPermissionManager
-from q_cli.utils.prompts import get_system_prompt
+from q_cli.utils.constants import get_debug
+from q_cli.config.providers import (
+    get_default_model,
+    get_max_tokens
+)
 
 
-def initialize_cli() -> Tuple[Namespace, Console]:
-    """Initialize CLI arguments and console setup."""
+def initialize_cli() -> Tuple[Any, Console]:
+    """Initialize CLI arguments and console setup.
+    
+    Returns:
+        Tuple containing parsed arguments and console
+    """
     parser = setup_argparse()
 
     # If no args provided (sys.argv has just the script name), go into interactive mode
@@ -62,494 +65,74 @@ def initialize_cli() -> Tuple[Namespace, Console]:
     return args, console
 
 
-def handle_update_command(args: Namespace) -> None:
-    """Handle the update command if specified."""
-    if args.update:
-        from q_cli.cli.args import update_command
-        update_command()
-        sys.exit(0)
-
-
-def get_config_for_recovery(args: Namespace, console: Console) -> Tuple[str, Dict[str, Any], str]:
-    """Get configuration for session recovery."""
-    # Get API key and config vars from config file
-    config_api_key, _, config_vars = read_config_file(console)
-
-    # Get provider from args, config file, or default
-    provider = args.provider or config_vars.get("PROVIDER", DEFAULT_PROVIDER)
+def configure_model_settings(args: Any, provider: str, config_vars: Dict[str, Any]) -> None:
+    """Configure model and token settings based on provider.
     
-    # Initialize provider_kwargs for provider-specific settings
-    provider_kwargs = {}
-    
-    # Get API key based on provider
-    if args.api_key:
-        # Use API key from args
-        api_key = args.api_key
-    elif provider.lower() == "anthropic":
-        api_key = config_vars.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
-    elif provider.lower() == "vertexai":
-        api_key = config_vars.get("VERTEXAI_API_KEY") or os.environ.get("VERTEXAI_API_KEY")
-        
-        # Handle VertexAI project ID from config or environment
-        project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT") or os.environ.get("VERTEX_PROJECT")
-        if project_id:
-            provider_kwargs["project_id"] = project_id
-            os.environ["VERTEXAI_PROJECT"] = project_id
-            os.environ["VERTEX_PROJECT"] = project_id
-            if get_debug():
-                console.print(f"[info]Using VertexAI project ID: {project_id}[/info]")
-        else:
-            raise ValueError("VertexAI provider requires a project_id")
-            
-        # Handle VertexAI location from config or environment
-        location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION") or os.environ.get("VERTEX_LOCATION")
-        if location:
-            provider_kwargs["location"] = location
-            os.environ["VERTEXAI_LOCATION"] = location
-            os.environ["VERTEX_LOCATION"] = location
-            if get_debug():
-                console.print(f"[info]Using VertexAI location: {location}[/info]")
-        else:
-            raise ValueError("VertexAI provider requires a location")
-    elif provider.lower() == "groq":
-        api_key = config_vars.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
-    elif provider.lower() == "openai":
-        api_key = config_vars.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    else:
-        # Fallback to generic API key or anthropic key for backward compatibility
-        api_key = config_api_key or os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
-    
-    # Set model based on provider-specific model configuration
-    if not args.model:
-        provider_lower = provider.lower()
-        provider_upper = provider.upper()
-        
-        # Use specific provider model configuration
-        if provider_lower == "anthropic":
-            args.model = config_vars.get("ANTHROPIC_MODEL", ANTHROPIC_DEFAULT_MODEL)
-        elif provider_lower == "vertexai":
-            args.model = config_vars.get("VERTEXAI_MODEL", VERTEXAI_DEFAULT_MODEL)
-        elif provider_lower == "groq":
-            args.model = config_vars.get("GROQ_MODEL", GROQ_DEFAULT_MODEL)
-        elif provider_lower == "openai":
-            args.model = config_vars.get("OPENAI_MODEL", OPENAI_DEFAULT_MODEL)
-        else:
-            # For non-standard providers, use their specific config
-            args.model = config_vars.get(f"{provider_upper}_MODEL")
-            if not args.model:
-                raise ValueError(f"No model specified for provider {provider}. Add {provider_upper}_MODEL to config.")
-            
-    # Set max_tokens based on provider-specific config
-    provider_lower = provider.lower()
-    if provider_lower == "anthropic":
-        args.max_tokens = int(config_vars.get("ANTHROPIC_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
-    elif provider_lower == "vertexai":
-        args.max_tokens = int(config_vars.get("VERTEXAI_MAX_TOKENS", VERTEXAI_MAX_TOKENS))
-    elif provider_lower == "groq":
-        args.max_tokens = int(config_vars.get("GROQ_MAX_TOKENS", GROQ_MAX_TOKENS))
-    elif provider_lower == "openai":
-        args.max_tokens = int(config_vars.get("OPENAI_MAX_TOKENS", OPENAI_MAX_TOKENS))
-    else:
-        # For non-standard providers, use their specific config
-        max_tokens_key = f"{provider.upper()}_MAX_TOKENS"
-        if max_tokens_key in config_vars:
-            args.max_tokens = int(config_vars.get(max_tokens_key))
-        else:
-            # Default to a reasonable value if not specified
-            args.max_tokens = 8192
-
-    # Store provider_kwargs in args for later use when initializing client
-    args.provider_kwargs = provider_kwargs
-    
-    # Force interactive mode when recovering
-    args.no_interactive = False
-    args.interactive = True
-    
-    return api_key, config_vars, provider
-
-
-def handle_recover_command(args: Namespace, console: Console) -> None:
-    """Handle the recover command if specified."""
-    if not args.recover:
-        return
-        
-    from q_cli.utils.session.manager import recover_session
-    from q_cli.utils.client import LLMClient
-
-    try:
-        # Get configuration for recovery
-        api_key, config_vars, provider = get_config_for_recovery(args, console)
-        
-        # Check for API key
-        if not api_key:
-            console.print(
-                f"[bold red]Error: API key for {provider} not provided. Add to ~/.config/q.conf, set {provider.upper()}_API_KEY environment variable, or use --api-key[/bold red]"
-            )
-            sys.exit(1)
-        
-        # Get provider_kwargs from args if available    
-        provider_kwargs = getattr(args, "provider_kwargs", {})
-        
-        # Initialize LLM client wrapper
-        client = LLMClient(
-            api_key=api_key, 
-            model=args.model, 
-            provider=provider,
-            **provider_kwargs
-        )
-
-        # Set up prompt session for input
-        prompt_session = create_prompt_session(console)
-
-        # Set up permission manager
-        permission_manager = CommandPermissionManager.from_config(config_vars)
-
-        # Always add default commands
-        permission_manager.always_approved_commands.update(
-            DEFAULT_ALWAYS_APPROVED_COMMANDS
-        )
-        permission_manager.always_restricted_commands.update(
-            DEFAULT_ALWAYS_RESTRICTED_COMMANDS
-        )
-        permission_manager.prohibited_commands.update(DEFAULT_PROHIBITED_COMMANDS)
-
-        # Attempt to recover the session
-        if recover_session(
-            client, args, prompt_session, console, permission_manager
-        ):
-            # If recovery was successful and conversation started, exit
-            sys.exit(0)
-        # Otherwise fall through to normal startup
-
-    except Exception as e:
-        console.print(
-            f"[bold red]Error during session recovery: {str(e)}[/bold red]"
-        )
-        if get_debug():
-            import traceback
-            console.print(f"[red]{traceback.format_exc()}[/red]")
-        # Continue with normal startup
-
-
-def check_updates_async(console: Console) -> None:
-    """Check for updates asynchronously without blocking startup."""
-    from threading import Thread
-    from q_cli.utils.helpers import check_for_updates, is_newer_version
-
-    def _check_update():
-        update_available, latest_version = check_for_updates(console)
-        if update_available:
-            msg = f"[dim]New version {latest_version} available. Run 'q --update' to update.[/dim]"
-            console.print(msg)
-        
-        # Debug version check information
-        if get_debug():
-            console.print(
-                f"[dim]Current version: {__version__}, Latest version from GitHub: {latest_version or 'not found'}[/dim]"
-            )
-            if latest_version:
-                is_newer = is_newer_version(latest_version, __version__)
-                console.print(f"[dim]Is GitHub version newer: {is_newer}[/dim]")
-    
-    # Run in background thread to avoid blocking startup
-    update_thread = Thread(target=_check_update)
-    update_thread.daemon = True
-    update_thread.start()
-
-
-def setup_api_credentials(args: Namespace, config_vars: Dict[str, Any], console: Console, config_api_key: str) -> Tuple[str, str]:
-    """Set up API credentials and provider-specific configuration."""
-    # Validate the configuration
-    from q_cli.io.config import validate_config
-    try:
-        validate_config(config_vars, console)
-    except ValueError as e:
-        if not args.provider:  # Only fail if user didn't override provider via args
-            console.print(f"[bold red]Error: {str(e)}[/bold red]")
-            sys.exit(1)
-        else:
-            # User specified provider via args, so just warn about config issues
-            console.print(f"[bold yellow]Warning: Config validation failed but continuing with provided args: {str(e)}[/bold yellow]")
-    
-    # Get provider from args, config file, or default
-    provider = args.provider or config_vars.get("PROVIDER", DEFAULT_PROVIDER)
-    
-    # Validate that provider is supported
-    if provider.lower() not in SUPPORTED_PROVIDERS:
-        allowed = ", ".join(sorted(SUPPORTED_PROVIDERS))
-        console.print(f"[bold red]Error: Provider '{provider}' is not supported. Allowed providers: {allowed}[/bold red]")
-        sys.exit(1)
-    
-    # Initialize provider_kwargs for any provider-specific settings
-    provider_kwargs = {}
-    
-    # Get API key based on provider
-    if args.api_key:
-        # Use API key from args
-        api_key = args.api_key
-    elif provider.lower() == "anthropic":
-        api_key = config_vars.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
-    elif provider.lower() == "vertexai":
-        api_key = config_vars.get("VERTEXAI_API_KEY") or os.environ.get("VERTEXAI_API_KEY")
-        
-        # Handle VertexAI project ID from config or environment
-        project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT") or os.environ.get("VERTEX_PROJECT")
-        if project_id:
-            provider_kwargs["project_id"] = project_id
-            if get_debug():
-                console.print(f"[info]Using VertexAI project ID: {project_id}[/info]")
-        else:
-            console.print("[bold red]ERROR: No project ID specified for VertexAI. Set VERTEXAI_PROJECT in config or environment.[/bold red]")
-            sys.exit(1)
-            
-        # Handle VertexAI location from config or environment
-        location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION") or os.environ.get("VERTEX_LOCATION")
-        if location:
-            provider_kwargs["location"] = location
-            if get_debug():
-                console.print(f"[info]Using VertexAI location: {location}[/info]")
-        else:
-            console.print("[bold red]ERROR: No location specified for VertexAI. Set VERTEXAI_LOCATION in config or environment.[/bold red]")
-            sys.exit(1)
-    elif provider.lower() == "groq":
-        api_key = config_vars.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
-    elif provider.lower() == "openai":
-        api_key = config_vars.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    else:
-        # Fallback to generic API key or anthropic key for backward compatibility
-        api_key = config_api_key or os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
-    
-    # Store provider_kwargs in args for later use when initializing client
-    args.provider_kwargs = provider_kwargs
-        
-    return provider, api_key
-
-
-def configure_model_settings(args: Namespace, provider: str, config_vars: Dict[str, Any]) -> None:
-    """Configure model and token settings based on provider."""
+    Args:
+        args: Command line arguments
+        provider: Provider name
+        config_vars: Configuration variables
+    """
     # Set model based on provider-specific configuration if not explicitly specified
     if not args.model:
         provider_lower = provider.lower()
         provider_upper = provider.upper()
         
-        # Use provider-specific model setting without fallbacks
-        if provider_lower == "anthropic":
-            args.model = config_vars.get("ANTHROPIC_MODEL", ANTHROPIC_DEFAULT_MODEL)
-        elif provider_lower == "vertexai":
-            args.model = config_vars.get("VERTEXAI_MODEL", VERTEXAI_DEFAULT_MODEL)
-        elif provider_lower == "groq":
-            args.model = config_vars.get("GROQ_MODEL", GROQ_DEFAULT_MODEL)
-        elif provider_lower == "openai":
-            args.model = config_vars.get("OPENAI_MODEL", OPENAI_DEFAULT_MODEL)
+        # Use provider-specific model setting
+        model_config_key = f"{provider_upper}_MODEL"
+        if model_config_key in config_vars:
+            args.model = config_vars[model_config_key]
         else:
-            # For non-standard providers, use their specific config
-            args.model = config_vars.get(f"{provider_upper}_MODEL")
-            if not args.model:
-                raise ValueError(f"No model specified for provider {provider}. Add {provider_upper}_MODEL to config.")
+            args.model = get_default_model(provider_lower)
     
     # Set max_tokens based on provider-specific config
     provider_lower = provider.lower()
-    if provider_lower == "anthropic":
-        args.max_tokens = int(config_vars.get("ANTHROPIC_MAX_TOKENS", ANTHROPIC_MAX_TOKENS))
-    elif provider_lower == "vertexai":
-        args.max_tokens = int(config_vars.get("VERTEXAI_MAX_TOKENS", VERTEXAI_MAX_TOKENS))
-    elif provider_lower == "groq":
-        args.max_tokens = int(config_vars.get("GROQ_MAX_TOKENS", GROQ_MAX_TOKENS))
-    elif provider_lower == "openai":
-        args.max_tokens = int(config_vars.get("OPENAI_MAX_TOKENS", OPENAI_MAX_TOKENS))
-    else:
-        # For non-standard providers, use their specific config
-        max_tokens_key = f"{provider.upper()}_MAX_TOKENS"
+    max_tokens_key = f"{provider.upper()}_MAX_TOKENS"
+    
+    # Handle max_tokens which might be unset
+    if not hasattr(args, "max_tokens") or args.max_tokens is None:
         if max_tokens_key in config_vars:
-            args.max_tokens = int(config_vars.get(max_tokens_key))
+            try:
+                max_tokens_value = config_vars.get(max_tokens_key)
+                if isinstance(max_tokens_value, str):
+                    # Clean up any comments in the value
+                    if "#" in max_tokens_value:
+                        max_tokens_value = max_tokens_value.split("#")[0].strip()
+                args.max_tokens = int(max_tokens_value)
+            except (ValueError, TypeError):
+                # If conversion fails, use provider default
+                args.max_tokens = get_max_tokens(provider_lower)
         else:
             # Default to a reasonable value if not specified
-            args.max_tokens = 8192
+            args.max_tokens = get_max_tokens(provider_lower)
 
 
-def validate_model_for_provider(model: str, provider: str, console: Console) -> bool:
-    """
-    Validate that the model is compatible with the provider.
+def execute_conversation(
+    client, 
+    system_prompt: str, 
+    args: Any, 
+    prompt_session, 
+    console: Console, 
+    question: str, 
+    permission_manager, 
+    context_manager, 
+    auto_approve: bool, 
+    session_manager
+) -> None:
+    """Run the conversation with error handling.
     
     Args:
-        model: Model name
-        provider: Provider name
-        console: Console instance for output
-        
-    Returns:
-        True if valid, False otherwise
+        client: LLM client
+        system_prompt: System prompt
+        args: Command line arguments
+        prompt_session: Prompt session for input
+        console: Console for output
+        question: Initial question
+        permission_manager: Permission manager
+        context_manager: Context manager
+        auto_approve: Auto-approve flag
+        session_manager: Session manager
     """
-    model_lower = model.lower()
-    provider_lower = provider.lower()
-    
-    # Check model compatibility based on provider
-    if provider_lower == "anthropic" and not any(name in model_lower for name in ["claude", "anthropic"]):
-        console.print(f"[bold yellow]Warning: Model '{model}' doesn't appear to be an Anthropic model. This may cause errors.[/bold yellow]")
-        return False
-    elif provider_lower == "vertexai" and not any(name in model_lower for name in ["gemini", "gecko", "gemma", "palm", "google", "vertex"]):
-        console.print(f"[bold yellow]Warning: Model '{model}' doesn't appear to be a VertexAI model. This may cause errors.[/bold yellow]")
-        return False
-    elif provider_lower == "groq" and not any(name in model_lower for name in ["groq", "llama", "mixtral", "falcon", "deepseek"]):
-        console.print(f"[bold yellow]Warning: Model '{model}' doesn't appear to be a Groq model. This may cause errors.[/bold yellow]")
-        return False
-    elif provider_lower == "openai" and not any(name in model_lower for name in ["gpt", "ft:gpt", "text-davinci", "openai", "dall-e"]):
-        console.print(f"[bold yellow]Warning: Model '{model}' doesn't appear to be an OpenAI model. This may cause errors.[/bold yellow]")
-        return False
-    
-    return True
-
-
-def initialize_llm_client(api_key: str, args: Namespace, provider: str, console: Console):
-    """Initialize LLM client with error handling."""
-    try:
-        # Validate model compatibility with provider
-        validate_model_for_provider(args.model, provider, console)
-        
-        # Lazy import LLMClient only when needed
-        from q_cli.utils.client import LLMClient
-        import litellm  # Only import when we're about to use it
-        
-        # Get provider-specific kwargs if available
-        provider_kwargs = getattr(args, "provider_kwargs", {})
-        
-        # Initialize our LLM client wrapper
-        client = LLMClient(
-            api_key=api_key, 
-            model=args.model, 
-            provider=provider,
-            **provider_kwargs
-        )
-        
-        if get_debug():
-            console.print(f"[dim]Using provider: {provider}, model: {args.model}[/dim]")
-            
-        return client
-    
-    except Exception as e:
-        console.print(
-            f"[bold red]Error initializing LLM client with provider {provider}: {str(e)}[/bold red]"
-        )
-        console.print("[yellow]Please check your API key and try again.[/yellow]")
-        sys.exit(1)
-
-
-def configure_file_tree(args: Namespace, config_vars: Dict[str, Any], console: Console) -> None:
-    """Configure file tree inclusion settings."""
-    # Check if file tree should be included from args or config
-    include_file_tree = getattr(args, "file_tree", False)
-
-    # Also check the config file - config vars are all uppercase
-    if (
-        not include_file_tree
-        and config_vars.get("INCLUDE_FILE_TREE", "").lower() == "true"
-    ):
-        include_file_tree = True
-
-    # Set the constant if needed
-    if include_file_tree:
-        # Set the constant directly - need to modify module attribute
-        import q_cli.utils.constants
-        q_cli.utils.constants.INCLUDE_FILE_TREE = True
-
-        if get_debug():
-            console.print("[info]File tree will be included in context[/info]")
-
-
-def setup_context_and_prompts(args: Namespace, config_context: str, console: Console, config_vars: Dict[str, Any]):
-    """Set up context and system prompts."""
-    # Build and sanitize context from config and files
-    context, context_manager = build_context(args, config_context, console, config_vars)
-    sanitized_context = sanitize_context(context, console)
-
-    # Set up system prompt with context if available
-    include_command_execution = not getattr(args, "no_execute", False)
-    base_system_prompt = get_system_prompt(
-        include_command_execution=include_command_execution,
-        context=None,  # We'll set context separately
-    )
-
-    # Set system prompt and add conversation context
-    if sanitized_context:
-        # Context is now managed by the ContextManager
-        system_prompt = get_system_prompt(
-            include_command_execution=include_command_execution,
-            context=sanitized_context,
-        )
-    else:
-        system_prompt = base_system_prompt
-
-    # Make sure the context manager knows about the system prompt
-    context_manager.set_system_prompt(system_prompt)
-    
-    return context_manager, sanitized_context, system_prompt
-
-
-def handle_context_confirmation(args: Namespace, prompt_session, sanitized_context, system_prompt, console: Console) -> None:
-    """Handle context confirmation if needed."""
-    # If confirm-context is specified, show the context and ask for confirmation
-    if args.confirm_context and sanitized_context:
-        if not confirm_context(prompt_session, system_prompt, console):
-            console.print("Context rejected. Exiting.", style="info")
-            sys.exit(0)
-
-
-def setup_permissions(config_vars: Dict[str, Any], args: Namespace):
-    """Set up permission manager and auto-approve settings."""
-    # Set up permission manager
-    permission_manager = CommandPermissionManager.from_config(config_vars)
-
-    # Check if auto-approve flag is set
-    auto_approve = getattr(args, "yes", False)
-
-    # Always add default commands to the user-configured ones
-    # This ensures defaults are always included while allowing user customization
-    permission_manager.always_approved_commands.update(DEFAULT_ALWAYS_APPROVED_COMMANDS)
-    permission_manager.always_restricted_commands.update(
-        DEFAULT_ALWAYS_RESTRICTED_COMMANDS
-    )
-    permission_manager.prohibited_commands.update(DEFAULT_PROHIBITED_COMMANDS)
-    
-    return permission_manager, auto_approve
-
-
-def handle_dry_run(args: Namespace, question: str, system_prompt: str, console: Console) -> None:
-    """Handle dry run mode if enabled."""
-    # If dry-run is enabled, print the message that would be sent to Claude and exit
-    if getattr(args, "dry_run", False):
-        # Initialize conversation with the initial question
-        conversation = []
-        if question.strip():
-            conversation.append({"role": "user", "content": question})
-
-        # Create a formatted representation of the message
-        dry_run_output = (
-            "\n===== DRY RUN MODE =====\n\n"
-            f"[bold blue]Model:[/bold blue] {args.model}\n"
-            f"[bold blue]Max tokens:[/bold blue] {args.max_tokens}\n"
-            f"[bold blue]Temperature:[/bold blue] 0\n\n"
-            f"[bold green]System prompt:[/bold green]\n{system_prompt}\n\n"
-        )
-
-        if conversation:
-            dry_run_output += f"[bold yellow]User message:[/bold yellow]\n{question}\n"
-        else:
-            dry_run_output += "[bold yellow]No initial user message[/bold yellow]\n"
-
-        console.print(dry_run_output)
-        sys.exit(0)
-
-
-def initialize_session_manager(args: Namespace, console: Console):
-    """Initialize session manager if needed."""
-    session_manager = None
-    if not getattr(args, "no_save", False):
-        from q_cli.utils.session.manager import SessionManager
-        session_manager = SessionManager(console)
-    return session_manager
-
-
-def execute_conversation(client, system_prompt, args, prompt_session, console, question, permission_manager, context_manager, auto_approve, session_manager):
-    """Run the conversation with error handling."""
     try:
         run_conversation(
             client,
@@ -579,101 +162,97 @@ def execute_conversation(client, system_prompt, args, prompt_session, console, q
         sys.exit(1)
 
 
-
 def main() -> None:
     """Main entry point for the CLI."""
-    # Initialize CLI arguments and console
-    args, console = initialize_cli()
-    
-    # Handle update command if specified
-    handle_update_command(args)
-    
-    # Handle recover command if specified
-    handle_recover_command(args, console)
-    
-    # Async check for updates - don't block startup
-    check_updates_async(console)
-    
-    # Get API key and config vars from config file
-    config_api_key, config_context, config_vars = read_config_file(console)
-    
-    # Get provider and API key
-    provider, api_key = setup_api_credentials(args, config_vars, console, config_api_key)
-    
-    # Configure model and token settings
-    configure_model_settings(args, provider, config_vars)
-    
-    # Use actual model name for display
-    
-    # Check for API key
-    if not api_key:
-        console.print(
-            f"[bold red]Error: API key for {provider} not provided. Add to ~/.config/q.conf, set {provider.upper()}_API_KEY environment variable, or use --api-key[/bold red]"
+    try:
+        # Initialize CLI arguments and console
+        args, console = initialize_cli()
+        
+        # Handle update command if specified
+        if handle_update_command(args):
+            return  # Update was handled, exit
+        
+        # Handle recover command if specified
+        if handle_recover_command(args, console):
+            return  # Recovery was handled, exit
+        
+        # Async check for updates - don't block startup
+        check_updates_async(console)
+        
+        # Initialize config manager and load config
+        config_manager = ConfigManager(console)
+        config_api_key, config_context, config_vars = config_manager.load_config()
+        
+        # Get provider and API key
+        provider, api_key = setup_api_credentials(args, config_vars, console, config_api_key)
+        
+        # Configure model and token settings
+        configure_model_settings(args, provider, config_vars)
+        
+        # Check for API key
+        if not api_key:
+            console.print(
+                f"[bold red]Error: API key for {provider} not provided. Add to ~/.config/q.conf, set {provider.upper()}_API_KEY environment variable, or use --api-key[/bold red]"
+            )
+            sys.exit(1)
+        
+        # Initialize LLM client
+        client = initialize_llm_client(api_key, args, provider, console)
+        
+        # Set up prompt session and history
+        prompt_session = create_prompt_session(console)
+        history = prompt_session.history
+        
+        # Display version and model info with absolute minimal visibility
+        if not get_debug():  # Only print ultra-dim in regular mode
+            version_str = f"Q ver. {__version__} - Brain: {args.model}"
+            # Lightest possible gray that's still barely visible
+            console.print(f"[dim #aaaaaa]{version_str}[/dim #aaaaaa]")
+        
+        # Configure file tree inclusion
+        configure_file_tree(args, config_vars, console)
+        
+        # Set up context and system prompts
+        context_manager, sanitized_context, system_prompt = setup_context_and_prompts(
+            args, config_context, console, config_vars
         )
-        sys.exit(1)
-    
-    # Initialize LLM client
-    client = initialize_llm_client(api_key, args, provider, console)
-    
-    # Set up prompt session and history
-    prompt_session = create_prompt_session(console)
-    history = prompt_session.history
-    
-    # Display version and model info with absolute minimal visibility
-    if not get_debug():  # Only print ultra-dim in regular mode
-        version_str = f"Q ver. {__version__} - Brain: {args.model}"
-        # Lightest possible gray that's still barely visible
-        console.print(f"[dim #aaaaaa]{version_str}[/dim #aaaaaa]")
-    
-    # Configure file tree inclusion
-    configure_file_tree(args, config_vars, console)
-    
-    # Set up context and system prompts
-    context_manager, sanitized_context, system_prompt = setup_context_and_prompts(
-        args, config_context, console, config_vars
-    )
-    
-    # Handle context confirmation if needed
-    handle_context_confirmation(args, prompt_session, sanitized_context, system_prompt, console)
-    
-    # Set up permissions
-    permission_manager, auto_approve = setup_permissions(config_vars, args)
-    
-    # Get initial question
-    try:
-        question = get_initial_question(args, prompt_session, history)
-    except (KeyboardInterrupt, EOFError):
-        sys.exit(0)
-    
-    # Handle dry run mode if enabled
-    handle_dry_run(args, question, system_prompt, console)
-    
-    # Initialize session manager
-    session_manager = initialize_session_manager(args, console)
-    
-    # Run the conversation
-    execute_conversation(
-        client,
-        system_prompt,
-        args,
-        prompt_session,
-        console,
-        question,
-        permission_manager,
-        context_manager,
-        auto_approve,
-        session_manager
-    )
-
-
-if __name__ == "__main__":
-    try:
-        main()
+        
+        # Handle context confirmation if needed
+        if not handle_context_confirmation(args, prompt_session, sanitized_context, system_prompt, console):
+            sys.exit(0)
+        
+        # Set up permissions
+        permission_manager, auto_approve = setup_permission_manager(config_vars, args, console)
+        
+        # Get initial question
+        try:
+            question = get_initial_question(args, prompt_session, history)
+        except (KeyboardInterrupt, EOFError):
+            sys.exit(0)
+        
+        # Handle dry run mode if enabled
+        if handle_dry_run(args, question, system_prompt, console):
+            sys.exit(0)
+        
+        # Initialize session manager
+        session_manager = initialize_session_manager(args, console)
+        
+        # Run the conversation
+        execute_conversation(
+            client,
+            system_prompt,
+            args,
+            prompt_session,
+            console,
+            question,
+            permission_manager,
+            context_manager,
+            auto_approve,
+            session_manager
+        )
+        
     except Exception as e:
         # Last chance to catch any uncaught exceptions
-        # Import console here since we might not have it initialized
-        from rich.console import Console
-
         console = Console()
         console.print(f"\n[bold red]Fatal error: {str(e)}[/bold red]")
         if get_debug():
@@ -683,3 +262,7 @@ if __name__ == "__main__":
             "[yellow]The application encountered a fatal error and must exit.[/yellow]"
         )
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
