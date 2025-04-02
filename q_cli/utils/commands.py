@@ -5,6 +5,7 @@ import subprocess
 import re
 import difflib
 import mimetypes
+import shlex
 from typing import Tuple, List, Dict, Any, Optional, Union
 from rich.console import Console
 from rich.syntax import Syntax
@@ -28,13 +29,22 @@ READ_FILE_MARKER_END = "/Q:COMMAND"
 
 # List of potentially dangerous commands to block
 BLOCKED_COMMANDS = [
-    "rm -rf /",
-    "sudo rm",
-    "mkfs",
-    "> /dev/sda",
-    "dd if=/dev/zero",
-    ":(){:|:&};:",
-    "chmod -R 777 /",
+    # File system destruction commands
+    "rm -rf /", "rm -rf /*", "rm -rf .", "rm -fr /", "rm -fr /*",
+    # Disk overwrite commands
+    "> /dev/sda", "> /dev/hda", "dd if=/dev/zero", "mkfs", "format", 
+    # Privilege escalation
+    "sudo rm", "sudo chmod", "sudo chown", "sudo dd", "sudo mkfs",
+    # System modification
+    "chmod -R 777 /", "chmod 777 -R /", "chmod -R 777 .", 
+    # Fork bombs and resource exhaustion
+    ":(){:|:&};:", "while true; do", ":(){ :|: & };:",
+    # Network attacks
+    "wget -O- | bash", "curl | bash", "curl | sh", "wget -O- | sh",
+    # System control commands
+    "shutdown", "reboot", "halt", "poweroff",
+    # Dangerous pipe sequences
+    "> /dev", "> /proc", "dd if="
 ]
 
 
@@ -79,6 +89,24 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
             )
             console.print("[yellow]Use the file creation interface instead.[/yellow]")
         return (-1, "", "Heredoc commands are not supported for direct execution.")
+    
+    # More thorough security check: split command to get executable and prevent path traversal
+    try:
+        args = shlex.split(command)
+        if not args:
+            return (-1, "", "Empty command")
+            
+        # Get the first part as the base command
+        base_cmd = args[0]
+        
+        # If command contains a path, make sure it doesn't include path traversal
+        if '/' in base_cmd and '..' in base_cmd:
+            return (-1, "", "Path traversal attempts are not allowed")
+            
+    except Exception as e:
+        if DEBUG:
+            console.print(f"[yellow]DEBUG: Command parsing error: {str(e)}[/yellow]")
+        return (-1, "", f"Error parsing command: {str(e)}")
 
     try:
         # Execute the command and capture output
@@ -86,7 +114,7 @@ def execute_command(command: str, console: Console) -> Tuple[int, str, str]:
             console.print(f"[yellow]DEBUG: Starting subprocess for: {command}[/yellow]")
         process = subprocess.Popen(
             command,
-            shell=True,
+            shell=True,  # Note: shell=True is still a potential risk but permission system mitigates this
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -172,7 +200,7 @@ def ask_command_confirmation(
     Returns:
         Tuple containing:
         - Whether to execute this command (True/False)
-        - Whether to remember this choice for similar commands (True/False)
+        - Whether to remember this choice for similar commands (True/False) or "approve_all" for global approval
     """
     # Check for heredoc pattern before anything else
     heredoc_match = re.search(r'<<\s*[\'"]*([^\'"\s<]*)[\'"]*', command)
@@ -190,6 +218,17 @@ def ask_command_confirmation(
 
     # Check if we need to ask for permission
     if permission_manager and not permission_manager.needs_permission(command):
+        # Get context if available for debug output
+        if DEBUG:
+            context = None
+            try:
+                context = permission_manager.context_manager.get_approval_context(command, 
+                                                                                 permission_manager.extract_command_type(command))
+                if context:
+                    remaining = int(context.time_remaining)
+                    console.print(f"[yellow]DEBUG: Command pre-approved with {remaining} seconds remaining[/yellow]")
+            except Exception:
+                pass
         return True, False  # Command is pre-approved, no need to remember
 
     # If command is prohibited, don't even ask
@@ -204,7 +243,7 @@ def ask_command_confirmation(
     console.print("\n[bold yellow]Q wants to run this command:[/bold yellow]")
     console.print(f"[bold cyan]{command}[/bold cyan]")
 
-    options = "[y/a/Y/N/c] (y=yes, a=approve all, Y=yes+remember for similar commands, N=no, c=cancel): "
+    options = "[y/a/t/Y/N/c] (y=yes, a=approve all for 30m, t=timed approval, Y=yes+remember for session, N=no, c=cancel): "
     response = input("\nExecute this command? " + options).lower().strip()
 
     if response == "c":
@@ -213,12 +252,52 @@ def ask_command_confirmation(
         # We use a special marker "cancel_all" to indicate nothing should be sent to Claude
         return "cancel_all", False
     elif response == "a":
-        # "Approve all" option - approve all commands for this session
-        console.print(f"[bold green]Approve-all mode activated. All subsequent operations will be approved automatically.[/bold green]")
-        # The caller should enable approve_all mode, and the command is approved
+        # "Approve all" option with default timeout (30 minutes)
+        if permission_manager:
+            # Use contextual time-based approval system
+            permission_manager.approve_all(timeout=None, context="User selected 'approve all'")
+            console.print(f"[bold green]Approve-all mode activated for 30 minutes. All operations will be approved automatically.[/bold green]")
+        else:
+            console.print(f"[bold green]Approve-all mode activated. All operations will be approved automatically.[/bold green]")
+        # Return special flag to the caller
         return True, "approve_all"
+    elif response == "t":
+        # Timed approval with custom timeout
+        try:
+            timeout_input = input("Enter approval timeout in minutes (default: 30): ").strip()
+            if not timeout_input:
+                timeout = 30 * 60  # Default 30 minutes in seconds
+            else:
+                timeout = int(timeout_input) * 60  # Convert minutes to seconds
+                
+            if permission_manager:
+                # Get command type for more focused approval
+                cmd_type = permission_manager.extract_command_type(command)
+                options = input("Approve only this command (c), all commands of this type (t), or all commands (a)? [c/t/a]: ").strip().lower()
+                
+                if options == "c":
+                    # Approve just this specific command
+                    permission_manager.approve_command(command, timeout=timeout, context=f"User approved for {timeout_input} minutes")
+                    console.print(f"[bold green]Command '{command}' approved for {timeout//60} minutes.[/bold green]")
+                elif options == "a":
+                    # Approve all commands
+                    permission_manager.approve_all(timeout=timeout, context=f"User approved all for {timeout_input} minutes")
+                    console.print(f"[bold green]All commands approved for {timeout//60} minutes.[/bold green]")
+                else:
+                    # Default: approve this command type
+                    permission_manager.approve_command_type(command, timeout=timeout, context=f"User approved {cmd_type} for {timeout_input} minutes")
+                    console.print(f"[bold green]Command type '{cmd_type}' approved for {timeout//60} minutes.[/bold green]")
+            else:
+                console.print(f"[bold yellow]No permission manager available for timed approval. Approving this command only.[/bold yellow]")
+        except ValueError:
+            console.print(f"[bold yellow]Invalid timeout value. Using default 30 minutes.[/bold yellow]")
+            timeout = 30 * 60
+            if permission_manager:
+                permission_manager.approve_command_type(command, timeout=timeout)
+        
+        return True, False  # Execute but don't set global remember flag
     elif response.startswith("y") and len(response) > 1:
-        # "Always" option - remember this command type for the session
+        # "Always" option - remember this command type for the entire session (no timeout)
         return True, True
     
     # Regular yes (or any other response starting with y)
@@ -570,6 +649,30 @@ def read_file_from_marker(
             expanded_path = os.path.join(os.getcwd(), expanded_path)
             if DEBUG:
                 console.print(f"[yellow]DEBUG: Absolute path: {expanded_path}[/yellow]")
+                
+        # Security: Validate the path doesn't use path traversal to escape current directory
+        cwd = os.getcwd()
+        try:
+            # Use os.path.realpath to resolve any symbolic links and normalize the path
+            real_path = os.path.realpath(expanded_path)
+            
+            # Check if path is within current directory tree or user's home directory
+            in_current_dir = real_path.startswith(os.path.realpath(cwd))
+            in_home_dir = real_path.startswith(os.path.realpath(os.path.expanduser("~")))
+            
+            if not (in_current_dir or in_home_dir):
+                # Path is outside of safe directories
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Path traversal attempt - path points outside of allowed directories: {real_path}[/yellow]")
+                return False, "", "Operation rejected: For security reasons, file operations are restricted to the current directory and home directory.", None, None
+                
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Validated safe path: {real_path}[/yellow]")
+                
+        except Exception as e:
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Path validation error: {str(e)}[/yellow]")
+            return False, "", f"Error validating path: {str(e)}", None, None
 
         # Check if file exists
         if not os.path.exists(expanded_path):
@@ -744,7 +847,7 @@ def read_file_from_marker(
 
 def write_file_from_marker(
     file_path: str, content: str, console: Console, auto_approve: bool = False, 
-    approve_all: bool = False
+    approve_all: bool = False, permission_manager=None
 ) -> Tuple[bool, str, Union[str, bool]]:
     """
     Write content to a file based on a file writing marker.
@@ -755,6 +858,7 @@ def write_file_from_marker(
         console: Console for output
         auto_approve: Whether to automatically approve file operations (from command line)
         approve_all: Whether to approve all file operations in this session
+        permission_manager: Optional permission manager for contextual approvals
 
     Returns:
         Tuple containing:
@@ -762,15 +866,21 @@ def write_file_from_marker(
         - stdout: Output message
         - stderr_or_approve_all: Either error message or True if "approve all" was selected
     """
-    # Access global flag - if it's True, we auto-approve all operations
-    # The global statement must be at the function level
-    global GLOBAL_APPROVE_ALL
+    # Check for contextual approval if we have a permission manager
+    has_context_approval = False
+    if permission_manager and permission_manager.context_manager:
+        # Check for global approvals (time-based)
+        if permission_manager.context_manager.global_approval and permission_manager.context_manager.global_approval.is_valid:
+            has_context_approval = True
+            if DEBUG:
+                remaining = int(permission_manager.context_manager.global_approval.time_remaining)
+                console.print(f"[yellow]DEBUG: File operation auto-approved via global context (remaining: {remaining}s)[/yellow]")
     
-    # Use either the passed approve_all flag or the global flag
-    effective_approve_all = approve_all or GLOBAL_APPROVE_ALL
+    # Use either the command-line auto_approve, approve_all flag, or contextual approval
+    effective_approve_all = auto_approve or approve_all or has_context_approval
     
     if DEBUG and effective_approve_all:
-        console.print(f"[yellow]DEBUG: Auto-approving file operations (GLOBAL_APPROVE_ALL={GLOBAL_APPROVE_ALL})[/yellow]")
+        console.print(f"[yellow]DEBUG: Auto-approving file operations (auto_approve={auto_approve}, approve_all={approve_all}, context_approval={has_context_approval})[/yellow]")
     try:
         if DEBUG:
             console.print(
@@ -792,6 +902,30 @@ def write_file_from_marker(
             expanded_path = os.path.join(os.getcwd(), expanded_path)
             if DEBUG:
                 console.print(f"[yellow]DEBUG: Absolute path: {expanded_path}[/yellow]")
+                
+        # Security: Validate the path doesn't use path traversal to escape current directory
+        cwd = os.getcwd()
+        try:
+            # Use os.path.realpath to resolve any symbolic links and normalize the path
+            real_path = os.path.realpath(expanded_path)
+            
+            # Check if path is within current directory tree or user's home directory
+            in_current_dir = real_path.startswith(os.path.realpath(cwd))
+            in_home_dir = real_path.startswith(os.path.realpath(os.path.expanduser("~")))
+            
+            if not (in_current_dir or in_home_dir):
+                # Path is outside of safe directories
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Path traversal attempt - path points outside of allowed directories: {real_path}[/yellow]")
+                return False, "", "Operation rejected: For security reasons, file operations are restricted to the current directory and home directory."
+                
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Validated safe path: {real_path}[/yellow]")
+                
+        except Exception as e:
+            if DEBUG:
+                console.print(f"[yellow]DEBUG: Path validation error: {str(e)}[/yellow]")
+            return False, "", f"Error validating path: {str(e)}"
 
         # Ensure the directory exists
         directory = os.path.dirname(expanded_path)
@@ -918,12 +1052,21 @@ def write_file_from_marker(
                 if response.startswith("a"):
                     response = "y"  # Treat as yes for this file
                     
-                    # CRITICAL: Set the GLOBAL flag to ensure all future operations are approved
-                    # (note: global statements must be at the function level, not in a conditional)
-                    GLOBAL_APPROVE_ALL = True
-                    
-                    # Show clear console message
-                    console.print(f"[bold green]▶▶▶ Approve-all mode activated. All file operations will be approved automatically.[/bold green]")
+                    # If we have a permission manager, use time-based approval system
+                    if permission_manager:
+                        # Use default timeout (30 minutes)
+                        permission_manager.approve_all(
+                            timeout=None, 
+                            context="User selected 'approve all' during file operations"
+                        )
+                        console.print(f"[bold green]▶▶▶ Time-based approve-all mode activated for 30 minutes. All operations will be approved automatically.[/bold green]")
+                    else:
+                        # Fall back to old behavior if no permission manager
+                        # CRITICAL: Set the GLOBAL flag to ensure all future operations are approved
+                        # (note: global statements must be at the function level, not in a conditional)
+                        global GLOBAL_APPROVE_ALL
+                        GLOBAL_APPROVE_ALL = True
+                        console.print(f"[bold green]▶▶▶ Approve-all mode activated. All file operations will be approved automatically.[/bold green]")
                     
                     # Write the file now
                     directory = os.path.dirname(expanded_path)
@@ -1088,7 +1231,7 @@ def write_file_from_marker(
             )
             
         # Return approve_all status in third position
-        if approve_all or effective_approve_all or GLOBAL_APPROVE_ALL:
+        if approve_all or effective_approve_all:
             # Return True to indicate approve_all is active
             return True, f"File {action}: {expanded_path}", True
         else:
@@ -1224,6 +1367,7 @@ def process_file_writes(
     show_errors: bool = True,
     auto_approve: bool = False,
     approve_all: bool = False,
+    permission_manager=None,
 ) -> Tuple[str, List[Dict[str, Any]], bool]:
     """
     Process a response from the model, handling any file writing markers.
@@ -1234,6 +1378,7 @@ def process_file_writes(
         show_errors: Whether to display error messages to the user
         auto_approve: Whether to automatically approve all file operations (from command line)
         approve_all: Whether to approve all file operations in this session
+        permission_manager: Optional permission manager for contextual approvals
 
     Returns:
         Tuple containing:
@@ -1241,11 +1386,9 @@ def process_file_writes(
         - List of dictionaries with file writing results
         - Boolean indicating if any errors occurred
     """
-    # Access the global approve_all flag - must be at the function level
-    global GLOBAL_APPROVE_ALL
+    # Use passed approve_all flag
+    use_approve_all = approve_all
     
-    # Initialize _approve_all with either the passed flag or the global flag
-    _approve_all = approve_all or GLOBAL_APPROVE_ALL
     # Extract all file writing markers
     if DEBUG:
         console.print(
@@ -1275,16 +1418,23 @@ def process_file_writes(
     # Process each file
     for file_path, content, original_marker in file_matches:
             
-        # Call write_file_from_marker with current approve_all status
+        # Call write_file_from_marker with current approve_all status and permission manager
         success, stdout, result = write_file_from_marker(
-            file_path, content, console, auto_approve, _approve_all
+            file_path, content, console, auto_approve, use_approve_all, permission_manager
         )
 
-        # Check if approve_all was activated
+        # Check if approve_all was activated 
         if success and result is True:
             # User selected "approve all" or it was already active
-            _approve_all = True
-            GLOBAL_APPROVE_ALL = True
+            use_approve_all = True
+            
+            # If we have a permission manager, use its time-based approval method
+            if permission_manager:
+                # Default timeout is 30 minutes
+                permission_manager.approve_all(timeout=None, context="User selected 'approve all' during file operations")
+                if DEBUG:
+                    console.print(f"[yellow]DEBUG: Activated time-based approval for all operations (30 minutes)[/yellow]")
+                    
             stderr = ""  # No error
         else:
             # Normal case (not approve_all), stderr was returned
@@ -1324,8 +1474,8 @@ def process_file_writes(
 
     # We no longer show errors here - they're handled at the higher level in conversation.py
 
-    # Add marker if approve_all is active
-    if _approve_all or GLOBAL_APPROVE_ALL:
+    # Add marker if approve_all is active - we use this to communicate with the caller
+    if use_approve_all:
         # Add a marker that the caller will check for
         approve_all_status = {
             "file_path": "__approve_all_status__",

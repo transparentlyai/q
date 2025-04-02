@@ -4,7 +4,11 @@ import json
 import logging
 import re
 import shlex
-from typing import Dict, List, Set, Optional
+import time
+from typing import Dict, List, Set, Optional, Tuple, Any
+
+from q_cli.utils.constants import DEBUG
+from q_cli.utils.permissions_context import PermissionContextManager, ApprovalContext
 
 
 class CommandPermissionManager:
@@ -15,13 +19,15 @@ class CommandPermissionManager:
     - Checking if commands are allowed, prohibited, or need permission
     - Tracking approved command categories for the session
     - Extracting command types from full command strings
+    - Providing time-based and contextual approval management
 
     Permission Priority Order (highest to lowest):
     1. Prohibited commands - can never be executed
     2. Always restricted commands - always require explicit permission
-    3. Session approved commands - approved during the current session
-    4. Always approved commands - pre-approved by default
-    5. Default - require permission
+    3. Contextual approvals - approved with time-based expirations
+    4. Session approved commands - approved during the current session
+    5. Always approved commands - pre-approved by default
+    6. Default - require permission
 
     Note: Default commands from constants.py are always added to user-configured
     commands from the config file. This ensures core functionality while allowing
@@ -49,6 +55,9 @@ class CommandPermissionManager:
 
         # Track commands approved during this session
         self.session_approved_commands: Set[str] = set()
+        
+        # Context manager for time-based approvals
+        self.context_manager = PermissionContextManager()
 
     def extract_command_type(self, command: str) -> str:
         """
@@ -75,11 +84,22 @@ class CommandPermissionManager:
             base_cmd = args[0]
 
             # Strip any path components
-            return base_cmd.split("/")[-1]
+            cmd_name = base_cmd.split("/")[-1]
+            
+            # Safety check: ensure we're not dealing with path traversal attempts
+            if ".." in base_cmd:
+                # Add special marker to indicate path traversal attempt
+                return "PATH_TRAVERSAL_ATTEMPT"
+                
+            # Security improvement: normalize command name by removing
+            # special characters, spaces, and ensuring lowercase for consistency
+            cmd_name = cmd_name.lower().strip()
+            
+            return cmd_name
 
         except Exception:
             # If we can't parse it, just use the first word
-            return command.strip().split()[0] if command.strip() else ""
+            return command.strip().split()[0].lower() if command.strip() else ""
 
     def extract_all_command_types(self, command: str) -> List[str]:
         """
@@ -316,6 +336,13 @@ class CommandPermissionManager:
         """
         Check if a command needs permission before execution.
 
+        Priority order (from highest to lowest):
+        1. Prohibited commands - always blocked (returns False)
+        2. Always restricted commands - always need permission
+        3. Time-based contextual approvals - can be approved with expiration
+        4. Session approved commands - approved for this session
+        5. Always approved commands - pre-approved in config
+
         Args:
             command: The full command string
 
@@ -329,6 +356,14 @@ class CommandPermissionManager:
         if self.is_command_prohibited(command):
             return False  # Will be blocked before permission check
 
+        # Global approval check - if active and valid, bypass all checks
+        if self.context_manager.global_approval and self.context_manager.global_approval.is_valid:
+            if DEBUG:
+                from rich.console import Console
+                console = Console()
+                console.print(f"[yellow]DEBUG: Command '{command}' approved via global approval context[/yellow]")
+            return False  # No permission needed, globally approved
+
         # Extract all command types from the command string
         cmd_types = self.extract_all_command_types(command)
 
@@ -337,28 +372,42 @@ class CommandPermissionManager:
         if first_cmd_type not in cmd_types and first_cmd_type:
             cmd_types.append(first_cmd_type)
 
+        # Check for exact command match in contextual approvals
+        if self.context_manager.is_command_approved(command, first_cmd_type):
+            if DEBUG:
+                from rich.console import Console
+                console = Console()
+                console.print(f"[yellow]DEBUG: Command '{command}' approved via contextual approval[/yellow]")
+            return False  # No permission needed, contextually approved
+
         # Check if any command is restricted
         for cmd_type in cmd_types:
             # Always need permission for restricted commands (highest priority after prohibited)
             if cmd_type in self.always_restricted_commands:
                 return True  # Always need permission
 
-            # If any command is not pre-approved, we need permission
+            # Check if command type is approved in context
+            if cmd_type in self.context_manager.type_approvals and self.context_manager.type_approvals[cmd_type].is_valid:
+                continue  # Type is approved in context, check next type
+                
+            # If any command type is not pre-approved in any way, we need permission
             if (
                 cmd_type not in self.session_approved_commands
                 and cmd_type not in self.always_approved_commands
             ):
                 return True
 
-        # If we get here, all commands are either session-approved or always-approved
+        # If we get here, all commands are either context-approved, session-approved or always-approved
         return False
 
-    def approve_command_type(self, command: str) -> None:
+    def approve_command_type(self, command: str, timeout: Optional[int] = None, context: str = "") -> None:
         """
-        Mark a command type as approved for the rest of the session.
+        Mark a command type as approved with optional time-based expiration.
 
         Args:
             command: The command string to approve
+            timeout: Optional timeout in seconds for this approval
+            context: Optional context description for this approval
         """
         # For complex commands, we need to approve all command types
         # Extract all command types and add them to the session approved list
@@ -369,10 +418,40 @@ class CommandPermissionManager:
         if first_cmd_type not in cmd_types and first_cmd_type:
             cmd_types.append(first_cmd_type)
 
-        # Add all command types to the approved list
-        for cmd_type in cmd_types:
-            if cmd_type:
-                self.session_approved_commands.add(cmd_type)
+        # If timeout is specified, use contextual approvals
+        if timeout is not None:
+            # Add all command types to the contextual approval list
+            for cmd_type in cmd_types:
+                if cmd_type:
+                    self.context_manager.approve_command_type(cmd_type, timeout, context)
+        else:
+            # Add all command types to the session approved list (permanent for this session)
+            for cmd_type in cmd_types:
+                if cmd_type:
+                    self.session_approved_commands.add(cmd_type)
+                    
+    def approve_command(self, command: str, timeout: Optional[int] = None, context: str = "") -> None:
+        """
+        Approve a specific command with optional time-based expiration.
+        
+        Args:
+            command: The exact command to approve
+            timeout: Optional timeout in seconds for this approval
+            context: Optional context description for this approval
+        """
+        if timeout is not None:
+            self.context_manager.approve_command(command, timeout, context)
+        # No else clause - we don't have persistent approval for exact commands
+        
+    def approve_all(self, timeout: Optional[int] = None, context: str = "") -> None:
+        """
+        Approve all commands temporarily with a timeout.
+        
+        Args:
+            timeout: Timeout in seconds for global approval (default: 30 minutes)
+            context: Optional context description for this approval
+        """
+        self.context_manager.approve_all(timeout, context)
 
     @classmethod
     def from_config(cls, config_vars: Dict[str, str]) -> "CommandPermissionManager":
@@ -418,10 +497,26 @@ def parse_command_list(command_list_str: str) -> List[str]:
 
     command_list_str = command_list_str.strip()
 
-    # Parse as JSON
+    # Parse as JSON with strict validation
     if command_list_str.startswith("[") and command_list_str.endswith("]"):
         try:
-            return json.loads(command_list_str)
+            # Parse the JSON data with strict parsing enabled
+            result = json.loads(command_list_str, strict=True)
+            
+            # Validate the result is a list and all elements are strings
+            if not isinstance(result, list):
+                logging.warning(f"Command list must be a JSON array, got {type(result).__name__}")
+                return []
+                
+            # Filter out any non-string elements
+            string_items = []
+            for item in result:
+                if isinstance(item, str):
+                    string_items.append(item)
+                else:
+                    logging.warning(f"Ignoring non-string command: {item}")
+            
+            return string_items
         except json.JSONDecodeError as e:
             # Log an error but return empty list
             logging.warning(f"Error parsing command list JSON: {e}")

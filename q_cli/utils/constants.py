@@ -44,7 +44,22 @@ HISTORY_PATH = os.path.expanduser("~/.qhistory")
 SESSION_PATH = os.path.expanduser("~/.qsession")
 
 # Security
-SENSITIVE_PATTERNS = ["sk-ant", "api_key", "apikey", "token", "secret", "key"]
+SENSITIVE_PATTERNS = [
+    # API keys and tokens
+    "sk-ant", "sk-", "api_key", "apikey", "token", "secret", "key", "pass", "pwd", "auth",
+    # Service account patterns
+    "private_key", "client_secret", "credentials", "account", "certificate",
+    # Anthropic specific
+    "anthropic\.api", "claude\.api",
+    # OpenAI specific
+    "openai\.api", "openai\.key", "gpt",
+    # Vertex AI specific
+    "vertex", "google_application", "gcp", "project_id",
+    # Groq specific
+    "groq\.api", "groq\.key",
+    # General patterns
+    "bearer", "authorization", "oauth"
+]
 REDACTED_TEXT = "[REDACTED - Potential sensitive information]"
 
 # Display options
@@ -181,17 +196,28 @@ DEFAULT_ALWAYS_RESTRICTED_COMMANDS: list[str] = [
 ]
 
 DEFAULT_PROHIBITED_COMMANDS: list[str] = [
-    "rm -rf /",
-    "rm -rf /*",
-    "mkfs",
-    "> /dev/sda",
-    "dd if=/dev/zero",
-    ":(){:|:&};:",
-    "chmod -R 777 /",
-    "wget -O- | sh",
-    "curl | sh",
-    "eval `curl`",
-    "shutdown",
-    "reboot",
-    "halt",
+    # File system destruction commands
+    "rm -rf /", "rm -rf /*", "rm -rf .", "rm -fr /", "rm -fr /*",
+    # Disk overwrite commands
+    "> /dev/sda", "> /dev/hda", "dd if=/dev/zero", "mkfs", "format", 
+    # Privilege escalation
+    "sudo su", "sudo -i", "sudo su -", "su root", "sudo bash", "doas",
+    # System modification (critical files/directories)
+    "chmod -R 777 /", "chmod 777 -R /", "chmod +s /", "chown -R", 
+    # Fork bombs and resource exhaustion
+    ":(){:|:&};:", "while true;", ":(){ :|: & };:", "yes >",
+    # Code execution from network
+    "wget -O- | sh", "curl | sh", "curl | bash", "wget | bash", "fetch | sh", 
+    "eval `curl", "eval `wget", "bash <(curl", "bash <(wget",
+    # System control commands
+    "shutdown", "reboot", "halt", "poweroff", "init 0", "init 6",
+    # PATH_TRAVERSAL_ATTEMPT - special marker from extract_command_type
+    "PATH_TRAVERSAL_ATTEMPT", 
+    # Dangerous file targets
+    ">/dev/sda", ">/dev/hda", ">/dev/sd", ">/dev/nvme", ">/proc/",
+    # Intentional system crash attempts
+    "kill -9 -1", "killall -9", ":(){ :", "echo > /proc/sys/kernel/panic",
+    # Special regex patterns for command validation
+    "^rm .*-[a-z]*f.*/$",
+    "^sudo rm"
 ]

@@ -500,7 +500,7 @@ def process_commands(
         console: Console for output
         permission_manager: Optional manager for command permissions
         show_errors: Whether to display error messages to the user
-        auto_approve: Whether to automatically approve all commands (includes approve_all flag)
+        auto_approve: Whether to automatically approve all commands (from command line)
 
     Returns:
         Tuple containing:
@@ -509,6 +509,7 @@ def process_commands(
     """
     results = []
     has_error = False
+    use_auto_approve = auto_approve  # Track local approval state for this batch of commands
 
     # Skip if no commands
     if not commands:
@@ -530,14 +531,14 @@ def process_commands(
             has_error = True
             continue
 
-        # Check if auto-approve is enabled
-        if auto_approve:
+        # Check if auto-approve is enabled (either from command line or previous approve-all selection)
+        if use_auto_approve:
             if DEBUG:
                 console.print(
                     f"[yellow]DEBUG: Auto-approving command: {command}[/yellow]"
                 )
             execute = True
-            remember = True
+            remember = False  # Don't need to remember with auto-approve
             console.print(f"[bold green]Auto-approved command:[/bold green] {command}")
         # Ask for confirmation if needed and not auto-approving
         elif permission_manager and permission_manager.needs_permission(command):
@@ -563,21 +564,24 @@ def process_commands(
                 has_error = True
                 continue
 
-            # Check if the user selected "approve all" option
+            # Check if the user selected "approve all" option - this uses our time-based system now
             if remember == "approve_all":
-                # Enable approve_all mode for future operations
-                auto_approve = (
-                    True  # This will auto-approve remaining commands in this batch
-                )
+                # Enable approve_all mode for future operations in this batch
+                use_auto_approve = True
                 # Add notification in results to let calling code know approve_all was activated
                 results.append("Approve-all mode activated for all operations")
                 if DEBUG:
                     console.print(
-                        f"[yellow]DEBUG: Command approve-all mode activated[/yellow]"
+                        f"[yellow]DEBUG: Command approve-all mode activated for this batch[/yellow]"
                     )
-            # Remember this command type if requested as type-specific approval
+            # Remember this command type if requested (the "Y" option) as permanent session approval
             elif remember and permission_manager:
+                # For the "Y" option, this adds permanent session approval (not time-based)
                 permission_manager.approve_command_type(command)
+                if DEBUG:
+                    console.print(
+                        f"[yellow]DEBUG: Command type permanently approved for this session[/yellow]"
+                    )
         else:
             # Command is pre-approved
             console.print(f"\n[green]Command '{command}' is pre-approved.[/green]")
@@ -757,7 +761,7 @@ def process_response_operations(
         if DEBUG:
             console.print("[yellow]DEBUG: Checking file write operations...[/yellow]")
         file_processed_response, file_write_results, file_write_has_error = (
-            process_file_writes(response, console, False, auto_approve, approve_all)
+            process_file_writes(response, console, False, auto_approve, approve_all, permission_manager)
         )
         has_operation_error = has_operation_error or file_write_has_error
 
