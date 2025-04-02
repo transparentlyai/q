@@ -28,15 +28,23 @@ from q_cli.utils.constants import (
 # This ensures the updated prompt is available to new API calls
 _GLOBAL_SYSTEM_PROMPT = None
 
+
 def set_global_system_prompt(prompt: str) -> None:
     """Set the global system prompt for use after provider switches."""
     global _GLOBAL_SYSTEM_PROMPT
     _GLOBAL_SYSTEM_PROMPT = prompt
-    
+
+
 def get_global_system_prompt() -> Optional[str]:
     """Get the global system prompt if set."""
     return _GLOBAL_SYSTEM_PROMPT
-from q_cli.utils.helpers import handle_api_error, format_markdown, clean_operation_codeblocks
+
+
+from q_cli.utils.helpers import (
+    handle_api_error,
+    format_markdown,
+    clean_operation_codeblocks,
+)
 from q_cli.utils.context import ContextManager, num_tokens_from_string, TokenRateTracker
 from q_cli.io.input import get_input
 from q_cli.io.output import save_response_to_file
@@ -96,28 +104,30 @@ def run_conversation(
         OPENAI_MAX_TOKENS_PER_MIN,
         DEFAULT_PROVIDER,
     )
-    
+
     # Determine the correct provider based on model name or args
     model = getattr(args, "model", "")
     provider = getattr(args, "provider", DEFAULT_PROVIDER)
-    
+
     # Check if we have a global system prompt from a previous provider switch
     global_system_prompt = get_global_system_prompt()
-    
+
     # Always ensure we have the correct model name, not just the first time
     # Get a clean model name for display (without provider prefix)
     display_model = model
-    if '/' in display_model:
-        display_model = display_model.split('/', 1)[1]
-    
+    if "/" in display_model:
+        display_model = display_model.split("/", 1)[1]
+
     # Determine whether to use global prompt or fresh prompt
     use_fresh_prompt = False
-    
+
     if global_system_prompt:
         # Use the global system prompt if available, but first verify it has the correct model
-        if '{model}' in global_system_prompt:
+        if "{model}" in global_system_prompt:
             # Unsubstituted placeholder - need fresh prompt
-            console.print(f"[yellow]Found unsubstituted {model} in global system prompt[/yellow]")
+            console.print(
+                f"[yellow]Found unsubstituted {model} in global system prompt[/yellow]"
+            )
             use_fresh_prompt = True
         elif "my brain is" in global_system_prompt.lower():
             # Check model name with pattern matching
@@ -125,56 +135,79 @@ def run_conversation(
             if len(parts) > 1:
                 model_in_prompt = parts[1].split(".")[0].strip()
                 if get_debug():
-                    console.print(f"[dim]Global system prompt references model: {model_in_prompt}[/dim]")
-                
+                    console.print(
+                        f"[dim]Global system prompt references model: {model_in_prompt}[/dim]"
+                    )
+
                 # If there's a mismatch, regenerate the system prompt
                 if model_in_prompt != display_model.lower():
-                    console.print(f"[bold red]Model mismatch at startup: Prompt says {model_in_prompt} but using {display_model}[/bold red]")
+                    console.print(
+                        f"[bold red]Model mismatch at startup: Prompt says {model_in_prompt} but using {display_model}[/bold red]"
+                    )
                     use_fresh_prompt = True
                 else:
                     # Use the global prompt since it has the correct model
                     system_prompt = global_system_prompt
                     if get_debug():
-                        console.print(f"[dim]Using global system prompt with correct model: {model_in_prompt}[/dim]")
+                        console.print(
+                            f"[dim]Using global system prompt with correct model: {model_in_prompt}[/dim]"
+                        )
             else:
                 # Can't determine model in prompt
-                console.print("[yellow]Cannot determine model name in global system prompt[/yellow]")
+                console.print(
+                    "[yellow]Cannot determine model name in global system prompt[/yellow]"
+                )
                 use_fresh_prompt = True
         else:
             # No recognizable model reference
-            console.print("[yellow]Global system prompt doesn't contain expected model reference[/yellow]")
+            console.print(
+                "[yellow]Global system prompt doesn't contain expected model reference[/yellow]"
+            )
             use_fresh_prompt = True
     else:
         # No global prompt
         use_fresh_prompt = True
         if get_debug():
-            console.print("[dim]No global system prompt available, generating fresh prompt[/dim]")
-    
+            console.print(
+                "[dim]No global system prompt available, generating fresh prompt[/dim]"
+            )
+
     # Generate a fresh prompt if needed
     if use_fresh_prompt:
         # Load the base prompt directly to ensure we're working with the original template
         from q_cli.utils.prompts import get_prompt
-        prompt_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts", "base_system_prompt.md")
-        
+
+        prompt_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "prompts",
+            "base_system_prompt.md",
+        )
+
         # Get user context from the CONTEXT section of q.conf, or empty string if not found
         user_context = ""
         from q_cli.utils.constants import CONFIG_PATH
+
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r") as f:
                 content = f.read()
                 # Find the CONTEXT section - look for both [CONTEXT] and #CONTEXT formats
                 import re  # Import re module to ensure it's available in this scope
-                context_match = re.search(r'\[CONTEXT\](.*?)(\n\[|\Z)', content, re.DOTALL)
+
+                context_match = re.search(
+                    r"\[CONTEXT\](.*?)(\n\[|\Z)", content, re.DOTALL
+                )
                 if not context_match:
                     # Try the alternate format with # instead of []
                     # This captures everything after the #CONTEXT line until the end of file
                     # Using a more robust pattern that is specific to the structure of the config file
                     # Skip comment lines to get to the actual content
-                    context_match = re.search(r'#CONTEXT.*?\n((?:- .*\n)+)', content, re.DOTALL)
-                
+                    context_match = re.search(
+                        r"#CONTEXT.*?\n((?:- .*\n)+)", content, re.DOTALL
+                    )
+
                 if context_match:
                     user_context = context_match.group(1).strip()
-        
+
         # Get project context from .Q/project.md, or empty string if not found
         project_context = ""
         q_dir_path = os.path.join(os.getcwd(), ".Q")
@@ -185,73 +218,85 @@ def run_conversation(
                     project_context = f.read().strip()
             except Exception:
                 pass
-                
+
         # Get system prompt with user and project context
-        system_prompt = get_prompt(prompt_path, model=display_model, 
-                                 usercontext=user_context, 
-                                 projectcontext=project_context)
-        
+        system_prompt = get_prompt(
+            prompt_path,
+            model=display_model,
+            usercontext=user_context,
+            projectcontext=project_context,
+        )
+
         # If we have context, add it back
         if context_manager and context_manager.get_current_context():
             current_context = context_manager.get_current_context()
             if current_context:
                 # Add context directly without the surrounding text from context_prompt.md
                 system_prompt += f"\n\n{current_context}"
-        
+
         # Update the context manager
         if context_manager:
             context_manager.set_system_prompt(system_prompt)
-            
+
         if get_debug():
-            console.print(f"[dim]Generated fresh system prompt with model: {display_model}[/dim]")
-        
+            console.print(
+                f"[dim]Generated fresh system prompt with model: {display_model}[/dim]"
+            )
+
         # Also save the new system prompt to session if available
         if session_manager:
             try:
                 # Make sure to include user and project context
-                base_system_prompt = get_prompt(prompt_path, model=display_model,
-                                             usercontext=user_context,
-                                             projectcontext=project_context)
+                base_system_prompt = get_prompt(
+                    prompt_path,
+                    model=display_model,
+                    usercontext=user_context,
+                    projectcontext=project_context,
+                )
                 session_manager.save_session(
                     conversation=conversation if conversation else [],
                     system_prompt=base_system_prompt,
-                    context_manager=None  # Don't save context to session
+                    context_manager=None,  # Don't save context to session
                 )
                 if get_debug():
                     console.print("[dim]Updated session with fresh system prompt[/dim]")
             except Exception as e:
                 if get_debug():
-                    console.print(f"[dim]Failed to save fresh system prompt to session: {str(e)}[/dim]")
-    
+                    console.print(
+                        f"[dim]Failed to save fresh system prompt to session: {str(e)}[/dim]"
+                    )
+
     # After using the global system prompt, clear it to avoid reuse in future conversations
     set_global_system_prompt(None)
-    
+
     # If model name contains "gemini", it must be VertexAI regardless of args.provider
     if model and "gemini" in model.lower():
         provider = "vertexai"
-    
+
     # Set the appropriate rate limit based on the provider
-    if provider == "anthropic" and 'ANTHROPIC_MAX_TOKENS_PER_MIN' in globals():
+    if provider == "anthropic" and "ANTHROPIC_MAX_TOKENS_PER_MIN" in globals():
         max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
-    elif provider == "vertexai" and 'VERTEXAI_MAX_TOKENS_PER_MIN' in globals():
+    elif provider == "vertexai" and "VERTEXAI_MAX_TOKENS_PER_MIN" in globals():
         max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
-    elif provider == "groq" and 'GROQ_MAX_TOKENS_PER_MIN' in globals():
+    elif provider == "groq" and "GROQ_MAX_TOKENS_PER_MIN" in globals():
         max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
-    elif provider == "openai" and 'OPENAI_MAX_TOKENS_PER_MIN' in globals():
+    elif provider == "openai" and "OPENAI_MAX_TOKENS_PER_MIN" in globals():
         max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
     else:
         # If no rate limit is defined for the provider, disable rate limiting
         max_tokens_per_min = 0
         if get_debug():
-            console.print(f"[yellow]No rate limit defined for provider '{provider}'. Rate limiting disabled.[/yellow]")
-        
+            console.print(
+                f"[yellow]No rate limit defined for provider '{provider}'. Rate limiting disabled.[/yellow]"
+            )
+
     token_tracker = TokenRateTracker(max_tokens_per_min)
     # Make token_tracker available in globals for access by transplant command
-    globals()['token_tracker'] = token_tracker
-    
+    globals()["token_tracker"] = token_tracker
+
     # Make context_manager available in globals for access by transplant command
     if context_manager:
-        globals()['context_manager'] = context_manager
+        globals()["context_manager"] = context_manager
 
     try:
         # The 'recover' command in interactive mode has been removed.
@@ -267,106 +312,130 @@ def run_conversation(
             # Get a new initial question
             initial_question = get_input("Q> ", session=prompt_session)
             stripped_initial = initial_question.strip().lower()
-        
+
         # Handle save command as initial input
-        if stripped_initial == SAVE_COMMAND_PREFIX.lower() or stripped_initial.startswith(SAVE_COMMAND_PREFIX.lower() + " "):
+        if (
+            stripped_initial == SAVE_COMMAND_PREFIX.lower()
+            or stripped_initial.startswith(SAVE_COMMAND_PREFIX.lower() + " ")
+        ):
             console.print("[yellow]There is no previous response to save.[/yellow]")
             initial_question = get_input("Q> ", session=prompt_session)
             stripped_initial = initial_question.strip().lower()
 
         # Handle transplant command as initial input
-        if stripped_initial == TRANSPLANT_COMMAND.lower() or stripped_initial.startswith(TRANSPLANT_COMMAND.lower() + " "):
+        if (
+            stripped_initial == TRANSPLANT_COMMAND.lower()
+            or stripped_initial.startswith(TRANSPLANT_COMMAND.lower() + " ")
+        ):
             # Process the transplant command
             # Debug message to confirm transplant clears conversation history
-            console.print("[yellow]Note: Using /transplant will clear all conversation history[/yellow]")
-            
+            console.print(
+                "[yellow]Note: Using /transplant will clear all conversation history[/yellow]"
+            )
+
             from q_cli.utils.provider_factory import ProviderFactory
             from q_cli.io.config import read_config_file
             from q_cli.utils.constants import SUPPORTED_PROVIDERS
-            
+
             # Get current configuration
             _, _, config_vars = read_config_file(console)
-            
+
             # Check which providers are configured
             configured_providers = []
             for provider in SUPPORTED_PROVIDERS:
                 api_key_var = f"{provider.upper()}_API_KEY"
                 api_key = config_vars.get(api_key_var) or os.environ.get(api_key_var)
-                
+
                 # Special check for VertexAI which needs additional config
                 if provider == "vertexai":
-                    project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT")
-                    location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION")
-                    
+                    project_id = (
+                        config_vars.get("VERTEXAI_PROJECT")
+                        or config_vars.get("VERTEX_PROJECT")
+                        or os.environ.get("VERTEXAI_PROJECT")
+                    )
+                    location = (
+                        config_vars.get("VERTEXAI_LOCATION")
+                        or config_vars.get("VERTEX_LOCATION")
+                        or os.environ.get("VERTEXAI_LOCATION")
+                    )
+
                     if api_key and project_id and location:
                         configured_providers.append(provider)
                 elif api_key:
                     configured_providers.append(provider)
-            
+
             # Check if any providers are configured
             if not configured_providers:
-                console.print("[red]No providers are fully configured. Please add API keys to your config file.[/red]")
+                console.print(
+                    "[red]No providers are fully configured. Please add API keys to your config file.[/red]"
+                )
                 # Get a new initial question
                 initial_question = get_input("Q> ", session=prompt_session)
                 stripped_initial = initial_question.strip().lower()
             else:
                 # Display current provider and model
                 from q_cli.utils.constants import DEFAULT_PROVIDER
-                
+
                 # First check the model for Gemini pattern
                 if args.model and "gemini" in args.model.lower():
                     # If we're using a Gemini model, it HAS to be VertexAI
                     current_provider = "vertexai"
                     current_model = args.model
-                elif 'client' in globals() and hasattr(globals()['client'], 'provider'):
+                elif "client" in globals() and hasattr(globals()["client"], "provider"):
                     # Get from client object
-                    current_provider = globals()['client'].provider
+                    current_provider = globals()["client"].provider
                 else:
                     # Fallback to args
                     current_provider = args.provider or DEFAULT_PROVIDER
-                
-                # Get model 
-                if 'client' in globals() and hasattr(globals()['client'], 'model'):
-                    current_model = globals()['client'].model
+
+                # Get model
+                if "client" in globals() and hasattr(globals()["client"], "model"):
+                    current_model = globals()["client"].model
                 else:
                     current_model = args.model
-                    
+
                 # Override args for consistency
                 args.provider = current_provider
-                
-                console.print(f"[bold green]Current provider:[/bold green] {current_provider}")
-                console.print(f"[bold green]Current model:[/bold green] {current_model}")
-                
+
+                console.print(
+                    f"[bold green]Current provider:[/bold green] {current_provider}"
+                )
+                console.print(
+                    f"[bold green]Current model:[/bold green] {current_model}"
+                )
+
                 # Show available providers
                 console.print("\n[bold]Available providers:[/bold]")
                 for i, provider in enumerate(configured_providers, 1):
                     console.print(f"{i}. {provider}")
-                    
+
                 # Get provider choice
                 while True:
-                    provider_choice = input(f"Select provider (1-{len(configured_providers)}, or enter to keep current): ").strip()
-                    
+                    provider_choice = input(
+                        f"Select provider (1-{len(configured_providers)}, or enter to keep current): "
+                    ).strip()
+
                     if not provider_choice:
                         # Keep current provider, ask for initial question
                         initial_question = get_input("Q> ", session=prompt_session)
                         stripped_initial = initial_question.strip().lower()
                         break
-                        
+
                     try:
                         provider_idx = int(provider_choice) - 1
                         if 0 <= provider_idx < len(configured_providers):
                             # Valid choice, update provider
                             new_provider = configured_providers[provider_idx]
                             args.provider = new_provider
-                            
+
                             # Get default model for this provider
                             from q_cli.utils.constants import (
                                 ANTHROPIC_DEFAULT_MODEL,
                                 VERTEXAI_DEFAULT_MODEL,
                                 GROQ_DEFAULT_MODEL,
-                                OPENAI_DEFAULT_MODEL
+                                OPENAI_DEFAULT_MODEL,
                             )
-                            
+
                             if new_provider == "anthropic":
                                 default_model = ANTHROPIC_DEFAULT_MODEL
                             elif new_provider == "vertexai":
@@ -377,25 +446,29 @@ def run_conversation(
                                 default_model = OPENAI_DEFAULT_MODEL
                             else:
                                 default_model = ANTHROPIC_DEFAULT_MODEL
-                                
+
                             # Show available models for this provider
-                            console.print(f"\n[bold]Default model for {new_provider}:[/bold] {default_model}")
-                            console.print("Enter a specific model name or press enter to use the default:")
-                            
+                            console.print(
+                                f"\n[bold]Default model for {new_provider}:[/bold] {default_model}"
+                            )
+                            console.print(
+                                "Enter a specific model name or press enter to use the default:"
+                            )
+
                             model_choice = input("Model: ").strip()
                             if model_choice:
                                 args.model = model_choice
                             else:
                                 args.model = default_model
-                                
+
                             # Update max tokens based on provider
                             from q_cli.utils.constants import (
                                 ANTHROPIC_MAX_TOKENS,
                                 VERTEXAI_MAX_TOKENS,
                                 GROQ_MAX_TOKENS,
-                                OPENAI_MAX_TOKENS
+                                OPENAI_MAX_TOKENS,
                             )
-                            
+
                             if new_provider == "anthropic":
                                 args.max_tokens = ANTHROPIC_MAX_TOKENS
                             elif new_provider == "vertexai":
@@ -404,36 +477,46 @@ def run_conversation(
                                 args.max_tokens = GROQ_MAX_TOKENS
                             elif new_provider == "openai":
                                 args.max_tokens = OPENAI_MAX_TOKENS
-                                
+
                             # Initialize new client
                             from q_cli.utils.client import LLMClient
-                            
+
                             # Get API key for the selected provider
-                            api_key_var = f"{new_provider.upper()}_API_KEY" 
-                            api_key = config_vars.get(api_key_var) or os.environ.get(api_key_var)
-                            
+                            api_key_var = f"{new_provider.upper()}_API_KEY"
+                            api_key = config_vars.get(api_key_var) or os.environ.get(
+                                api_key_var
+                            )
+
                             # Get extra kwargs for VertexAI
                             provider_kwargs = {}
                             if new_provider == "vertexai":
-                                project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT")
-                                location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION")
+                                project_id = (
+                                    config_vars.get("VERTEXAI_PROJECT")
+                                    or config_vars.get("VERTEX_PROJECT")
+                                    or os.environ.get("VERTEXAI_PROJECT")
+                                )
+                                location = (
+                                    config_vars.get("VERTEXAI_LOCATION")
+                                    or config_vars.get("VERTEX_LOCATION")
+                                    or os.environ.get("VERTEXAI_LOCATION")
+                                )
                                 provider_kwargs = {
                                     "project_id": project_id,
-                                    "location": location
+                                    "location": location,
                                 }
-                                
+
                             # Create new client
                             try:
-                                # Create a new client 
+                                # Create a new client
                                 new_client = LLMClient(
                                     api_key=api_key,
                                     model=args.model,
                                     provider=new_provider,
-                                    **provider_kwargs
+                                    **provider_kwargs,
                                 )
                                 # Replace the global client
-                                globals()['client'] = new_client
-                                
+                                globals()["client"] = new_client
+
                                 # Update all provider-specific configurations
                                 from q_cli.utils.constants import (
                                     # Rate limiting constants
@@ -445,31 +528,61 @@ def run_conversation(
                                     ANTHROPIC_MAX_CONTEXT_TOKENS,
                                     VERTEXAI_MAX_CONTEXT_TOKENS,
                                     GROQ_MAX_CONTEXT_TOKENS,
-                                    OPENAI_MAX_CONTEXT_TOKENS
+                                    OPENAI_MAX_CONTEXT_TOKENS,
                                 )
-                                
+
                                 # Get the token tracker from the parent scope if possible
-                                if 'token_tracker' in globals():
+                                if "token_tracker" in globals():
                                     # Set the appropriate rate limit based on the new provider
-                                    if new_provider == "anthropic" and 'ANTHROPIC_MAX_TOKENS_PER_MIN' in globals():
-                                        globals()['token_tracker'].max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
-                                    elif new_provider == "vertexai" and 'VERTEXAI_MAX_TOKENS_PER_MIN' in globals():
-                                        globals()['token_tracker'].max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
-                                    elif new_provider == "groq" and 'GROQ_MAX_TOKENS_PER_MIN' in globals():
-                                        globals()['token_tracker'].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
-                                    elif new_provider == "openai" and 'OPENAI_MAX_TOKENS_PER_MIN' in globals():
-                                        globals()['token_tracker'].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
+                                    if (
+                                        new_provider == "anthropic"
+                                        and "ANTHROPIC_MAX_TOKENS_PER_MIN" in globals()
+                                    ):
+                                        globals()[
+                                            "token_tracker"
+                                        ].max_tokens_per_min = (
+                                            ANTHROPIC_MAX_TOKENS_PER_MIN
+                                        )
+                                    elif (
+                                        new_provider == "vertexai"
+                                        and "VERTEXAI_MAX_TOKENS_PER_MIN" in globals()
+                                    ):
+                                        globals()[
+                                            "token_tracker"
+                                        ].max_tokens_per_min = (
+                                            VERTEXAI_MAX_TOKENS_PER_MIN
+                                        )
+                                    elif (
+                                        new_provider == "groq"
+                                        and "GROQ_MAX_TOKENS_PER_MIN" in globals()
+                                    ):
+                                        globals()[
+                                            "token_tracker"
+                                        ].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
+                                    elif (
+                                        new_provider == "openai"
+                                        and "OPENAI_MAX_TOKENS_PER_MIN" in globals()
+                                    ):
+                                        globals()[
+                                            "token_tracker"
+                                        ].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
                                     else:
                                         # If no rate limit is defined for the provider, disable rate limiting
-                                        globals()['token_tracker'].max_tokens_per_min = 0
+                                        globals()[
+                                            "token_tracker"
+                                        ].max_tokens_per_min = 0
                                         if get_debug():
-                                            console.print(f"[yellow]No rate limit defined for provider '{new_provider}'. Rate limiting disabled.[/yellow]")
-                                
+                                            console.print(
+                                                f"[yellow]No rate limit defined for provider '{new_provider}'. Rate limiting disabled.[/yellow]"
+                                            )
+
                                 # Update context manager if it exists
-                                if 'context_manager' in globals():
+                                if "context_manager" in globals():
                                     # Set the appropriate context token limit based on the new provider
                                     if new_provider == "anthropic":
-                                        max_context_tokens = ANTHROPIC_MAX_CONTEXT_TOKENS
+                                        max_context_tokens = (
+                                            ANTHROPIC_MAX_CONTEXT_TOKENS
+                                        )
                                     elif new_provider == "vertexai":
                                         max_context_tokens = VERTEXAI_MAX_CONTEXT_TOKENS
                                     elif new_provider == "groq":
@@ -477,39 +590,70 @@ def run_conversation(
                                     elif new_provider == "openai":
                                         max_context_tokens = OPENAI_MAX_CONTEXT_TOKENS
                                     else:
-                                        max_context_tokens = ANTHROPIC_MAX_CONTEXT_TOKENS
-                                        
-                                    if hasattr(globals()['context_manager'], 'max_context_tokens') and max_context_tokens is not None:
-                                        globals()['context_manager'].max_context_tokens = max_context_tokens
+                                        max_context_tokens = (
+                                            ANTHROPIC_MAX_CONTEXT_TOKENS
+                                        )
+
+                                    if (
+                                        hasattr(
+                                            globals()["context_manager"],
+                                            "max_context_tokens",
+                                        )
+                                        and max_context_tokens is not None
+                                    ):
+                                        globals()[
+                                            "context_manager"
+                                        ].max_context_tokens = max_context_tokens
                                         if get_debug():
-                                            console.print(f"[dim]Updated context manager max_context_tokens to {max_context_tokens}[/dim]")
-                                
+                                            console.print(
+                                                f"[dim]Updated context manager max_context_tokens to {max_context_tokens}[/dim]"
+                                            )
+
                                 # Add special message as the first message
-                                console.print(f"[bold green]Provider changed to {new_provider} with model {args.model}[/bold green]")
-                                
+                                console.print(
+                                    f"[bold green]Provider changed to {new_provider} with model {args.model}[/bold green]"
+                                )
+
                                 # Update the config file with the new provider and model
                                 from q_cli.io.config import update_config_provider
-                                if update_config_provider(new_provider, console, args.model):
+
+                                if update_config_provider(
+                                    new_provider, console, args.model
+                                ):
                                     # The update function itself will print a confirmation message
                                     pass
                                 else:
-                                    console.print(f"[yellow]Note: Could not update config file, changes will only apply to this session[/yellow]")
-                                
+                                    console.print(
+                                        f"[yellow]Note: Could not update config file, changes will only apply to this session[/yellow]"
+                                    )
+
                                 # Ask for the first real question
-                                console.print("[bold]Please enter your first question:[/bold]")
-                                initial_question = get_input("Q> ", session=prompt_session)
+                                console.print(
+                                    "[bold]Please enter your first question:[/bold]"
+                                )
+                                initial_question = get_input(
+                                    "Q> ", session=prompt_session
+                                )
                                 stripped_initial = initial_question.strip().lower()
                                 break
-                                
+
                             except Exception as e:
-                                console.print(f"[red]Error initializing new provider: {str(e)}[/red]")
-                                initial_question = get_input("Q> ", session=prompt_session)
+                                console.print(
+                                    f"[red]Error initializing new provider: {str(e)}[/red]"
+                                )
+                                initial_question = get_input(
+                                    "Q> ", session=prompt_session
+                                )
                                 stripped_initial = initial_question.strip().lower()
                                 break
                         else:
-                            console.print(f"[red]Invalid choice. Please select 1-{len(configured_providers)}[/red]")
+                            console.print(
+                                f"[red]Invalid choice. Please select 1-{len(configured_providers)}[/red]"
+                            )
                     except ValueError:
-                        console.print("[red]Invalid input. Please enter a number.[/red]")
+                        console.print(
+                            "[red]Invalid input. Please enter a number.[/red]"
+                        )
 
         # Now process the initial question (either original or new after recovery/transplant)
         if initial_question.strip():
@@ -578,184 +722,298 @@ def run_conversation(
                                     # CRITICAL FIX: We need to ensure we're using the correct provider
                                     # Use the client's own provider and model rather than args
                                     # because the client has the correct, up-to-date information
-                                    client_provider = getattr(client, 'provider', None)
-                                    client_model = getattr(client, 'model', None)
-                                    
+                                    client_provider = getattr(client, "provider", None)
+                                    client_model = getattr(client, "model", None)
+
                                     if client_provider and client_model:
                                         # Use the client's own provider/model combination for the call
                                         # Completely override args to ensure consistency
                                         args.provider = client_provider
-                                        
+
                                         # Format model for LiteLLM based on provider - use the centralized helper
-                                        from q_cli.config.providers import format_model_for_litellm
-                                        
+                                        from q_cli.config.providers import (
+                                            format_model_for_litellm,
+                                        )
+
                                         # Get correctly formatted model name for LiteLLM
-                                        formatted_model = format_model_for_litellm(client_provider, client_model)
-                                        
+                                        formatted_model = format_model_for_litellm(
+                                            client_provider, client_model
+                                        )
+
                                         # Only show reformatting message if there was a change
                                         if formatted_model != client_model:
-                                            console.print(f"[yellow]Reformatting model name for LiteLLM: {client_model} → {formatted_model}[/yellow]")
-                                        
+                                            console.print(
+                                                f"[yellow]Reformatting model name for LiteLLM: {client_model} → {formatted_model}[/yellow]"
+                                            )
+
                                         # Set the model in args
                                         args.model = formatted_model
-                                        
+
                                         if get_debug():
-                                            console.print(f"[bold yellow]Using client's provider/model: {client_provider}/{args.model}[/bold yellow]")
-                                    
+                                            console.print(
+                                                f"[bold yellow]Using client's provider/model: {client_provider}/{args.model}[/bold yellow]"
+                                            )
+
                                     # Make sure we always use the latest client from globals
                                     # This ensures we're always using the most up-to-date client instance
-                                    if 'client' in globals():
+                                    if "client" in globals():
                                         # Make sure we're getting a valid LLMClient object
-                                        global_client = globals()['client']
+                                        global_client = globals()["client"]
                                         # Import LLMClient directly for the isinstance check
-                                        from q_cli.utils.client import LLMClient as ClientClass
-                                        if global_client and isinstance(global_client, ClientClass):
+                                        from q_cli.utils.client import (
+                                            LLMClient as ClientClass,
+                                        )
+
+                                        if global_client and isinstance(
+                                            global_client, ClientClass
+                                        ):
                                             # Update client directly
                                             client = global_client
                                             # Re-fetch provider info
-                                            client_provider = getattr(client, 'provider', None)
-                                            client_model = getattr(client, 'model', None)
-                                            
+                                            client_provider = getattr(
+                                                client, "provider", None
+                                            )
+                                            client_model = getattr(
+                                                client, "model", None
+                                            )
+
                                             # Update args to match the client's settings
                                             # This is critical for API calls to work correctly
                                             if client_model:
                                                 args.model = client_model
                                             if client_provider:
                                                 args.provider = client_provider
-                                                
+
                                             if get_debug():
-                                                console.print(f"[dim]Using client from globals: {client_provider}/{client_model}[/dim]")
+                                                console.print(
+                                                    f"[dim]Using client from globals: {client_provider}/{client_model}[/dim]"
+                                                )
                                         elif get_debug():
-                                            console.print(f"[yellow]Warning: Global client is not a valid LLMClient object[/yellow]")
-                                        
+                                            console.print(
+                                                f"[yellow]Warning: Global client is not a valid LLMClient object[/yellow]"
+                                            )
+
                                     # Call LLM API via our client wrapper
                                     if get_debug():
-                                        console.print(f"[dim]Calling {client_provider} API with model={args.model}[/dim]")
-                                    
+                                        console.print(
+                                            f"[dim]Calling {client_provider} API with model={args.model}[/dim]"
+                                        )
+
                                     # Final check to ensure model prefix matches provider
                                     # This prevents trying to use anthropic/model with vertexai or vice versa
-                                    from q_cli.config.providers import format_model_for_litellm
-                                    
+                                    from q_cli.config.providers import (
+                                        format_model_for_litellm,
+                                    )
+
                                     # Always ensure model format is correct for the current provider
                                     if client_provider:
                                         # Get the correct format for this provider
-                                        correctly_formatted_model = format_model_for_litellm(client_provider, args.model)
+                                        correctly_formatted_model = (
+                                            format_model_for_litellm(
+                                                client_provider, args.model
+                                            )
+                                        )
                                         if correctly_formatted_model != args.model:
                                             args.model = correctly_formatted_model
                                             if get_debug():
-                                                console.print(f"[dim]Model format corrected for {client_provider}: {args.model}[/dim]")
-                                    
+                                                console.print(
+                                                    f"[dim]Model format corrected for {client_provider}: {args.model}[/dim]"
+                                                )
+
                                     # Prevent "list index out of range" error by ensuring we have at least one message
                                     if not conversation:
-                                        conversation.append({"role": "user", "content": "Hello, I'm starting a new conversation."})
-                                        console.print("[yellow]Added a default message to empty conversation[/yellow]")
-                                        console.print(f"[yellow]Conversation after adding default message: {len(conversation)} messages[/yellow]")
-                                        
+                                        conversation.append(
+                                            {
+                                                "role": "user",
+                                                "content": "Hello, I'm starting a new conversation.",
+                                            }
+                                        )
+                                        console.print(
+                                            "[yellow]Added a default message to empty conversation[/yellow]"
+                                        )
+                                        console.print(
+                                            f"[yellow]Conversation after adding default message: {len(conversation)} messages[/yellow]"
+                                        )
+
                                     # Make sure we're using the correct system prompt
                                     system_prompt_to_use = current_system_prompt
-                                    
+
                                     if get_debug():
                                         # Log first 50 chars of system prompt
-                                        console.print(f"[dim]Using system prompt: {system_prompt_to_use[:50]}...[/dim]")
-                                    
+                                        console.print(
+                                            f"[dim]Using system prompt: {system_prompt_to_use[:50]}...[/dim]"
+                                        )
+
                                     # Get model name for API call
                                     api_model = args.model
-                                    if '/' in api_model:
-                                        api_model = api_model.split('/', 1)[1]
-                                    
+                                    if "/" in api_model:
+                                        api_model = api_model.split("/", 1)[1]
+
                                     # Save prompt to session if session manager is available
                                     if session_manager:
                                         try:
                                             session_manager.save_session(
                                                 conversation=conversation,
                                                 system_prompt=system_prompt_to_use,
-                                                context_manager=context_manager
+                                                context_manager=context_manager,
                                             )
                                             if get_debug():
-                                                console.print("[dim]Updated session with system prompt[/dim]")
+                                                console.print(
+                                                    "[dim]Updated session with system prompt[/dim]"
+                                                )
                                         except Exception as e:
                                             if get_debug():
-                                                console.print(f"[dim]Failed to save session: {str(e)}[/dim]")
-                                    
+                                                console.print(
+                                                    f"[dim]Failed to save session: {str(e)}[/dim]"
+                                                )
+
                                     # Add option to display the complete system prompt (useful for debugging)
                                     if os.environ.get("Q_DUMP_PROMPT", "0") == "1":
-                                        console.print(f"[dim]Complete system prompt available with environment variable Q_DUMP_PROMPT=1[/dim]")
-                                    
+                                        console.print(
+                                            f"[dim]Complete system prompt available with environment variable Q_DUMP_PROMPT=1[/dim]"
+                                        )
+
                                     # Use the best model info for API call first - moved up to avoid scope issues
-                                    if hasattr(client, 'model') and client.model:
+                                    if hasattr(client, "model") and client.model:
                                         api_call_model = client.model
                                     else:
                                         api_call_model = args.model
-                                    
+
                                     # Extract clean model name for prompt
                                     clean_model_name = api_call_model
-                                    if '/' in clean_model_name:
-                                        clean_model_name = clean_model_name.split('/', 1)[1]
-                                    
+                                    if "/" in clean_model_name:
+                                        clean_model_name = clean_model_name.split(
+                                            "/", 1
+                                        )[1]
+
                                     # Start with the global system prompt
-                                    system_prompt_to_use = get_global_system_prompt() or ""
-                                    
+                                    system_prompt_to_use = (
+                                        get_global_system_prompt() or ""
+                                    )
+
                                     # If no global prompt, load from file
                                     if not system_prompt_to_use:
                                         from q_cli.utils.prompts import get_prompt
-                                        prompt_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                                                 "prompts", "base_system_prompt.md")
+
+                                        prompt_path = os.path.join(
+                                            os.path.dirname(
+                                                os.path.dirname(
+                                                    os.path.abspath(__file__)
+                                                )
+                                            ),
+                                            "prompts",
+                                            "base_system_prompt.md",
+                                        )
                                         # Get user context from the CONTEXT section of q.conf, or empty string if not found
                                         user_context = ""
                                         from q_cli.utils.constants import CONFIG_PATH
+
                                         if os.path.exists(CONFIG_PATH):
                                             with open(CONFIG_PATH, "r") as f:
                                                 content = f.read()
-                                                # Find the CONTEXT section
+                                                # Find the CONTEXT section - look for both [CONTEXT] and #CONTEXT formats
                                                 import re  # Import re module to ensure it's available in this scope
-                                                context_match = re.search(r'\[CONTEXT\](.*?)(\n\[|\Z)', content, re.DOTALL)
+
+                                                context_match = re.search(
+                                                    r"\[CONTEXT\](.*?)(\n\[|\Z)",
+                                                    content,
+                                                    re.DOTALL,
+                                                )
+                                                if not context_match:
+                                                    # Try the alternate format with # instead of []
+                                                    # This captures everything after the #CONTEXT line until the end of file
+                                                    # Using a more robust pattern that is specific to the structure of the config file
+                                                    # Skip comment lines to get to the actual content
+                                                    context_match = re.search(
+                                                        r"#CONTEXT.*?\n((?:- .*\n)+)",
+                                                        content,
+                                                        re.DOTALL,
+                                                    )
+
                                                 if context_match:
-                                                    user_context = context_match.group(1).strip()
-                                        
+                                                    user_context = context_match.group(
+                                                        1
+                                                    ).strip()
+
                                         # Get project context from .Q/project.md, or empty string if not found
                                         project_context = ""
                                         q_dir_path = os.path.join(os.getcwd(), ".Q")
-                                        project_md_path = os.path.join(q_dir_path, "project.md")
-                                        if os.path.isdir(q_dir_path) and os.path.isfile(project_md_path):
+                                        project_md_path = os.path.join(
+                                            q_dir_path, "project.md"
+                                        )
+                                        if os.path.isdir(q_dir_path) and os.path.isfile(
+                                            project_md_path
+                                        ):
                                             try:
                                                 with open(project_md_path, "r") as f:
                                                     project_context = f.read().strip()
                                             except Exception:
                                                 pass
-                                                
+
                                         # Include user and project context
-                                        system_prompt_to_use = get_prompt(prompt_path, model=clean_model_name.lower(),
-                                                                        usercontext=user_context,
-                                                                        projectcontext=project_context)
-                                    
+                                        system_prompt_to_use = get_prompt(
+                                            prompt_path,
+                                            model=clean_model_name.lower(),
+                                            usercontext=user_context,
+                                            projectcontext=project_context,
+                                        )
+
                                     # Always ensure the model name is correct right before API call
                                     import re
-                                    pattern = r'Your are currently using .+ as your primary model'
-                                    replacement = f'Your are currently using {clean_model_name.lower()} as your primary model'
-                                    system_prompt_to_use = re.sub(pattern, replacement, system_prompt_to_use, flags=re.IGNORECASE)
-                                    
+
+                                    pattern = r"Your are currently using .+ as your primary model"
+                                    replacement = f"Your are currently using {clean_model_name.lower()} as your primary model"
+                                    system_prompt_to_use = re.sub(
+                                        pattern,
+                                        replacement,
+                                        system_prompt_to_use,
+                                        flags=re.IGNORECASE,
+                                    )
+
                                     # Update global prompt with corrected version for future API calls
                                     set_global_system_prompt(system_prompt_to_use)
-                                    
+
                                     # Log prompt preparation in debug mode
                                     if get_debug():
-                                        console.print(f"[dim]System prompt prepared for API call[/dim]")
-                                    
-                                    # Fix to ensure user context is included
-                                    if user_context:
-                                        # Use regex to find the User context section that has no content
-                                        import re
-                                        user_context_pattern = r'User context:\s*?\n\s*?\n'
-                                        if re.search(user_context_pattern, system_prompt_to_use):
-                                            # Fix it by directly modifying the system prompt
-                                            fixed_system_prompt = re.sub(
-                                                user_context_pattern, 
-                                                f"User context:\n{user_context}\n\n", 
-                                                system_prompt_to_use,
-                                                flags=re.DOTALL
-                                            )
-                                            system_prompt_to_use = fixed_system_prompt
-                                    
+                                        console.print(
+                                            f"[dim]System prompt prepared for API call[/dim]"
+                                        )
+
+                                    # Fix to ensure both user and project context are included
+                                    import re
+
+                                    # Fix user context
+                                    user_context_pattern = r"User context:\s*?\n\s*?\n"
+                                    if re.search(
+                                        user_context_pattern, system_prompt_to_use
+                                    ):
+                                        # Fix it by directly modifying the system prompt - even if user_context is empty
+                                        # this ensures the pattern is consistent between debug and non-debug modes
+                                        fixed_system_prompt = re.sub(
+                                            user_context_pattern,
+                                            f"User context:\n{user_context}\n\n",
+                                            system_prompt_to_use,
+                                            flags=re.DOTALL,
+                                        )
+                                        system_prompt_to_use = fixed_system_prompt
+
+                                    # Fix project context
+                                    project_context_pattern = (
+                                        r"Project context:\s*?\n\s*?\n"
+                                    )
+                                    if re.search(
+                                        project_context_pattern, system_prompt_to_use
+                                    ):
+                                        # Fix it by directly modifying the system prompt - even if project_context is empty
+                                        # this ensures the pattern is consistent between debug and non-debug modes
+                                        fixed_system_prompt = re.sub(
+                                            project_context_pattern,
+                                            f"Project context:\n{project_context}\n\n",
+                                            system_prompt_to_use,
+                                            flags=re.DOTALL,
+                                        )
+                                        system_prompt_to_use = fixed_system_prompt
+
                                     # Use the final modified prompt in the API call
                                     message = client.messages_create(
                                         model=api_call_model,
@@ -1014,7 +1272,7 @@ def run_conversation(
                             "[dim]Session recovery complete. Enter your next message.[/dim]"
                         )
                         continue
-                        
+
                     # Check for special provider change no-notify marker
                     if next_question == "INTERNAL_PROVIDER_CHANGE_NO_NOTIFY":
                         # Skip adding to conversation to avoid notifying the model
@@ -1047,17 +1305,30 @@ def run_conversation(
                     console.print(f"[bold red]LiteLLM Error: {str(e)}[/bold red]")
                     if get_debug():
                         console.print(f"[bold red]Error details: {e}[/bold red]")
-                    
+
                     # Special handling for empty message list errors
-                    if "list index out of range" in str(e) or "Received Messages=[]" in str(e):
-                        console.print("[yellow]This appears to be an error with empty messages. Trying to add a default message.[/yellow]")
+                    if "list index out of range" in str(
+                        e
+                    ) or "Received Messages=[]" in str(e):
+                        console.print(
+                            "[yellow]This appears to be an error with empty messages. Trying to add a default message.[/yellow]"
+                        )
                         # Add a default message if the conversation is empty
                         if not conversation:
-                            conversation.append({"role": "user", "content": "Hello, I'm starting a new conversation."})
-                            console.print("[green]Added a default message. Please try again.[/green]")
+                            conversation.append(
+                                {
+                                    "role": "user",
+                                    "content": "Hello, I'm starting a new conversation.",
+                                }
+                            )
+                            console.print(
+                                "[green]Added a default message. Please try again.[/green]"
+                            )
                     else:
-                        console.print("[yellow]This is likely due to a provider compatibility issue. Please try again with another question.[/yellow]")
-                    
+                        console.print(
+                            "[yellow]This is likely due to a provider compatibility issue. Please try again with another question.[/yellow]"
+                        )
+
                     # Do NOT add the error to the conversation
                 # Handle all other exceptions
                 except Exception as e:
@@ -1066,7 +1337,7 @@ def run_conversation(
 
                     if get_debug():
                         console.print(f"[bold red]Error details: {e}[/bold red]")
-                        
+
                     # Check for common errors which should not be sent to the model
                     # These include provider switching errors and LiteLLM errors
                     provider_switching_errors = [
@@ -1074,52 +1345,63 @@ def run_conversation(
                         "object of type 'NoneType'",
                         "NoneType has no",
                         "AttributeError: 'NoneType'",
-                        
                         # Provider switching
                         "client referenced before assignment",
                         "not initialized",
                         "provider switching",
                         "provider changed",
-                        
                         # LiteLLM errors
                         "list index out of range",
                         "BadRequestError",
                         "litellm",
                         "Received Messages=[]",
-                        
                         # Provider-specific errors
                         "AnthropicException",
                         "VertexAIException",
-                        
                         # Model format errors
                         "anthropic/",
-                        "vertex_ai/"
+                        "vertex_ai/",
                     ]
-                    
-                    if any(error_text in str(e) for error_text in provider_switching_errors):
-                        console.print(f"[yellow]This is likely due to a provider switching or initialization issue. Please try your question again.[/yellow]")
+
+                    if any(
+                        error_text in str(e) for error_text in provider_switching_errors
+                    ):
+                        console.print(
+                            f"[yellow]This is likely due to a provider switching or initialization issue. Please try your question again.[/yellow]"
+                        )
                         # Do NOT add the error to the conversation - this prevents it from being sent to the model
-                        
+
                         # Clear conversation if it's a provider switching error to reset state
                         if "provider" in str(e).lower() and len(conversation) > 0:
-                            console.print("[yellow]Clearing conversation due to provider switching error.[/yellow]")
+                            console.print(
+                                "[yellow]Clearing conversation due to provider switching error.[/yellow]"
+                            )
                             while len(conversation) > 0:
                                 conversation.pop()
                     elif "Client not initialized" in str(e) or "NoneType" in str(e):
                         # Special handling for client initialization errors
-                        console.print("[yellow]Client initialization error. Attempting to recover...[/yellow]")
+                        console.print(
+                            "[yellow]Client initialization error. Attempting to recover...[/yellow]"
+                        )
                         # Try to recover the client from globals if available
-                        if 'client' in globals() and globals()['client'] is not None:
-                            global_client = globals()['client']
+                        if "client" in globals() and globals()["client"] is not None:
+                            global_client = globals()["client"]
                             # Import LLMClient directly for the isinstance check
                             from q_cli.utils.client import LLMClient as ClientClass
+
                             if isinstance(global_client, ClientClass):
                                 client = global_client
-                                console.print(f"[green]Successfully recovered client: {client.provider}/{client.model}[/green]")
+                                console.print(
+                                    f"[green]Successfully recovered client: {client.provider}/{client.model}[/green]"
+                                )
                             else:
-                                console.print("[red]Global client is not a valid LLMClient object[/red]")
+                                console.print(
+                                    "[red]Global client is not a valid LLMClient object[/red]"
+                                )
                         else:
-                            console.print("[red]No valid client available in globals[/red]")
+                            console.print(
+                                "[red]No valid client available in globals[/red]"
+                            )
                         # Do NOT add this error to the conversation
                     else:
                         # Only add other types of errors to the conversation
@@ -1162,7 +1444,9 @@ def process_commands(
     """
     results = []
     has_error = False
-    use_auto_approve = auto_approve  # Track local approval state for this batch of commands
+    use_auto_approve = (
+        auto_approve  # Track local approval state for this batch of commands
+    )
 
     # Skip if no commands
     if not commands:
@@ -1187,9 +1471,7 @@ def process_commands(
         # Check if auto-approve is enabled (either from command line or previous approve-all selection)
         if use_auto_approve:
             if get_debug():
-                console.print(
-                    f"[yellow]Auto-approving command: {command}[/yellow]"
-                )
+                console.print(f"[yellow]Auto-approving command: {command}[/yellow]")
             execute = True
             remember = False  # Don't need to remember with auto-approve
             console.print(f"[bold green]Auto-approved command:[/bold green] {command}")
@@ -1202,9 +1484,7 @@ def process_commands(
             # Special handling for "cancel_all" operation
             if execute == "cancel_all":
                 if get_debug():
-                    console.print(
-                        f"[yellow]User cancelled all operations[/yellow]"
-                    )
+                    console.print(f"[yellow]User cancelled all operations[/yellow]")
                 # Return empty to avoid sending anything to Claude
                 return None, False
 
@@ -1243,8 +1523,12 @@ def process_commands(
         console.print(f"[bold green]Executing:[/bold green] {command}")
         # Pass along the permission check result to avoid redundant dangerous command checks
         # when a command is already approved by the permission system
-        is_pre_approved = permission_manager and not permission_manager.needs_permission(command)
-        return_code, stdout, stderr = execute_command(command, console, skip_dangerous_check=is_pre_approved)
+        is_pre_approved = (
+            permission_manager and not permission_manager.needs_permission(command)
+        )
+        return_code, stdout, stderr = execute_command(
+            command, console, skip_dangerous_check=is_pre_approved
+        )
 
         # Check if the command failed
         if return_code != 0:
@@ -1417,7 +1701,9 @@ def process_response_operations(
         if get_debug():
             console.print("[yellow]Checking file write operations...[/yellow]")
         file_processed_response, file_write_results, file_write_has_error = (
-            process_file_writes(response, console, False, auto_approve, approve_all, permission_manager)
+            process_file_writes(
+                response, console, False, auto_approve, approve_all, permission_manager
+            )
         )
         has_operation_error = has_operation_error or file_write_has_error
 
@@ -1576,9 +1862,12 @@ def handle_next_input(
 
         # Handle save command
         stripped_question = question.strip().lower()
-        if stripped_question == SAVE_COMMAND_PREFIX.lower() or stripped_question.startswith(SAVE_COMMAND_PREFIX.lower() + " "):
+        if (
+            stripped_question == SAVE_COMMAND_PREFIX.lower()
+            or stripped_question.startswith(SAVE_COMMAND_PREFIX.lower() + " ")
+        ):
             # Extract the file path from the save command
-            file_path = question.strip()[len(SAVE_COMMAND_PREFIX):].strip()
+            file_path = question.strip()[len(SAVE_COMMAND_PREFIX) :].strip()
 
             # Expand the file path (handle ~ and environment variables)
             file_path = os.path.expanduser(file_path)
@@ -1594,59 +1883,74 @@ def handle_next_input(
 
             # Continue to get a new question
             continue
-            
+
         # Handle transplant command to change provider/model
-        if stripped_question == TRANSPLANT_COMMAND.lower() or stripped_question.startswith(TRANSPLANT_COMMAND.lower() + " "):
+        if (
+            stripped_question == TRANSPLANT_COMMAND.lower()
+            or stripped_question.startswith(TRANSPLANT_COMMAND.lower() + " ")
+        ):
             # Debug message to confirm transplant clears conversation history
-            console.print("[yellow]Note: Using /transplant will clear all conversation history[/yellow]")
-            
+            console.print(
+                "[yellow]Note: Using /transplant will clear all conversation history[/yellow]"
+            )
+
             from q_cli.utils.provider_factory import ProviderFactory
             from q_cli.io.config import read_config_file
             from q_cli.utils.constants import SUPPORTED_PROVIDERS
-            
+
             # Get current configuration
             _, _, config_vars = read_config_file(console)
-            
+
             # Check which providers are configured
             configured_providers = []
             for provider in SUPPORTED_PROVIDERS:
                 api_key_var = f"{provider.upper()}_API_KEY"
                 api_key = config_vars.get(api_key_var) or os.environ.get(api_key_var)
-                
+
                 # Special check for VertexAI which needs additional config
                 if provider == "vertexai":
-                    project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT")
-                    location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION")
-                    
+                    project_id = (
+                        config_vars.get("VERTEXAI_PROJECT")
+                        or config_vars.get("VERTEX_PROJECT")
+                        or os.environ.get("VERTEXAI_PROJECT")
+                    )
+                    location = (
+                        config_vars.get("VERTEXAI_LOCATION")
+                        or config_vars.get("VERTEX_LOCATION")
+                        or os.environ.get("VERTEXAI_LOCATION")
+                    )
+
                     if api_key and project_id and location:
                         configured_providers.append(provider)
                 elif api_key:
                     configured_providers.append(provider)
-            
+
             # Check if any providers are configured
             if not configured_providers:
-                console.print("[red]No providers are fully configured. Please add API keys to your config file.[/red]")
+                console.print(
+                    "[red]No providers are fully configured. Please add API keys to your config file.[/red]"
+                )
                 continue
-                
-            # Display current provider and model 
+
+            # Display current provider and model
             from q_cli.utils.constants import DEFAULT_PROVIDER
-            
+
             # First check the model for Gemini pattern
             if args.model and "gemini" in args.model.lower():
                 # If we're using a Gemini model, it HAS to be VertexAI
                 current_provider = "vertexai"
                 current_model = args.model
-            elif 'client' in globals() and globals()['client'] is not None:
-                client_obj = globals()['client']
+            elif "client" in globals() and globals()["client"] is not None:
+                client_obj = globals()["client"]
                 # Check provider attribute
-                if hasattr(client_obj, 'provider') and client_obj.provider is not None:
+                if hasattr(client_obj, "provider") and client_obj.provider is not None:
                     current_provider = client_obj.provider
                 else:
                     # If client exists but has no provider attribute
                     current_provider = args.provider or DEFAULT_PROVIDER
-                
-                # Check model attribute  
-                if hasattr(client_obj, 'model') and client_obj.model is not None:
+
+                # Check model attribute
+                if hasattr(client_obj, "model") and client_obj.model is not None:
                     current_model = client_obj.model
                 else:
                     current_model = args.model
@@ -1654,41 +1958,45 @@ def handle_next_input(
                 # No client found, use args
                 current_provider = args.provider or DEFAULT_PROVIDER
                 current_model = args.model
-            
+
             # Make sure args is updated to match what we detected
             args.provider = current_provider
-            
-            console.print(f"[bold green]Current provider:[/bold green] {current_provider}")
+
+            console.print(
+                f"[bold green]Current provider:[/bold green] {current_provider}"
+            )
             console.print(f"[bold green]Current model:[/bold green] {current_model}")
-            
+
             # Show available providers
             console.print("\n[bold]Available providers:[/bold]")
             for i, provider in enumerate(configured_providers, 1):
                 console.print(f"{i}. {provider}")
-                
+
             # Get provider choice
             while True:
-                provider_choice = input(f"Select provider (1-{len(configured_providers)}, or enter to keep current): ").strip()
-                
+                provider_choice = input(
+                    f"Select provider (1-{len(configured_providers)}, or enter to keep current): "
+                ).strip()
+
                 if not provider_choice:
                     # Keep current provider
                     break
-                    
+
                 try:
                     provider_idx = int(provider_choice) - 1
                     if 0 <= provider_idx < len(configured_providers):
                         # Valid choice, update provider
                         new_provider = configured_providers[provider_idx]
                         args.provider = new_provider
-                        
+
                         # Get default model for this provider
                         from q_cli.utils.constants import (
                             ANTHROPIC_DEFAULT_MODEL,
                             VERTEXAI_DEFAULT_MODEL,
                             GROQ_DEFAULT_MODEL,
-                            OPENAI_DEFAULT_MODEL
+                            OPENAI_DEFAULT_MODEL,
                         )
-                        
+
                         if new_provider == "anthropic":
                             default_model = ANTHROPIC_DEFAULT_MODEL
                         elif new_provider == "vertexai":
@@ -1699,25 +2007,29 @@ def handle_next_input(
                             default_model = OPENAI_DEFAULT_MODEL
                         else:
                             default_model = ANTHROPIC_DEFAULT_MODEL
-                            
+
                         # Show available models for this provider
-                        console.print(f"\n[bold]Default model for {new_provider}:[/bold] {default_model}")
-                        console.print("Enter a specific model name or press enter to use the default:")
-                        
+                        console.print(
+                            f"\n[bold]Default model for {new_provider}:[/bold] {default_model}"
+                        )
+                        console.print(
+                            "Enter a specific model name or press enter to use the default:"
+                        )
+
                         model_choice = input("Model: ").strip()
                         if model_choice:
                             args.model = model_choice
                         else:
                             args.model = default_model
-                            
+
                         # Update max tokens based on provider
                         from q_cli.utils.constants import (
                             ANTHROPIC_MAX_TOKENS,
                             VERTEXAI_MAX_TOKENS,
                             GROQ_MAX_TOKENS,
-                            OPENAI_MAX_TOKENS
+                            OPENAI_MAX_TOKENS,
                         )
-                        
+
                         if new_provider == "anthropic":
                             args.max_tokens = ANTHROPIC_MAX_TOKENS
                         elif new_provider == "vertexai":
@@ -1726,115 +2038,149 @@ def handle_next_input(
                             args.max_tokens = GROQ_MAX_TOKENS
                         elif new_provider == "openai":
                             args.max_tokens = OPENAI_MAX_TOKENS
-                            
+
                         # Initialize new client
                         from q_cli.utils.client import LLMClient
-                        
+
                         # Get API key for the selected provider
-                        api_key_var = f"{new_provider.upper()}_API_KEY" 
-                        api_key = config_vars.get(api_key_var) or os.environ.get(api_key_var)
-                        
+                        api_key_var = f"{new_provider.upper()}_API_KEY"
+                        api_key = config_vars.get(api_key_var) or os.environ.get(
+                            api_key_var
+                        )
+
                         # Get extra kwargs for VertexAI
                         provider_kwargs = {}
                         if new_provider == "vertexai":
-                            project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT")
-                            location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION")
+                            project_id = (
+                                config_vars.get("VERTEXAI_PROJECT")
+                                or config_vars.get("VERTEX_PROJECT")
+                                or os.environ.get("VERTEXAI_PROJECT")
+                            )
+                            location = (
+                                config_vars.get("VERTEXAI_LOCATION")
+                                or config_vars.get("VERTEX_LOCATION")
+                                or os.environ.get("VERTEXAI_LOCATION")
+                            )
                             provider_kwargs = {
                                 "project_id": project_id,
-                                "location": location
+                                "location": location,
                             }
-                            
+
                         # Create new client
                         try:
                             # Format the model name for LiteLLM compatibility
                             from q_cli.config.providers import format_model_for_litellm
-                            
+
                             # First format the model name for the provider
-                            formatted_model = format_model_for_litellm(new_provider, args.model)
-                            
+                            formatted_model = format_model_for_litellm(
+                                new_provider, args.model
+                            )
+
                             # Only show formatting message if it changed
                             if formatted_model != args.model:
-                                console.print(f"[yellow]Reformatting model name for LiteLLM: {args.model} → {formatted_model}[/yellow]")
+                                console.print(
+                                    f"[yellow]Reformatting model name for LiteLLM: {args.model} → {formatted_model}[/yellow]"
+                                )
                                 args.model = formatted_model
-                                
+
                             # CRITICAL: Before initializing client, immediately reload the system prompt
                             # with the correct model to avoid timing issues
                             from q_cli.utils.prompts import get_prompt
-                            prompt_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                                      "prompts", "base_system_prompt.md")
-                            
+
+                            prompt_path = os.path.join(
+                                os.path.dirname(
+                                    os.path.dirname(os.path.abspath(__file__))
+                                ),
+                                "prompts",
+                                "base_system_prompt.md",
+                            )
+
                             # Get clean model name for prompt
                             clean_model = args.model
-                            if '/' in clean_model:
-                                clean_model = clean_model.split('/', 1)[1]
-                                
-                            console.print(f"[bold green]Preemptively reloading system prompt with model {clean_model}[/bold green]")
-                            
+                            if "/" in clean_model:
+                                clean_model = clean_model.split("/", 1)[1]
+
+                            console.print(
+                                f"[bold green]Preemptively reloading system prompt with model {clean_model}[/bold green]"
+                            )
+
                             # Get fresh prompt with proper context and update all references
                             # Need to get both user context and project context
-                            
+
                             # Get user context from the CONTEXT section of q.conf, or empty string if not found
                             user_context = ""
                             from q_cli.utils.constants import CONFIG_PATH
+
                             if os.path.exists(CONFIG_PATH):
                                 with open(CONFIG_PATH, "r") as f:
                                     content = f.read()
                                     # Find the CONTEXT section
                                     import re  # Import re module to ensure it's available in this scope
-                                    context_match = re.search(r'\[CONTEXT\](.*?)(\n\[|\Z)', content, re.DOTALL)
+
+                                    context_match = re.search(
+                                        r"\[CONTEXT\](.*?)(\n\[|\Z)", content, re.DOTALL
+                                    )
                                     if context_match:
                                         user_context = context_match.group(1).strip()
-                            
+
                             # Get project context from .Q/project.md, or empty string if not found
                             project_context = ""
                             q_dir_path = os.path.join(os.getcwd(), ".Q")
                             project_md_path = os.path.join(q_dir_path, "project.md")
-                            if os.path.isdir(q_dir_path) and os.path.isfile(project_md_path):
+                            if os.path.isdir(q_dir_path) and os.path.isfile(
+                                project_md_path
+                            ):
                                 try:
                                     with open(project_md_path, "r") as f:
                                         project_context = f.read().strip()
                                 except Exception:
                                     pass
-                                    
+
                             # Get fresh prompt with all context variables
-                            fresh_system_prompt = get_prompt(prompt_path, model=clean_model.lower(),
-                                                           usercontext=user_context,
-                                                           projectcontext=project_context)
+                            fresh_system_prompt = get_prompt(
+                                prompt_path,
+                                model=clean_model.lower(),
+                                usercontext=user_context,
+                                projectcontext=project_context,
+                            )
                             current_system_prompt = fresh_system_prompt
                             set_global_system_prompt(fresh_system_prompt)
-                            
-                            
+
                             # Initialize the client after updating the prompt
                             client = LLMClient(
                                 api_key=api_key,
                                 model=args.model,
                                 provider=new_provider,
-                                **provider_kwargs
+                                **provider_kwargs,
                             )
-                            
+
                             # Replace the client reference in globals so LLM calls use the new provider/model
-                            console.print("[bold]Upgrading client to use new provider...[/bold]")
+                            console.print(
+                                "[bold]Upgrading client to use new provider...[/bold]"
+                            )
                             # Store the old client reference to avoid garbage collection issues
-                            old_client = globals().get('client')
-                            
+                            old_client = globals().get("client")
+
                             # Set the client in the global namespace, ensuring it completely replaces the previous client
-                            globals()['client'] = client
-                            
+                            globals()["client"] = client
+
                             # CRITICAL: Also update this module's client reference
                             # This is crucial for future API calls in this conversation session
                             # No need for nonlocal since client is a parameter
-                            client = globals()['client']
-                            
+                            client = globals()["client"]
+
                             # Verify client has the correct settings
-                            console.print(f"[bold green]Client successfully initialized:[/bold green]")
+                            console.print(
+                                f"[bold green]Client successfully initialized:[/bold green]"
+                            )
                             console.print(f"  Provider: {client.provider}")
                             console.print(f"  Model: {client.model}")
                             console.print(f"  Max tokens: {args.max_tokens}")
-                            
+
                             # Force consistency by updating args to match client settings
                             args.provider = client.provider
                             args.model = client.model
-                            
+
                             # Update all provider-specific configurations
                             from q_cli.utils.constants import (
                                 # Rate limiting constants
@@ -1846,28 +2192,50 @@ def handle_next_input(
                                 ANTHROPIC_MAX_CONTEXT_TOKENS,
                                 VERTEXAI_MAX_CONTEXT_TOKENS,
                                 GROQ_MAX_CONTEXT_TOKENS,
-                                OPENAI_MAX_CONTEXT_TOKENS
+                                OPENAI_MAX_CONTEXT_TOKENS,
                             )
-                            
+
                             # Get the token tracker from the parent scope if possible
-                            if 'token_tracker' in globals():
+                            if "token_tracker" in globals():
                                 # Set the appropriate rate limit based on the new provider
-                                if new_provider == "anthropic" and 'ANTHROPIC_MAX_TOKENS_PER_MIN' in globals():
-                                    globals()['token_tracker'].max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
-                                elif new_provider == "vertexai" and 'VERTEXAI_MAX_TOKENS_PER_MIN' in globals():
-                                    globals()['token_tracker'].max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
-                                elif new_provider == "groq" and 'GROQ_MAX_TOKENS_PER_MIN' in globals():
-                                    globals()['token_tracker'].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
-                                elif new_provider == "openai" and 'OPENAI_MAX_TOKENS_PER_MIN' in globals():
-                                    globals()['token_tracker'].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
+                                if (
+                                    new_provider == "anthropic"
+                                    and "ANTHROPIC_MAX_TOKENS_PER_MIN" in globals()
+                                ):
+                                    globals()[
+                                        "token_tracker"
+                                    ].max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
+                                elif (
+                                    new_provider == "vertexai"
+                                    and "VERTEXAI_MAX_TOKENS_PER_MIN" in globals()
+                                ):
+                                    globals()[
+                                        "token_tracker"
+                                    ].max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
+                                elif (
+                                    new_provider == "groq"
+                                    and "GROQ_MAX_TOKENS_PER_MIN" in globals()
+                                ):
+                                    globals()[
+                                        "token_tracker"
+                                    ].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
+                                elif (
+                                    new_provider == "openai"
+                                    and "OPENAI_MAX_TOKENS_PER_MIN" in globals()
+                                ):
+                                    globals()[
+                                        "token_tracker"
+                                    ].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
                                 else:
                                     # If no rate limit is defined for the provider, disable rate limiting
-                                    globals()['token_tracker'].max_tokens_per_min = 0
+                                    globals()["token_tracker"].max_tokens_per_min = 0
                                     if get_debug():
-                                        console.print(f"[yellow]No rate limit defined for provider '{new_provider}'. Rate limiting disabled.[/yellow]")
-                            
+                                        console.print(
+                                            f"[yellow]No rate limit defined for provider '{new_provider}'. Rate limiting disabled.[/yellow]"
+                                        )
+
                             # Update context manager if it exists
-                            if 'context_manager' in globals():
+                            if "context_manager" in globals():
                                 # Set the appropriate context token limit based on the new provider
                                 if new_provider == "anthropic":
                                     max_context_tokens = ANTHROPIC_MAX_CONTEXT_TOKENS
@@ -1879,130 +2247,198 @@ def handle_next_input(
                                     max_context_tokens = OPENAI_MAX_CONTEXT_TOKENS
                                 else:
                                     max_context_tokens = ANTHROPIC_MAX_CONTEXT_TOKENS
-                                    
-                                if hasattr(globals()['context_manager'], 'max_context_tokens') and max_context_tokens is not None:
-                                    globals()['context_manager'].max_context_tokens = max_context_tokens
+
+                                if (
+                                    hasattr(
+                                        globals()["context_manager"],
+                                        "max_context_tokens",
+                                    )
+                                    and max_context_tokens is not None
+                                ):
+                                    globals()[
+                                        "context_manager"
+                                    ].max_context_tokens = max_context_tokens
                                     if get_debug():
-                                        console.print(f"[dim]Updated context manager max_context_tokens to {max_context_tokens}[/dim]")
-                            
+                                        console.print(
+                                            f"[dim]Updated context manager max_context_tokens to {max_context_tokens}[/dim]"
+                                        )
+
                             # Add special message for the model indicating the change
-                            console.print(f"[bold green]Provider changed to {new_provider} with model {args.model}[/bold green]")
-                            
+                            console.print(
+                                f"[bold green]Provider changed to {new_provider} with model {args.model}[/bold green]"
+                            )
+
                             # Update the config file with the new provider and model
                             from q_cli.io.config import update_config_provider
-                            if update_config_provider(new_provider, console, args.model):
+
+                            if update_config_provider(
+                                new_provider, console, args.model
+                            ):
                                 # The update function itself will print a confirmation message
                                 pass
                             else:
-                                console.print(f"[yellow]Note: Could not update config file, changes will only apply to this session[/yellow]")
-                            
+                                console.print(
+                                    f"[yellow]Note: Could not update config file, changes will only apply to this session[/yellow]"
+                                )
+
                             # CRITICAL: Update parent function's client reference for subsequent API calls
                             # This ensures the parent scope uses our new client instance
                             # No need for nonlocal since client is a parameter
-                            client = globals()['client']
-                            
+                            client = globals()["client"]
+
                             # We've already loaded the system prompt earlier with the correct model
                             # The current_system_prompt should already be set correctly from the earlier load
-                            
+
                             # Get clean model name (without provider prefix) for verification
                             clean_current_model = args.model
-                            if '/' in clean_current_model:
-                                clean_current_model = clean_current_model.split('/', 1)[1]
-                            
+                            if "/" in clean_current_model:
+                                clean_current_model = clean_current_model.split("/", 1)[
+                                    1
+                                ]
+
                             # Just to be extra safe, log what's currently in the prompt
                             if "currently using" in current_system_prompt:
-                                model_line = [line for line in current_system_prompt.split("\n") if "currently using" in line.lower()]
+                                model_line = [
+                                    line
+                                    for line in current_system_prompt.split("\n")
+                                    if "currently using" in line.lower()
+                                ]
                                 if model_line:
-                                    console.print(f"[bold yellow]Model in system prompt: {model_line[0]}[/bold yellow]")
-                                    
+                                    console.print(
+                                        f"[bold yellow]Model in system prompt: {model_line[0]}[/bold yellow]"
+                                    )
+
                                     # Verify we have the correct model in the prompt
-                                    if clean_current_model.lower() not in model_line[0].lower():
-                                        console.print(f"[bold red]Model mismatch in system prompt, forcing update to {clean_current_model.lower()}[/bold red]")
-                                        
+                                    if (
+                                        clean_current_model.lower()
+                                        not in model_line[0].lower()
+                                    ):
+                                        console.print(
+                                            f"[bold red]Model mismatch in system prompt, forcing update to {clean_current_model.lower()}[/bold red]"
+                                        )
+
                                         # Force direct replacement
-                                        pattern = r'Your are currently using .+ as your primary model'
-                                        replacement = f'Your are currently using {clean_current_model.lower()} as your primary model'
-                                        current_system_prompt = re.sub(pattern, replacement, current_system_prompt, flags=re.IGNORECASE)
-                                        
+                                        pattern = r"Your are currently using .+ as your primary model"
+                                        replacement = f"Your are currently using {clean_current_model.lower()} as your primary model"
+                                        current_system_prompt = re.sub(
+                                            pattern,
+                                            replacement,
+                                            current_system_prompt,
+                                            flags=re.IGNORECASE,
+                                        )
+
                                         # Double check
-                                        model_line = [line for line in current_system_prompt.split("\n") if "currently using" in line.lower()]
+                                        model_line = [
+                                            line
+                                            for line in current_system_prompt.split(
+                                                "\n"
+                                            )
+                                            if "currently using" in line.lower()
+                                        ]
                                         if model_line:
-                                            console.print(f"[bold green]Updated model in system prompt: {model_line[0]}[/bold green]")
-                            
+                                            console.print(
+                                                f"[bold green]Updated model in system prompt: {model_line[0]}[/bold green]"
+                                            )
+
                             # The current_system_prompt is already properly set by get_prompt above
-                            
+
                             # IMPORTANT: COMPLETELY reset the entire context and system prompt
                             # We want to start fresh with NO remnants of the old provider
-                            
+
                             # 1. Clear ALL context items
                             if context_manager:
                                 # Completely reset ALL context items to remove any old model references
                                 from q_cli.utils.constants import (
-                                    ESSENTIAL_PRIORITY, 
-                                    IMPORTANT_PRIORITY, 
-                                    SUPPLEMENTARY_PRIORITY
+                                    ESSENTIAL_PRIORITY,
+                                    IMPORTANT_PRIORITY,
+                                    SUPPLEMENTARY_PRIORITY,
                                 )
+
                                 # Reset all context items and any history/tracking they might contain
                                 context_manager.context_items = {
                                     ESSENTIAL_PRIORITY: [],
                                     IMPORTANT_PRIORITY: [],
-                                    SUPPLEMENTARY_PRIORITY: []
+                                    SUPPLEMENTARY_PRIORITY: [],
                                 }
-                                
+
                                 # 2. Set a completely fresh system prompt with NO context
                                 context_manager.set_system_prompt(current_system_prompt)
-                                console.print("[yellow]Reset context manager to use new provider[/yellow]")
-                            
+                                console.print(
+                                    "[yellow]Reset context manager to use new provider[/yellow]"
+                                )
+
                             # 3. The current_system_prompt is already set correctly from above
-                                
+
                             # Set global system prompt for future API calls
                             set_global_system_prompt(current_system_prompt)
-                                
+
                             # Force a complete restart of the conversation loop with the new client
-                            console.print("[yellow]Provider changed successfully. Starting new conversation with the new provider...[/yellow]")
-                            
+                            console.print(
+                                "[yellow]Provider changed successfully. Starting new conversation with the new provider...[/yellow]"
+                            )
+
                             # Update context manager's system prompt with the already reloaded system prompt
                             if context_manager:
                                 context_manager.set_system_prompt(current_system_prompt)
-                                console.print("[yellow]Updated context manager with fresh system prompt[/yellow]")
-                            
+                                console.print(
+                                    "[yellow]Updated context manager with fresh system prompt[/yellow]"
+                                )
+
                             # CRITICAL: Completely reset ALL conversation history to start fresh
                             # Empty the conversation list in-place to maintain the reference
-                            console.print(f"[yellow]Conversation history before clearing: {len(conversation)} messages[/yellow]")
+                            console.print(
+                                f"[yellow]Conversation history before clearing: {len(conversation)} messages[/yellow]"
+                            )
                             conversation.clear()
-                            console.print("[bold red]Conversation history cleared after transplant to new provider[/bold red]")
-                            console.print(f"[yellow]Conversation history after clearing: {len(conversation)} messages[/yellow]")
-                            
+                            console.print(
+                                "[bold red]Conversation history cleared after transplant to new provider[/bold red]"
+                            )
+                            console.print(
+                                f"[yellow]Conversation history after clearing: {len(conversation)} messages[/yellow]"
+                            )
+
                             # Also reset any session state that might be storing old conversation data
                             if session_manager:
                                 try:
                                     session_manager.clear_session()
-                                    console.print("[yellow]Session history cleared[/yellow]")
-                                    
+                                    console.print(
+                                        "[yellow]Session history cleared[/yellow]"
+                                    )
+
                                     # Force save an empty session with the new system prompt to ensure
                                     # persistence of the correct prompt even after provider switch
                                     session_manager.save_session(
                                         conversation=[],
                                         system_prompt=current_system_prompt,
-                                        context_manager=None
+                                        context_manager=None,
                                     )
-                                    console.print("[bold green]New empty session saved with updated system prompt[/bold green]")
+                                    console.print(
+                                        "[bold green]New empty session saved with updated system prompt[/bold green]"
+                                    )
                                 except Exception as e:
                                     if get_debug():
-                                        console.print(f"[dim]Failed to clear/save session: {str(e)}[/dim]")
-                            
+                                        console.print(
+                                            f"[dim]Failed to clear/save session: {str(e)}[/dim]"
+                                        )
+
                             # Add a log message about the conversation reset
-                            console.print("[bold green]Conversation history completely reset for new provider[/bold green]")
+                            console.print(
+                                "[bold green]Conversation history completely reset for new provider[/bold green]"
+                            )
                             return "INTERNAL_PROVIDER_CHANGE_NO_NOTIFY"
-                            
+
                         except Exception as e:
-                            console.print(f"[red]Error initializing new provider: {str(e)}[/red]")
+                            console.print(
+                                f"[red]Error initializing new provider: {str(e)}[/red]"
+                            )
                             break
                     else:
-                        console.print(f"[red]Invalid choice. Please select 1-{len(configured_providers)}[/red]")
+                        console.print(
+                            f"[red]Invalid choice. Please select 1-{len(configured_providers)}[/red]"
+                        )
                 except ValueError:
                     console.print("[red]Invalid input. Please enter a number.[/red]")
-            
+
             # Special case - use a marker to avoid sending anything to the model
             continue
 

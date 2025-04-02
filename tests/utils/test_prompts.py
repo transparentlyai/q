@@ -70,15 +70,16 @@ class TestPrompts:
         # This should not raise a KeyError with exact matching variable names
 
     @patch("builtins.open", new_callable=mock_open, read_data="User context:\n{usercontext}\n\nProject context:\n{projectcontext}")
-    def test_missing_variable_adds_placeholder(self, mock_file):
-        """Test that missing a required variable adds a placeholder instead of raising KeyError."""
+    def test_missing_variable_with_typo(self, mock_file):
+        """Test that variables with typos in their names are not used for substitution."""
         # Test with misspelled variable name
         result = get_prompt("/path/to/prompt.md", 
                           usercontex="This has a typo in the parameter name", 
                           projectcontext="Project guidelines")
         
-        # Verify the placeholder was added
-        assert "[Missing value for usercontext]" in result
+        # Verify empty string was used for usercontext (not the typo variable)
+        assert "User context:\n\n" in result
+        assert "Project context:\nProject guidelines" in result
 
     @patch("os.path.join")
     @patch("q_cli.utils.prompts.get_prompt")
@@ -199,3 +200,21 @@ class TestPrompts:
         # Verify
         assert "User context:\nUser specific instructions" in result
         assert "Project context:\nProject guidelines" in result
+        
+    @patch("builtins.open")
+    @patch("os.path.join")
+    def test_empty_context_variables(self, mock_join, mock_open):
+        """Test that the prompt works correctly with no context variables provided."""
+        # Setup mock files
+        base_prompt_content = "User context:\n{usercontext}\n\nProject context:\n{projectcontext}"
+        mock_file_handle = mock_open.return_value.__enter__.return_value
+        mock_file_handle.read.return_value = base_prompt_content
+        
+        mock_join.return_value = "/path/to/base_system_prompt.md"
+        
+        # Execute - test without providing usercontext or projectcontext
+        result = get_system_prompt(model="claude-3")
+        
+        # Verify the empty substitutions work (no KeyError)
+        assert "User context:\n" in result
+        assert "Project context:\n" in result
