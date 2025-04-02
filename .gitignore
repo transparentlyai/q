@@ -38,11 +38,11 @@ ENV/
 .DS_Store
 
 # Personal settings and secrets 
-*.conf
 CLAUDE.md
 
 # Test files
 test_*.txt
+
 # Project specific test files
 .Q/
 project.md
