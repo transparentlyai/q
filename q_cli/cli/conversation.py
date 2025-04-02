@@ -155,15 +155,41 @@ def run_conversation(
         # Load the base prompt directly to ensure we're working with the original template
         from q_cli.utils.prompts import get_prompt
         prompt_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts", "base_system_prompt.md")
-        system_prompt = get_prompt(prompt_path, model=display_model)
+        
+        # Get user context from the CONTEXT section of q.conf, or empty string if not found
+        user_context = ""
+        from q_cli.utils.constants import CONFIG_PATH
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r") as f:
+                content = f.read()
+                # Find the CONTEXT section
+                import re  # Import re module to ensure it's available in this scope
+                context_match = re.search(r'\[CONTEXT\](.*?)(\n\[|\Z)', content, re.DOTALL)
+                if context_match:
+                    user_context = context_match.group(1).strip()
+        
+        # Get project context from .Q/project.md, or empty string if not found
+        project_context = ""
+        q_dir_path = os.path.join(os.getcwd(), ".Q")
+        project_md_path = os.path.join(q_dir_path, "project.md")
+        if os.path.isdir(q_dir_path) and os.path.isfile(project_md_path):
+            try:
+                with open(project_md_path, "r") as f:
+                    project_context = f.read().strip()
+            except Exception:
+                pass
+                
+        # Get system prompt with user and project context
+        system_prompt = get_prompt(prompt_path, model=display_model, 
+                                 usercontex=user_context, 
+                                 projectcontex=project_context)
         
         # If we have context, add it back
         if context_manager and context_manager.get_current_context():
-            context_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts", "context_prompt.md")
             current_context = context_manager.get_current_context()
             if current_context:
-                context_prompt = get_prompt(context_path, context=current_context)
-                system_prompt += f"\n\n{context_prompt}"
+                # Add context directly without the surrounding text from context_prompt.md
+                system_prompt += f"\n\n{current_context}"
         
         # Update the context manager
         if context_manager:
@@ -175,8 +201,10 @@ def run_conversation(
         # Also save the new system prompt to session if available
         if session_manager:
             try:
-                # Only save context-free version to session for better compatibility
-                base_system_prompt = get_prompt(prompt_path, model=display_model)
+                # Make sure to include user and project context
+                base_system_prompt = get_prompt(prompt_path, model=display_model,
+                                             usercontex=user_context,
+                                             projectcontex=project_context)
                 session_manager.save_session(
                     conversation=conversation if conversation else [],
                     system_prompt=base_system_prompt,
@@ -665,7 +693,33 @@ def run_conversation(
                                         from q_cli.utils.prompts import get_prompt
                                         prompt_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
                                                                  "prompts", "base_system_prompt.md")
-                                        system_prompt_to_use = get_prompt(prompt_path, model=clean_model_name.lower())
+                                        # Get user context from the CONTEXT section of q.conf, or empty string if not found
+                                        user_context = ""
+                                        from q_cli.utils.constants import CONFIG_PATH
+                                        if os.path.exists(CONFIG_PATH):
+                                            with open(CONFIG_PATH, "r") as f:
+                                                content = f.read()
+                                                # Find the CONTEXT section
+                                                import re  # Import re module to ensure it's available in this scope
+                                                context_match = re.search(r'\[CONTEXT\](.*?)(\n\[|\Z)', content, re.DOTALL)
+                                                if context_match:
+                                                    user_context = context_match.group(1).strip()
+                                        
+                                        # Get project context from .Q/project.md, or empty string if not found
+                                        project_context = ""
+                                        q_dir_path = os.path.join(os.getcwd(), ".Q")
+                                        project_md_path = os.path.join(q_dir_path, "project.md")
+                                        if os.path.isdir(q_dir_path) and os.path.isfile(project_md_path):
+                                            try:
+                                                with open(project_md_path, "r") as f:
+                                                    project_context = f.read().strip()
+                                            except Exception:
+                                                pass
+                                                
+                                        # Include user and project context
+                                        system_prompt_to_use = get_prompt(prompt_path, model=clean_model_name.lower(),
+                                                                        usercontex=user_context,
+                                                                        projectcontex=project_context)
                                     
                                     # Always ensure the model name is correct right before API call
                                     import re
@@ -1690,8 +1744,36 @@ def handle_next_input(
                                 
                             console.print(f"[bold green]Preemptively reloading system prompt with model {clean_model}[/bold green]")
                             
-                            # Get fresh prompt and update all references
-                            fresh_system_prompt = get_prompt(prompt_path, model=clean_model.lower())
+                            # Get fresh prompt with proper context and update all references
+                            # Need to get both user context and project context
+                            
+                            # Get user context from the CONTEXT section of q.conf, or empty string if not found
+                            user_context = ""
+                            from q_cli.utils.constants import CONFIG_PATH
+                            if os.path.exists(CONFIG_PATH):
+                                with open(CONFIG_PATH, "r") as f:
+                                    content = f.read()
+                                    # Find the CONTEXT section
+                                    import re  # Import re module to ensure it's available in this scope
+                                    context_match = re.search(r'\[CONTEXT\](.*?)(\n\[|\Z)', content, re.DOTALL)
+                                    if context_match:
+                                        user_context = context_match.group(1).strip()
+                            
+                            # Get project context from .Q/project.md, or empty string if not found
+                            project_context = ""
+                            q_dir_path = os.path.join(os.getcwd(), ".Q")
+                            project_md_path = os.path.join(q_dir_path, "project.md")
+                            if os.path.isdir(q_dir_path) and os.path.isfile(project_md_path):
+                                try:
+                                    with open(project_md_path, "r") as f:
+                                        project_context = f.read().strip()
+                                except Exception:
+                                    pass
+                                    
+                            # Get fresh prompt with all context variables
+                            fresh_system_prompt = get_prompt(prompt_path, model=clean_model.lower(),
+                                                           usercontex=user_context,
+                                                           projectcontex=project_context)
                             current_system_prompt = fresh_system_prompt
                             set_global_system_prompt(fresh_system_prompt)
                             
@@ -1812,7 +1894,6 @@ def handle_next_input(
                                         console.print(f"[bold red]Model mismatch in system prompt, forcing update to {clean_current_model.lower()}[/bold red]")
                                         
                                         # Force direct replacement
-                                        import re
                                         pattern = r'Your are currently using .+ as your primary model'
                                         replacement = f'Your are currently using {clean_current_model.lower()} as your primary model'
                                         current_system_prompt = re.sub(pattern, replacement, current_system_prompt, flags=re.IGNORECASE)
