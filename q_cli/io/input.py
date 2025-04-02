@@ -12,12 +12,115 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
 from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
-from prompt_toolkit.completion import Completer, Completion, PathCompleter
+from prompt_toolkit.completion import Completer, Completion, PathCompleter, NestedCompleter
 from prompt_toolkit.document import Document
 from rich.console import Console
 
-from q_cli.utils.constants import HISTORY_PATH, EXIT_COMMANDS, get_debug
+from q_cli.utils.constants import (
+    HISTORY_PATH, 
+    EXIT_COMMANDS, 
+    get_debug, 
+    SAVE_COMMAND_PREFIX,
+    RECOVER_COMMAND,
+    TRANSPLANT_COMMAND
+)
 from q_cli.utils.helpers import format_markdown
+
+
+class SlashCommandCompleter(Completer):
+    """
+    Completer for slash commands.
+    """
+    
+    def __init__(self):
+        """Initialize the slash command completer."""
+        # Map commands to their help descriptions
+        self.commands = {
+            SAVE_COMMAND_PREFIX: "Save the last response to a file",
+            RECOVER_COMMAND: "Recover a previous session",
+            TRANSPLANT_COMMAND: "Change the active provider and model"
+        }
+    
+    def get_completions(self, document, complete_event):
+        """
+        Get completions for the current document.
+        
+        Args:
+            document: The current document being edited
+            complete_event: The completion event
+            
+        Yields:
+            Completion objects
+        """
+        # Only provide completions at the start of the line
+        if not document.text.startswith('/'):
+            return
+            
+        # Get the text up to the cursor
+        text = document.text_before_cursor
+        
+        # Find completions for the current text
+        for command, description in self.commands.items():
+            if command.startswith(text):
+                # Return the remaining part of the command
+                yield Completion(
+                    command[len(text):],
+                    start_position=0,
+                    display=command,
+                    display_meta=description
+                )
+
+
+class CombinedCompleter(Completer):
+    """
+    Completer that combines slash command completion and path completion.
+    """
+    
+    def __init__(self):
+        """Initialize the combined completer."""
+        self.slash_completer = SlashCommandCompleter()
+        self.path_completer = SmartPathCompleter()
+    
+    def get_completions(self, document, complete_event):
+        """
+        Get completions from either slash commands or paths depending on context.
+        
+        Args:
+            document: The current document being edited
+            complete_event: The completion event
+            
+        Yields:
+            Completion objects
+        """
+        text = document.text_before_cursor
+        
+        # Special case for /save command - provide path completion
+        if text.startswith(f"{SAVE_COMMAND_PREFIX} "):
+            # Get the part after "/save "
+            path_text = text[len(SAVE_COMMAND_PREFIX) + 1:]
+            # Create a new document with just the path part
+            path_document = Document(path_text, cursor_position=len(path_text))
+            # Use path completer for this part
+            for completion in self.path_completer.get_completions(path_document, complete_event):
+                # Adjust the start position to account for "/save " prefix
+                completion.start_position -= len(path_text)
+                
+                # If the completion is for a directory, add "Directory" in the display meta
+                if completion.display_meta == "Directory":
+                    completion.display_meta = "Save to this directory"
+                # For files, add a more descriptive message
+                else:
+                    completion.display_meta = "Save to this file"
+                
+                yield completion
+        # If the input starts with a slash but is not complete yet, use slash command completer
+        elif text.startswith('/'):
+            for completion in self.slash_completer.get_completions(document, complete_event):
+                yield completion
+        # For all other text, use the smart path completer
+        else:
+            for completion in self.path_completer.get_completions(document, complete_event):
+                yield completion
 
 
 class SmartPathCompleter(Completer):
@@ -70,7 +173,32 @@ class SmartPathCompleter(Completer):
         """
         # Handle empty input
         if not current_word:
-            return [(f, "") for f in os.listdir(".") if not f.startswith(".")]
+            matches = []
+            for f in os.listdir("."):
+                # Skip hidden files
+                if f.startswith("."):
+                    continue
+                    
+                if os.path.isdir(f):
+                    # Add trailing slash for directories
+                    matches.append((f"{f}/", "Directory"))
+                else:
+                    # Determine file type based on extension
+                    ext = os.path.splitext(f)[1].lower()
+                    if ext in ['.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.c', '.cpp', '.go', '.rs']:
+                        display_meta = "Source code"
+                    elif ext in ['.md', '.txt', '.rst', '.adoc']:
+                        display_meta = "Text file"
+                    elif ext in ['.json', '.yaml', '.yml', '.toml', '.ini', '.conf']:
+                        display_meta = "Config file"
+                    elif ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']:
+                        display_meta = "Image"
+                    elif ext in ['.pdf', '.docx', '.xlsx', '.pptx']:
+                        display_meta = "Document"
+                    else:
+                        display_meta = "File"
+                    matches.append((f, display_meta))
+            return matches
 
         # Check if it's a path with directory components
         if "/" in current_word:
@@ -100,7 +228,20 @@ class SmartPathCompleter(Completer):
                             display_meta = "Directory"
                             completion = f"{os.path.join(directory, name)}/"
                         else:
-                            display_meta = ""
+                            # Determine file type based on extension
+                            ext = os.path.splitext(name)[1].lower()
+                            if ext in ['.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.c', '.cpp', '.go', '.rs']:
+                                display_meta = "Source code"
+                            elif ext in ['.md', '.txt', '.rst', '.adoc']:
+                                display_meta = "Text file"
+                            elif ext in ['.json', '.yaml', '.yml', '.toml', '.ini', '.conf']:
+                                display_meta = "Config file"
+                            elif ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']:
+                                display_meta = "Image"
+                            elif ext in ['.pdf', '.docx', '.xlsx', '.pptx']:
+                                display_meta = "Document"
+                            else:
+                                display_meta = "File"
                             completion = os.path.join(directory, name)
 
                         # Only include files that match the prefix
@@ -118,7 +259,21 @@ class SmartPathCompleter(Completer):
                         # Add trailing slash for directories
                         matches.append((f"{name}/", "Directory"))
                     else:
-                        matches.append((name, ""))
+                        # Determine file type based on extension
+                        ext = os.path.splitext(name)[1].lower()
+                        if ext in ['.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.c', '.cpp', '.go', '.rs']:
+                            display_meta = "Source code"
+                        elif ext in ['.md', '.txt', '.rst', '.adoc']:
+                            display_meta = "Text file"
+                        elif ext in ['.json', '.yaml', '.yml', '.toml', '.ini', '.conf']:
+                            display_meta = "Config file"
+                        elif ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']:
+                            display_meta = "Image"
+                        elif ext in ['.pdf', '.docx', '.xlsx', '.pptx']:
+                            display_meta = "Document"
+                        else:
+                            display_meta = "File"
+                        matches.append((name, display_meta))
             return matches
 
         return []
@@ -168,10 +323,10 @@ def create_prompt_session(console: Console) -> PromptSession:
     # Create custom keybindings
     bindings = create_key_bindings()
 
-    # Create smart path completer
-    smart_completer = SmartPathCompleter()
+    # Create combined completer for both slash commands and paths
+    combined_completer = CombinedCompleter()
 
-    # Create prompt session with history, style, and path completion
+    # Create prompt session with history, style, and our combined completer
     prompt_session: PromptSession = PromptSession(
         history=history,
         style=prompt_style,
@@ -179,7 +334,7 @@ def create_prompt_session(console: Console) -> PromptSession:
         vi_mode=False,  # Use standard emacs-like keybindings
         complete_in_thread=True,  # More responsive completion
         mouse_support=False,  # Disable mouse support to allow normal terminal scrolling
-        completer=smart_completer,  # Use our smart path completer
+        completer=combined_completer,  # Use our combined completer
     )
 
     if get_debug():

@@ -261,6 +261,109 @@ def read_context_file(file_path: str, console: Console) -> str:
         return ""
 
 
+def update_config_provider(new_provider: str, console: Console, model: str = None) -> bool:
+    """
+    Update the configuration file with a new provider and optionally a new model.
+    Creates a backup of the config file before making changes.
+    
+    Args:
+        new_provider: The new provider to set as default
+        console: Console instance for output
+        model: Optional model to set as the provider's default model
+        
+    Returns:
+        True if the update was successful, False otherwise
+    """
+    try:
+        if not os.path.exists(CONFIG_PATH):
+            console.print(f"[yellow]Config file not found at {CONFIG_PATH}[/yellow]")
+            return False
+        
+        # Create a backup of the current config file
+        import shutil
+        from datetime import datetime
+        
+        # Generate backup filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        backup_path = f"{CONFIG_PATH}.{timestamp}.bak"
+        
+        # Make the backup
+        try:
+            shutil.copy2(CONFIG_PATH, backup_path)
+            if get_debug():
+                console.print(f"[green]Created config backup at {backup_path}[/green]")
+        except Exception as backup_error:
+            console.print(f"[yellow]Warning: Failed to create config backup: {str(backup_error)}[/yellow]")
+            # Continue even if backup fails - user can proceed
+            
+        # Read the current config file
+        with open(CONFIG_PATH, "r") as f:
+            lines = f.readlines()
+            
+        # Check if PROVIDER is already in the config
+        provider_found = False
+        for i, line in enumerate(lines):
+            if line.strip().startswith("PROVIDER="):
+                # Update the provider
+                lines[i] = f"PROVIDER={new_provider}\n"
+                provider_found = True
+                break
+                
+        # If PROVIDER wasn't found, add it to the beginning of the file
+        if not provider_found:
+            # Find a good position to insert - after any comments at the top
+            insert_position = 0
+            for i, line in enumerate(lines):
+                if line.strip().startswith("#") or not line.strip():
+                    insert_position = i + 1
+                else:
+                    break
+                    
+            lines.insert(insert_position, f"PROVIDER={new_provider}\n")
+            
+        # If model is provided, update the provider-specific model setting
+        if model:
+            model_key = f"{new_provider.upper()}_MODEL"
+            model_found = False
+            
+            # Check if the model setting already exists
+            for i, line in enumerate(lines):
+                if line.strip().startswith(f"{model_key}="):
+                    # Update the model
+                    lines[i] = f"{model_key}={model}\n"
+                    model_found = True
+                    break
+                    
+            # If model setting wasn't found, add it after the provider setting
+            if not model_found:
+                provider_line_index = -1
+                for i, line in enumerate(lines):
+                    if line.strip().startswith("PROVIDER="):
+                        provider_line_index = i
+                        break
+                
+                # Insert after the provider line if found, or at the beginning
+                if provider_line_index >= 0:
+                    lines.insert(provider_line_index + 1, f"{model_key}={model}\n")
+                else:
+                    lines.insert(0, f"{model_key}={model}\n")
+            
+        # Write the updated config back to the file
+        with open(CONFIG_PATH, "w") as f:
+            f.writelines(lines)
+            
+        if get_debug():
+            console.print(f"[green]Updated config file to use provider: {new_provider}[/green]")
+        else:
+            console.print(f"[dim]Config file updated (backup created)[/dim]")
+            
+        return True
+        
+    except Exception as e:
+        console.print(f"[red]Error updating config file: {str(e)}[/red]")
+        return False
+
+
 def build_context(
     args, config_context: str, console: Console, config_vars: Dict[str, str] = None
 ) -> Tuple[str, ContextManager]:

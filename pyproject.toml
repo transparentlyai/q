@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "litellm>=1.74.0",  # Updated to latest version for security and bug fixes
+    "litellm>=1.65.0",  # Updated to latest version for security and bug fixes
     "rich>=13.0.0",
     "prompt_toolkit>=3.0.0",
     "requests>=2.28.0",

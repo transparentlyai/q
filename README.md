@@ -209,11 +209,20 @@ q --provider openai "Your question here"
 In interactive mode, you can:
 
 - Navigate through command history with the up/down arrow keys
+- Use Tab for auto-completion of slash commands (`/save`, `/transplant`) and file paths
 - Exit by typing `exit` or `quit`, or by pressing Ctrl+C or Ctrl+D
-- Save the last Q response to a file by typing `save` followed by a path:
+- Save the last Q response to a file by typing `/save` followed by a path:
   ```
-  > save ~/responses/answer.md
+  > /save ~/responses/answer.md
   ```
+- Change LLM provider and model during a conversation by typing `/transplant`:
+  ```
+  > /transplant
+  ```
+  This will show you a list of currently configured providers, allow you to select a provider, 
+  and optionally specify a model. The conversation will continue with the new provider/model.
+  Your choice will be saved to the config file (~/.config/q.conf) as the new default provider.
+  A timestamped backup of your config file is automatically created before any changes.
 - Q can suggest and run shell commands to solve your problems:
   - Each command is presented individually for your approval
   - Commands are categorized as approved, restricted, or prohibited

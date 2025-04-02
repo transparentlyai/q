@@ -33,6 +33,39 @@ def format_markdown(text: str) -> Markdown:
     return Markdown(text)
 
 
+def clean_operation_codeblocks(text: str) -> str:
+    """
+    Clean up markdown code blocks that surround operation results.
+    Sometimes models output operations enclosed in triple backticks.
+    This function ONLY removes triple backticks when they surround the entire operation.
+    It does NOT remove code blocks within explanations or code examples.
+    
+    Args:
+        text: The operation text that might be surrounded by unnecessary code blocks
+        
+    Returns:
+        Cleaned text with operation-surrounding triple backticks removed
+    """
+    # Check if the entire text is a code block
+    # This means it starts with triple backticks (possibly with a language identifier)
+    # and ends with triple backticks
+    text = text.strip()
+    
+    # Pattern for starting code block: "```" possibly followed by a language identifier
+    start_pattern = r"^\s*```\w*\s*\n"
+    # Pattern for ending code block: "```" at the end of the text
+    end_pattern = r"\n\s*```\s*$"
+    
+    # Only clean if the entire content is enclosed in a code block
+    if re.match(start_pattern, text) and re.search(end_pattern, text):
+        # Remove the starting code block marker and language identifier
+        text = re.sub(start_pattern, "", text)
+        # Remove the ending code block marker
+        text = re.sub(end_pattern, "", text)
+    
+    return text
+
+
 def expand_env_vars(text: str) -> str:
     """Replace environment variables in text."""
     if "$" not in text:

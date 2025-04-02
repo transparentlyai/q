@@ -82,11 +82,18 @@ class LLMClient:
         # Transform the messages to the format expected by LiteLLM
         transformed_messages = self._transform_messages(messages, system)
         
+        # Ensure max_tokens doesn't exceed the provider's limit
+        provider_max_tokens = self.provider_config.MAX_TOKENS
+        adjusted_max_tokens = min(max_tokens, provider_max_tokens)
+            
+        if get_debug() and adjusted_max_tokens != max_tokens:
+            print(f"Adjusting max_tokens from {max_tokens} to {adjusted_max_tokens} to respect {self.provider} limits")
+        
         # Build request parameters dictionary with only non-None parameters
         request_params = {
             "model": model,
             "messages": transformed_messages,
-            "max_tokens": max_tokens,
+            "max_tokens": adjusted_max_tokens,
             "temperature": temperature,
             "stream": stream
         }
@@ -97,7 +104,8 @@ class LLMClient:
         try:
             # Make the API call
             if get_debug():
-                print(f"LiteLLM request: model={model}, max_tokens={max_tokens}, stream={stream}")
+                print(f"LiteLLM request: provider={self.provider}, model={model}, max_tokens={request_params['max_tokens']}, stream={stream}")
+                print(f"Using provider config: {self.provider_config.get_config()}")
                 
             response = self.client.completion(**request_params)
 

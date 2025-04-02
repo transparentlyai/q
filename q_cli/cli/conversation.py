@@ -16,13 +16,14 @@ from rich.console import Console
 from q_cli.utils.constants import (
     SAVE_COMMAND_PREFIX,
     RECOVER_COMMAND,
+    TRANSPLANT_COMMAND,
     MAX_HISTORY_TURNS,
     get_debug,
     HISTORY_PATH,
     ESSENTIAL_PRIORITY,
     DEFAULT_MAX_CONTEXT_TOKENS,
 )
-from q_cli.utils.helpers import handle_api_error, format_markdown
+from q_cli.utils.helpers import handle_api_error, format_markdown, clean_operation_codeblocks
 from q_cli.utils.context import ContextManager, num_tokens_from_string, TokenRateTracker
 from q_cli.io.input import get_input
 from q_cli.io.output import save_response_to_file
@@ -98,11 +99,18 @@ def run_conversation(
         max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
         
     token_tracker = TokenRateTracker(max_tokens_per_min)
+    # Make token_tracker available in globals for access by transplant command
+    globals()['token_tracker'] = token_tracker
+    
+    # Make context_manager available in globals for access by transplant command
+    if context_manager:
+        globals()['context_manager'] = context_manager
 
     try:
         # The 'recover' command in interactive mode has been removed.
         # We only process 'recover' as a CLI flag.
-        if initial_question.strip().lower() == RECOVER_COMMAND:
+        stripped_initial = initial_question.strip().lower()
+        if stripped_initial == RECOVER_COMMAND:
             console.print(
                 "[yellow]The 'recover' command is no longer available in interactive mode.[/yellow]"
             )
@@ -111,8 +119,224 @@ def run_conversation(
             )
             # Get a new initial question
             initial_question = get_input("Q> ", session=prompt_session)
+            stripped_initial = initial_question.strip().lower()
+        
+        # Handle save command as initial input
+        if stripped_initial == SAVE_COMMAND_PREFIX.lower() or stripped_initial.startswith(SAVE_COMMAND_PREFIX.lower() + " "):
+            console.print("[yellow]There is no previous response to save.[/yellow]")
+            initial_question = get_input("Q> ", session=prompt_session)
+            stripped_initial = initial_question.strip().lower()
 
-        # Now process the initial question (either original or new after recovery)
+        # Handle transplant command as initial input
+        if stripped_initial == TRANSPLANT_COMMAND.lower() or stripped_initial.startswith(TRANSPLANT_COMMAND.lower() + " "):
+            # Process the transplant command
+            from q_cli.utils.provider_factory import ProviderFactory
+            from q_cli.io.config import read_config_file
+            from q_cli.utils.constants import SUPPORTED_PROVIDERS
+            
+            # Get current configuration
+            _, _, config_vars = read_config_file(console)
+            
+            # Check which providers are configured
+            configured_providers = []
+            for provider in SUPPORTED_PROVIDERS:
+                api_key_var = f"{provider.upper()}_API_KEY"
+                api_key = config_vars.get(api_key_var) or os.environ.get(api_key_var)
+                
+                # Special check for VertexAI which needs additional config
+                if provider == "vertexai":
+                    project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT")
+                    location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION")
+                    
+                    if api_key and project_id and location:
+                        configured_providers.append(provider)
+                elif api_key:
+                    configured_providers.append(provider)
+            
+            # Check if any providers are configured
+            if not configured_providers:
+                console.print("[red]No providers are fully configured. Please add API keys to your config file.[/red]")
+                # Get a new initial question
+                initial_question = get_input("Q> ", session=prompt_session)
+                stripped_initial = initial_question.strip().lower()
+            else:
+                # Display current provider and model
+                from q_cli.utils.constants import DEFAULT_PROVIDER
+                current_provider = args.provider or DEFAULT_PROVIDER
+                current_model = args.model
+                console.print(f"[bold green]Current provider:[/bold green] {current_provider}")
+                console.print(f"[bold green]Current model:[/bold green] {current_model}")
+                
+                # Show available providers
+                console.print("\n[bold]Available providers:[/bold]")
+                for i, provider in enumerate(configured_providers, 1):
+                    console.print(f"{i}. {provider}")
+                    
+                # Get provider choice
+                while True:
+                    provider_choice = input(f"Select provider (1-{len(configured_providers)}, or enter to keep current): ").strip()
+                    
+                    if not provider_choice:
+                        # Keep current provider, ask for initial question
+                        initial_question = get_input("Q> ", session=prompt_session)
+                        stripped_initial = initial_question.strip().lower()
+                        break
+                        
+                    try:
+                        provider_idx = int(provider_choice) - 1
+                        if 0 <= provider_idx < len(configured_providers):
+                            # Valid choice, update provider
+                            new_provider = configured_providers[provider_idx]
+                            args.provider = new_provider
+                            
+                            # Get default model for this provider
+                            from q_cli.utils.constants import (
+                                ANTHROPIC_DEFAULT_MODEL,
+                                VERTEXAI_DEFAULT_MODEL,
+                                GROQ_DEFAULT_MODEL,
+                                OPENAI_DEFAULT_MODEL
+                            )
+                            
+                            if new_provider == "anthropic":
+                                default_model = ANTHROPIC_DEFAULT_MODEL
+                            elif new_provider == "vertexai":
+                                default_model = VERTEXAI_DEFAULT_MODEL
+                            elif new_provider == "groq":
+                                default_model = GROQ_DEFAULT_MODEL
+                            elif new_provider == "openai":
+                                default_model = OPENAI_DEFAULT_MODEL
+                            else:
+                                default_model = ANTHROPIC_DEFAULT_MODEL
+                                
+                            # Show available models for this provider
+                            console.print(f"\n[bold]Default model for {new_provider}:[/bold] {default_model}")
+                            console.print("Enter a specific model name or press enter to use the default:")
+                            
+                            model_choice = input("Model: ").strip()
+                            if model_choice:
+                                args.model = model_choice
+                            else:
+                                args.model = default_model
+                                
+                            # Update max tokens based on provider
+                            from q_cli.utils.constants import (
+                                ANTHROPIC_MAX_TOKENS,
+                                VERTEXAI_MAX_TOKENS,
+                                GROQ_MAX_TOKENS,
+                                OPENAI_MAX_TOKENS
+                            )
+                            
+                            if new_provider == "anthropic":
+                                args.max_tokens = ANTHROPIC_MAX_TOKENS
+                            elif new_provider == "vertexai":
+                                args.max_tokens = VERTEXAI_MAX_TOKENS
+                            elif new_provider == "groq":
+                                args.max_tokens = GROQ_MAX_TOKENS
+                            elif new_provider == "openai":
+                                args.max_tokens = OPENAI_MAX_TOKENS
+                                
+                            # Initialize new client
+                            from q_cli.utils.client import LLMClient
+                            
+                            # Get API key for the selected provider
+                            api_key_var = f"{new_provider.upper()}_API_KEY" 
+                            api_key = config_vars.get(api_key_var) or os.environ.get(api_key_var)
+                            
+                            # Get extra kwargs for VertexAI
+                            provider_kwargs = {}
+                            if new_provider == "vertexai":
+                                project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT")
+                                location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION")
+                                provider_kwargs = {
+                                    "project_id": project_id,
+                                    "location": location
+                                }
+                                
+                            # Create new client
+                            try:
+                                # Create a new client 
+                                new_client = LLMClient(
+                                    api_key=api_key,
+                                    model=args.model,
+                                    provider=new_provider,
+                                    **provider_kwargs
+                                )
+                                # Replace the global client
+                                globals()['client'] = new_client
+                                
+                                # Update all provider-specific configurations
+                                from q_cli.utils.constants import (
+                                    # Rate limiting constants
+                                    ANTHROPIC_MAX_TOKENS_PER_MIN,
+                                    VERTEXAI_MAX_TOKENS_PER_MIN,
+                                    GROQ_MAX_TOKENS_PER_MIN,
+                                    OPENAI_MAX_TOKENS_PER_MIN,
+                                    # Context token limits
+                                    ANTHROPIC_MAX_CONTEXT_TOKENS,
+                                    VERTEXAI_MAX_CONTEXT_TOKENS,
+                                    GROQ_MAX_CONTEXT_TOKENS,
+                                    OPENAI_MAX_CONTEXT_TOKENS
+                                )
+                                
+                                # Get the token tracker from the parent scope if possible
+                                if 'token_tracker' in globals():
+                                    # Set the appropriate rate limit based on the new provider
+                                    if new_provider == "anthropic":
+                                        globals()['token_tracker'].max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
+                                    elif new_provider == "vertexai":
+                                        globals()['token_tracker'].max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
+                                    elif new_provider == "groq":
+                                        globals()['token_tracker'].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
+                                    elif new_provider == "openai":
+                                        globals()['token_tracker'].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
+                                
+                                # Update context manager if it exists
+                                if 'context_manager' in globals():
+                                    # Set the appropriate context token limit based on the new provider
+                                    if new_provider == "anthropic":
+                                        max_context_tokens = ANTHROPIC_MAX_CONTEXT_TOKENS
+                                    elif new_provider == "vertexai":
+                                        max_context_tokens = VERTEXAI_MAX_CONTEXT_TOKENS
+                                    elif new_provider == "groq":
+                                        max_context_tokens = GROQ_MAX_CONTEXT_TOKENS
+                                    elif new_provider == "openai":
+                                        max_context_tokens = OPENAI_MAX_CONTEXT_TOKENS
+                                    else:
+                                        max_context_tokens = ANTHROPIC_MAX_CONTEXT_TOKENS
+                                        
+                                    if hasattr(globals()['context_manager'], 'max_context_tokens'):
+                                        globals()['context_manager'].max_context_tokens = max_context_tokens
+                                        if get_debug():
+                                            console.print(f"[dim]Updated context manager max_context_tokens to {max_context_tokens}[/dim]")
+                                
+                                # Add special message as the first message
+                                console.print(f"[bold green]Provider changed to {new_provider} with model {args.model}[/bold green]")
+                                
+                                # Update the config file with the new provider and model
+                                from q_cli.io.config import update_config_provider
+                                if update_config_provider(new_provider, console, args.model):
+                                    # The update function itself will print a confirmation message
+                                    pass
+                                else:
+                                    console.print(f"[yellow]Note: Could not update config file, changes will only apply to this session[/yellow]")
+                                
+                                # Ask for the first real question
+                                console.print("[bold]Please enter your first question:[/bold]")
+                                initial_question = get_input("Q> ", session=prompt_session)
+                                stripped_initial = initial_question.strip().lower()
+                                break
+                                
+                            except Exception as e:
+                                console.print(f"[red]Error initializing new provider: {str(e)}[/red]")
+                                initial_question = get_input("Q> ", session=prompt_session)
+                                stripped_initial = initial_question.strip().lower()
+                                break
+                        else:
+                            console.print(f"[red]Invalid choice. Please select 1-{len(configured_providers)}[/red]")
+                    except ValueError:
+                        console.print("[red]Invalid input. Please enter a number.[/red]")
+
+        # Now process the initial question (either original or new after recovery/transplant)
         if initial_question.strip():
             conversation.append({"role": "user", "content": initial_question})
 
@@ -336,6 +560,7 @@ def run_conversation(
 
                     # 6. If we have operation results, check size and add them to conversation as user message
                     if operation_results:
+                        # Join the operations (they're already cleaned individually)
                         combined_results = "\n\n".join(operation_results)
 
                         # Check if results are too large - use a fraction of DEFAULT_MAX_CONTEXT_TOKENS
@@ -874,15 +1099,15 @@ def process_response_operations(
             # Actual error occurred
             console.print("[red]Operation error[/red]")
 
-    # 6. Combine all operation results
+    # 6. Combine all operation results and clean up any markdown code blocks surrounding operations
     if url_results:
-        operation_results.append(url_results)
+        operation_results.append(clean_operation_codeblocks(url_results))
     if file_read_results_data:
-        operation_results.append(file_read_results_data)
+        operation_results.append(clean_operation_codeblocks(file_read_results_data))
     if file_write_results_data:
-        operation_results.append(file_write_results_data)
+        operation_results.append(clean_operation_codeblocks(file_write_results_data))
     if command_results_data:
-        operation_results.append(command_results_data)
+        operation_results.append(clean_operation_codeblocks(command_results_data))
 
     # If any operation was interrupted, add a clear message to the results
     if operation_interrupted:
@@ -919,9 +1144,10 @@ def handle_next_input(
         # The 'recover' command in interactive mode has been removed
 
         # Handle save command
-        if question.strip().lower().startswith(SAVE_COMMAND_PREFIX):
+        stripped_question = question.strip().lower()
+        if stripped_question == SAVE_COMMAND_PREFIX.lower() or stripped_question.startswith(SAVE_COMMAND_PREFIX.lower() + " "):
             # Extract the file path from the save command
-            file_path = question.strip()[len(SAVE_COMMAND_PREFIX) :].strip()
+            file_path = question.strip()[len(SAVE_COMMAND_PREFIX):].strip()
 
             # Expand the file path (handle ~ and environment variables)
             file_path = os.path.expanduser(file_path)
@@ -936,6 +1162,206 @@ def handle_next_input(
                 console.print("No response to save", style="warning")
 
             # Continue to get a new question
+            continue
+            
+        # Handle transplant command to change provider/model
+        if stripped_question == TRANSPLANT_COMMAND.lower() or stripped_question.startswith(TRANSPLANT_COMMAND.lower() + " "):
+            from q_cli.utils.provider_factory import ProviderFactory
+            from q_cli.io.config import read_config_file
+            from q_cli.utils.constants import SUPPORTED_PROVIDERS
+            
+            # Get current configuration
+            _, _, config_vars = read_config_file(console)
+            
+            # Check which providers are configured
+            configured_providers = []
+            for provider in SUPPORTED_PROVIDERS:
+                api_key_var = f"{provider.upper()}_API_KEY"
+                api_key = config_vars.get(api_key_var) or os.environ.get(api_key_var)
+                
+                # Special check for VertexAI which needs additional config
+                if provider == "vertexai":
+                    project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT")
+                    location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION")
+                    
+                    if api_key and project_id and location:
+                        configured_providers.append(provider)
+                elif api_key:
+                    configured_providers.append(provider)
+            
+            # Check if any providers are configured
+            if not configured_providers:
+                console.print("[red]No providers are fully configured. Please add API keys to your config file.[/red]")
+                continue
+                
+            # Display current provider and model
+            from q_cli.utils.constants import DEFAULT_PROVIDER
+            current_provider = args.provider or DEFAULT_PROVIDER
+            current_model = args.model
+            console.print(f"[bold green]Current provider:[/bold green] {current_provider}")
+            console.print(f"[bold green]Current model:[/bold green] {current_model}")
+            
+            # Show available providers
+            console.print("\n[bold]Available providers:[/bold]")
+            for i, provider in enumerate(configured_providers, 1):
+                console.print(f"{i}. {provider}")
+                
+            # Get provider choice
+            while True:
+                provider_choice = input(f"Select provider (1-{len(configured_providers)}, or enter to keep current): ").strip()
+                
+                if not provider_choice:
+                    # Keep current provider
+                    break
+                    
+                try:
+                    provider_idx = int(provider_choice) - 1
+                    if 0 <= provider_idx < len(configured_providers):
+                        # Valid choice, update provider
+                        new_provider = configured_providers[provider_idx]
+                        args.provider = new_provider
+                        
+                        # Get default model for this provider
+                        from q_cli.utils.constants import (
+                            ANTHROPIC_DEFAULT_MODEL,
+                            VERTEXAI_DEFAULT_MODEL,
+                            GROQ_DEFAULT_MODEL,
+                            OPENAI_DEFAULT_MODEL
+                        )
+                        
+                        if new_provider == "anthropic":
+                            default_model = ANTHROPIC_DEFAULT_MODEL
+                        elif new_provider == "vertexai":
+                            default_model = VERTEXAI_DEFAULT_MODEL
+                        elif new_provider == "groq":
+                            default_model = GROQ_DEFAULT_MODEL
+                        elif new_provider == "openai":
+                            default_model = OPENAI_DEFAULT_MODEL
+                        else:
+                            default_model = ANTHROPIC_DEFAULT_MODEL
+                            
+                        # Show available models for this provider
+                        console.print(f"\n[bold]Default model for {new_provider}:[/bold] {default_model}")
+                        console.print("Enter a specific model name or press enter to use the default:")
+                        
+                        model_choice = input("Model: ").strip()
+                        if model_choice:
+                            args.model = model_choice
+                        else:
+                            args.model = default_model
+                            
+                        # Update max tokens based on provider
+                        from q_cli.utils.constants import (
+                            ANTHROPIC_MAX_TOKENS,
+                            VERTEXAI_MAX_TOKENS,
+                            GROQ_MAX_TOKENS,
+                            OPENAI_MAX_TOKENS
+                        )
+                        
+                        if new_provider == "anthropic":
+                            args.max_tokens = ANTHROPIC_MAX_TOKENS
+                        elif new_provider == "vertexai":
+                            args.max_tokens = VERTEXAI_MAX_TOKENS
+                        elif new_provider == "groq":
+                            args.max_tokens = GROQ_MAX_TOKENS
+                        elif new_provider == "openai":
+                            args.max_tokens = OPENAI_MAX_TOKENS
+                            
+                        # Initialize new client
+                        from q_cli.utils.client import LLMClient
+                        
+                        # Get API key for the selected provider
+                        api_key_var = f"{new_provider.upper()}_API_KEY" 
+                        api_key = config_vars.get(api_key_var) or os.environ.get(api_key_var)
+                        
+                        # Get extra kwargs for VertexAI
+                        provider_kwargs = {}
+                        if new_provider == "vertexai":
+                            project_id = config_vars.get("VERTEXAI_PROJECT") or config_vars.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT")
+                            location = config_vars.get("VERTEXAI_LOCATION") or config_vars.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION")
+                            provider_kwargs = {
+                                "project_id": project_id,
+                                "location": location
+                            }
+                            
+                        # Create new client
+                        try:
+                            client = LLMClient(
+                                api_key=api_key,
+                                model=args.model,
+                                provider=new_provider,
+                                **provider_kwargs
+                            )
+                            
+                            # Update the client in the global namespace
+                            globals()['client'] = client
+                            
+                            # Update all provider-specific configurations
+                            from q_cli.utils.constants import (
+                                # Rate limiting constants
+                                ANTHROPIC_MAX_TOKENS_PER_MIN,
+                                VERTEXAI_MAX_TOKENS_PER_MIN,
+                                GROQ_MAX_TOKENS_PER_MIN,
+                                OPENAI_MAX_TOKENS_PER_MIN,
+                                # Context token limits
+                                ANTHROPIC_MAX_CONTEXT_TOKENS,
+                                VERTEXAI_MAX_CONTEXT_TOKENS,
+                                GROQ_MAX_CONTEXT_TOKENS,
+                                OPENAI_MAX_CONTEXT_TOKENS
+                            )
+                            
+                            # Get the token tracker from the parent scope if possible
+                            if 'token_tracker' in globals():
+                                # Set the appropriate rate limit based on the new provider
+                                if new_provider == "anthropic":
+                                    globals()['token_tracker'].max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
+                                elif new_provider == "vertexai":
+                                    globals()['token_tracker'].max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
+                                elif new_provider == "groq":
+                                    globals()['token_tracker'].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
+                                elif new_provider == "openai":
+                                    globals()['token_tracker'].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
+                            
+                            # Update context manager if it exists
+                            if 'context_manager' in globals():
+                                # Set the appropriate context token limit based on the new provider
+                                if new_provider == "anthropic":
+                                    max_context_tokens = ANTHROPIC_MAX_CONTEXT_TOKENS
+                                elif new_provider == "vertexai":
+                                    max_context_tokens = VERTEXAI_MAX_CONTEXT_TOKENS
+                                elif new_provider == "groq":
+                                    max_context_tokens = GROQ_MAX_CONTEXT_TOKENS
+                                elif new_provider == "openai":
+                                    max_context_tokens = OPENAI_MAX_CONTEXT_TOKENS
+                                else:
+                                    max_context_tokens = ANTHROPIC_MAX_CONTEXT_TOKENS
+                                    
+                                if hasattr(globals()['context_manager'], 'max_context_tokens'):
+                                    globals()['context_manager'].max_context_tokens = max_context_tokens
+                                    if get_debug():
+                                        console.print(f"[dim]Updated context manager max_context_tokens to {max_context_tokens}[/dim]")
+                            
+                            # Add special message for the model indicating the change
+                            console.print(f"[bold green]Provider changed to {new_provider} with model {args.model}[/bold green]")
+                            
+                            # Update the config file with the new provider and model
+                            from q_cli.io.config import update_config_provider
+                            if update_config_provider(new_provider, console, args.model):
+                                # The update function itself will print a confirmation message
+                                pass
+                            else:
+                                console.print(f"[yellow]Note: Could not update config file, changes will only apply to this session[/yellow]")
+                            return f"The provider has been changed to {new_provider} with model {args.model}. Please continue our conversation with this in mind."
+                            
+                        except Exception as e:
+                            console.print(f"[red]Error initializing new provider: {str(e)}[/red]")
+                            break
+                    else:
+                        console.print(f"[red]Invalid choice. Please select 1-{len(configured_providers)}[/red]")
+                except ValueError:
+                    console.print("[red]Invalid input. Please enter a number.[/red]")
+            
+            # Special case - use a marker to avoid sending anything to the model
             continue
 
         # Return the question regardless of empty or not
