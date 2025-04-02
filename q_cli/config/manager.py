@@ -107,7 +107,14 @@ class ConfigManager:
                 elif "=" in line:
                     # Process other config variables
                     key, value = line.split("=", 1)
-                    config_vars[key.strip()] = value.strip()
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    # Handle inline comments in values
+                    if "#" in value:
+                        value = value.split("#")[0].strip()
+                    
+                    config_vars[key] = value
             
             # Store the configuration
             self.api_key = api_key

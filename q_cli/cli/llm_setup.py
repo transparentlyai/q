@@ -137,6 +137,9 @@ def setup_api_credentials(
         api_key = config_vars.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     elif provider.lower() == "vertexai":
         api_key = config_vars.get("VERTEXAI_API_KEY") or os.environ.get("VERTEXAI_API_KEY")
+        # Clean up any comments in the value if it's a string
+        if isinstance(api_key, str) and "#" in api_key:
+            api_key = api_key.split("#")[0].strip()
 
         # Handle VertexAI project ID from config or environment
         project_id = (
@@ -145,6 +148,9 @@ def setup_api_credentials(
             os.environ.get("VERTEXAI_PROJECT") or
             os.environ.get("VERTEX_PROJECT")
         )
+        # Clean up any comments in the project ID value
+        if isinstance(project_id, str) and "#" in project_id:
+            project_id = project_id.split("#")[0].strip()
         if project_id:
             provider_kwargs["project_id"] = project_id
             if get_debug():
@@ -163,6 +169,9 @@ def setup_api_credentials(
             os.environ.get("VERTEXAI_LOCATION") or
             os.environ.get("VERTEX_LOCATION")
         )
+        # Clean up any comments in the location value
+        if isinstance(location, str) and "#" in location:
+            location = location.split("#")[0].strip()
         if location:
             provider_kwargs["location"] = location
             if get_debug():
@@ -175,11 +184,20 @@ def setup_api_credentials(
             sys.exit(1)
     elif provider.lower() == "groq":
         api_key = config_vars.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+        # Clean up any comments in the value
+        if isinstance(api_key, str) and "#" in api_key:
+            api_key = api_key.split("#")[0].strip()
     elif provider.lower() == "openai":
         api_key = config_vars.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        # Clean up any comments in the value
+        if isinstance(api_key, str) and "#" in api_key:
+            api_key = api_key.split("#")[0].strip()
     else:
         # Fallback to generic API key or anthropic key for backward compatibility
         api_key = config_api_key or os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+        # Clean up any comments in the value
+        if isinstance(api_key, str) and "#" in api_key:
+            api_key = api_key.split("#")[0].strip()
 
     # Store provider_kwargs in args for later use when initializing client
     args.provider_kwargs = provider_kwargs
