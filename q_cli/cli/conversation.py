@@ -718,8 +718,8 @@ def run_conversation(
                                                 
                                         # Include user and project context
                                         system_prompt_to_use = get_prompt(prompt_path, model=clean_model_name.lower(),
-                                                                        usercontex=user_context,
-                                                                        projectcontex=project_context)
+                                                                        usercontext=user_context,
+                                                                        projectcontext=project_context)
                                     
                                     # Always ensure the model name is correct right before API call
                                     import re
