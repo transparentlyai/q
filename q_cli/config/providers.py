@@ -11,15 +11,15 @@ SUPPORTED_PROVIDERS = ["anthropic", "vertexai", "groq", "openai"]
 
 # Model defaults by provider
 ANTHROPIC_DEFAULT_MODEL = "claude-3-7-sonnet-latest"
-VERTEXAI_DEFAULT_MODEL = "gemini-1.5-flash-001"
+VERTEXAI_DEFAULT_MODEL = "gemini-2.0-flash-thinking-exp-01-21"
 GROQ_DEFAULT_MODEL = "llama3-70b-8192"
 OPENAI_DEFAULT_MODEL = "gpt-4o"
 
 # Max tokens by provider
-ANTHROPIC_MAX_TOKENS = 4096
+ANTHROPIC_MAX_TOKENS = 8192
 VERTEXAI_MAX_TOKENS = 8192
-GROQ_MAX_TOKENS = 4096
-OPENAI_MAX_TOKENS = 4096
+GROQ_MAX_TOKENS = 8192
+OPENAI_MAX_TOKENS = 8192
 
 # Rate limits by provider (tokens per minute, 0 = no limit)
 ANTHROPIC_MAX_TOKENS_PER_MIN = 90000  # ~1.5k tokens per second
@@ -186,13 +186,61 @@ def format_model_name(provider: str, model_name: str) -> str:
     if provider == "anthropic":
         return f"anthropic/{model_name}"
     elif provider == "vertexai":
-        return f"google/{model_name}"
+        # Note: LiteLLM expects "vertex_ai/model" not "google/model"
+        return f"vertex_ai/{model_name}"
     elif provider == "groq":
         return f"groq/{model_name}"
     elif provider == "openai":
         return f"openai/{model_name}"
     
     return model_name  # Unknown provider, return as-is
+
+
+def format_model_for_litellm(provider: str, model_name: str) -> str:
+    """Format a model name specifically for LiteLLM compatibility.
+    
+    Args:
+        provider: The provider name
+        model_name: The model name to format
+    
+    Returns:
+        Formatted model name with correct LiteLLM-compatible prefix
+    """
+    provider = provider.lower()
+    
+    # Remove any existing provider prefixes first
+    if "/" in model_name:
+        # For VertexAI, handle various prefixes
+        if provider == "vertexai":
+            prefixes = ["google/", "vertex_ai/", "vertexai/"]
+            for prefix in prefixes:
+                if model_name.lower().startswith(prefix.lower()):
+                    model_name = model_name[len(prefix):]
+                    break
+        # For Anthropic
+        elif provider == "anthropic" and (model_name.startswith("anthropic/") or model_name.startswith("claude/")):
+            parts = model_name.split("/", 1)
+            if len(parts) > 1:
+                model_name = parts[1]
+        # For other providers
+        elif "/" in model_name:
+            parts = model_name.split("/", 1)
+            if len(parts) > 1:
+                model_name = parts[1]  # Keep only the model part
+    
+    # Now apply the correct prefix based on provider
+    if provider == "anthropic":
+        return f"anthropic/{model_name}"
+    elif provider == "vertexai":
+        # LiteLLM specifically expects "vertex_ai/" for Google models
+        return f"vertex_ai/{model_name}"
+    elif provider == "groq":
+        return f"groq/{model_name}"
+    elif provider == "openai":
+        return f"openai/{model_name}"
+        
+    # Default case - just return as is
+    return model_name
 
 
 def is_valid_model_for_provider(model: str, provider: str) -> bool:

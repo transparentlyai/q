@@ -244,6 +244,46 @@ class SessionManager:
 
             return None, None, None
 
+    def clear_session(self) -> bool:
+        """
+        Clear the current session file.
+        This is used when switching providers to ensure a clean slate.
+        
+        Returns:
+            True if session was cleared successfully, False otherwise
+        """
+        try:
+            # Create an empty session with no context data to ensure complete reset
+            empty_session = {
+                "timestamp": time.time(),
+                "conversation": [],
+                "system_prompt": "",
+                # Explicitly set empty context_data to ensure no old provider references remain
+                "context_data": {
+                    "max_tokens": 0,
+                    "priority_mode": "balanced",
+                    "token_allocations": {},
+                    "tokens_by_priority": {}
+                }
+            }
+            
+            # Write the empty session to the file using atomic write pattern
+            with tempfile.NamedTemporaryFile(mode="w", delete=False) as temp_file:
+                json.dump(empty_session, temp_file, indent=2)
+                temp_path = temp_file.name
+                
+            # Atomic rename
+            os.replace(temp_path, self.session_file)
+                
+            if get_debug():
+                self.console.print(f"[dim]Session completely cleared at {self.session_file}[/dim]")
+                
+            return True
+        except Exception as e:
+            if get_debug():
+                self.console.print(f"[yellow]Error clearing session: {str(e)}[/yellow]")
+            return False
+            
     def restore_context_manager(
         self, context_data: Dict, console: Console
     ) -> Optional[ContextManager]:

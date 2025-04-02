@@ -80,9 +80,9 @@ class AnthropicProviderConfig(BaseProviderConfig):
     
     def format_model_name(self, model_name: str) -> str:
         """Format model name with anthropic/ prefix if not present."""
-        if not "/" in model_name and not ":" in model_name:
-            return f"anthropic/{model_name}"
-        return model_name
+        # Use the centralized helper function for consistent formatting
+        from q_cli.config.providers import format_model_for_litellm
+        return format_model_for_litellm("anthropic", model_name)
 
 
 class VertexAIProviderConfig(BaseProviderConfig):
@@ -239,10 +239,10 @@ class VertexAIProviderConfig(BaseProviderConfig):
                 print(f"Set all location environment variables to: {self.location}")
     
     def format_model_name(self, model_name: str) -> str:
-        """Format model name with google/ prefix if not present."""
-        if not "/" in model_name and not ":" in model_name:
-            return f"google/{model_name}"
-        return model_name
+        """Format model name with vertex_ai/ prefix if not present for LiteLLM compatibility."""
+        # Use the centralized helper function for consistent formatting
+        from q_cli.config.providers import format_model_for_litellm
+        return format_model_for_litellm("vertexai", model_name)
     
     def get_error_handler(self) -> Dict[str, Any]:
         """Return VertexAI-specific error handling mappings."""
@@ -313,9 +313,9 @@ class GroqProviderConfig(BaseProviderConfig):
     
     def format_model_name(self, model_name: str) -> str:
         """Format model name with groq/ prefix if not present."""
-        if not "/" in model_name and not ":" in model_name:
-            return f"groq/{model_name}"
-        return model_name
+        # Use the centralized helper function for consistent formatting
+        from q_cli.config.providers import format_model_for_litellm
+        return format_model_for_litellm("groq", model_name)
 
 
 class OpenAIProviderConfig(BaseProviderConfig):
@@ -332,9 +332,9 @@ class OpenAIProviderConfig(BaseProviderConfig):
     
     def format_model_name(self, model_name: str) -> str:
         """Format model name with openai/ prefix if not present."""
-        if not "/" in model_name and not ":" in model_name:
-            return f"openai/{model_name}"
-        return model_name
+        # Use the centralized helper function for consistent formatting
+        from q_cli.config.providers import format_model_for_litellm
+        return format_model_for_litellm("openai", model_name)
 
 
 class ProviderFactory:

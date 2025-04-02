@@ -38,9 +38,14 @@ def setup_context_and_prompts(
 
     # Set up system prompt with context if available
     include_command_execution = not getattr(args, "no_execute", False)
+    
+    # Get the model name from args to substitute in the prompt
+    model_name = getattr(args, "model", None)
+    
     base_system_prompt = get_system_prompt(
         include_command_execution=include_command_execution,
         context=None,  # We'll set context separately
+        model=model_name,
     )
 
     # Set system prompt and add conversation context
@@ -49,6 +54,7 @@ def setup_context_and_prompts(
         system_prompt = get_system_prompt(
             include_command_execution=include_command_execution,
             context=sanitized_context,
+            model=model_name,
         )
     else:
         system_prompt = base_system_prompt

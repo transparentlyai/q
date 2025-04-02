@@ -438,6 +438,15 @@ class ContextManager:
 
         # Join with double newlines
         return "\n\n".join(context_parts)
+        
+    def get_current_context(self) -> str:
+        """
+        Get the current optimized context string.
+        
+        Returns:
+            The combined context string without re-optimizing
+        """
+        return self.build_context_string()
 
 
 def truncate_text_to_tokens(text: str, max_tokens: int) -> str:

@@ -104,7 +104,13 @@ class LLMClient:
         try:
             # Make the API call
             if get_debug():
-                print(f"LiteLLM request: provider={self.provider}, model={model}, max_tokens={request_params['max_tokens']}, stream={stream}")
+                from rich.console import Console
+                console = Console()
+                console.print(f"[blue]Sending message to model:[/blue] provider={self.provider}, model={model}, max_tokens={request_params['max_tokens']}")
+                # Print first 100 chars of the first message content for debugging
+                if transformed_messages and isinstance(transformed_messages[-1].get('content', ''), str):
+                    content_preview = transformed_messages[-1]['content'][:100] + '...' if len(transformed_messages[-1]['content']) > 100 else transformed_messages[-1]['content']
+                    console.print(f"[blue]Message content (preview):[/blue] [blue]{content_preview}[/blue]")
                 print(f"Using provider config: {self.provider_config.get_config()}")
                 
             response = self.client.completion(**request_params)
@@ -370,6 +376,25 @@ class LLMClient:
                     # Lazy import json only when needed
                     import json
                     return json.dumps(self.to_dict(), indent=2)
+        
+        # Debug message for received response
+        if get_debug():
+            from rich.console import Console
+            console = Console()
+            console.print(f"[#FF8800]Received response from model:[/#FF8800] id={getattr(response, 'id', 'unknown')}")
+            
+            # Show content preview if available
+            if hasattr(response, 'choices') and response.choices and hasattr(response.choices[0], 'message'):
+                msg = response.choices[0].message
+                if hasattr(msg, 'content') and msg.content:
+                    content_preview = msg.content[:100] + '...' if len(msg.content) > 100 else msg.content
+                    console.print(f"[#FF8800]Response content (preview):[/#FF8800] [#FF8800]{content_preview}[/#FF8800]")
+            
+            # Show token usage if available
+            if hasattr(response, 'usage') and response.usage:
+                usage = response.usage
+                if hasattr(usage, 'prompt_tokens') and hasattr(usage, 'completion_tokens'):
+                    console.print(f"[#FF8800]Token usage:[/#FF8800] {usage.prompt_tokens} input, {usage.completion_tokens} output, {getattr(usage, 'total_tokens', usage.prompt_tokens + usage.completion_tokens)} total")
         
         return TransformedResponse(response)
     
