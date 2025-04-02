@@ -67,7 +67,7 @@ For a complete example of all available configuration options, refer to the [exa
 - `GROQ_MODEL`: Default model to use with Groq provider (e.g., "deepseek-r1-distill-llama-70b")
 - `OPENAI_MODEL`: Default model to use with OpenAI provider (e.g., "gpt-4o-mini")
 - `ANTHROPIC_MAX_TOKENS`: Maximum output tokens for Anthropic provider (default: 8192)
-- `VERTEXAI_MAX_TOKENS`: Maximum output tokens for VertexAI provider (default: 65535)
+- `VERTEXAI_MAX_TOKENS`: Maximum output tokens for VertexAI provider (default: 8192)
 - `GROQ_MAX_TOKENS`: Maximum output tokens for Groq provider (default: 8192)
 - `OPENAI_MAX_TOKENS`: Maximum output tokens for OpenAI provider (default: 8192)
 
