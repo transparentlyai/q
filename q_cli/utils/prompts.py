@@ -151,12 +151,17 @@ def get_system_prompt(
     Returns:
         Complete system prompt string
     """
+    # Get directory information for the prompt
+    from q_cli.utils.helpers import get_working_and_project_dirs
+    directories_info = get_working_and_project_dirs()
+    
     prompt_path = os.path.join(PROMPTS_DIR, "base_system_prompt.md")
     system_prompt = get_prompt(
         prompt_path,
         model=model or "",
         usercontext=usercontext,
         projectcontext=projectcontext,
+        directories=directories_info,
     )
 
     # For backwards compatibility, if context is provided but no usercontext/projectcontext

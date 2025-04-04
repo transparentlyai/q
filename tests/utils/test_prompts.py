@@ -83,11 +83,13 @@ class TestPrompts:
 
     @patch("os.path.join")
     @patch("q_cli.utils.prompts.get_prompt")
-    def test_get_system_prompt_with_context_vars(self, mock_get_prompt, mock_join):
+    @patch("q_cli.utils.helpers.get_working_and_project_dirs")
+    def test_get_system_prompt_with_context_vars(self, mock_get_dirs, mock_get_prompt, mock_join):
         """Test get_system_prompt with context variables."""
         # Setup
         mock_join.return_value = "/path/to/base_system_prompt.md"
         mock_get_prompt.return_value = "System prompt with substituted variables"
+        mock_get_dirs.return_value = "Current Working Directory: /test/dir\nProject Root Directory: /test/project"
         
         # Execute
         result = get_system_prompt(
@@ -98,17 +100,20 @@ class TestPrompts:
         
         # Verify
         mock_join.assert_called_once()
+        mock_get_dirs.assert_called_once()
         mock_get_prompt.assert_called_once_with(
             "/path/to/base_system_prompt.md", 
             model="claude-3", 
             usercontext="User context data", 
-            projectcontext="Project context data"
+            projectcontext="Project context data",
+            directories="Current Working Directory: /test/dir\nProject Root Directory: /test/project"
         )
         assert result == "System prompt with substituted variables"
 
     @patch("os.path.join")
     @patch("q_cli.utils.prompts.get_prompt")
-    def test_get_system_prompt_with_legacy_context(self, mock_get_prompt, mock_join):
+    @patch("q_cli.utils.helpers.get_working_and_project_dirs")
+    def test_get_system_prompt_with_legacy_context(self, mock_get_dirs, mock_get_prompt, mock_join):
         """Test get_system_prompt with legacy context parameter."""
         # Setup
         mock_join.side_effect = [
@@ -119,6 +124,7 @@ class TestPrompts:
             "Base system prompt", 
             "Context: Legacy context data"
         ]
+        mock_get_dirs.return_value = "Current Working Directory: /test/dir\nProject Root Directory: /test/project"
         
         # Execute
         result = get_system_prompt(context="Legacy context data")
@@ -126,8 +132,11 @@ class TestPrompts:
         # Verify
         assert mock_join.call_count == 2
         assert mock_get_prompt.call_count == 2
+        mock_get_dirs.assert_called_once()
         # First call should be for base system prompt
         assert mock_get_prompt.call_args_list[0][0][0] == "/path/to/base_system_prompt.md"
+        # Verify directories variable is passed to the first call
+        assert mock_get_prompt.call_args_list[0][1]["directories"] == "Current Working Directory: /test/dir\nProject Root Directory: /test/project"
         # Second call should be for context prompt
         assert mock_get_prompt.call_args_list[1][0][0] == "/path/to/context_prompt.md"
         assert "Legacy context data" in mock_get_prompt.call_args_list[1][1]["context"]
