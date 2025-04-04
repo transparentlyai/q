@@ -166,7 +166,7 @@ class TestPrompts:
         # Verify
         mock_join.assert_called_once()
         mock_get_prompt.assert_called_once()
-        assert "Results from command:" in result
+        assert "Result from last command:" in result
         assert "test output" in result
 
     @patch("builtins.open", new_callable=mock_open, read_data="Context: {context}")

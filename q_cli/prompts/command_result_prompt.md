@@ -1,3 +1,3 @@
-Results from command: 
+Result from last command:
 
 {results}

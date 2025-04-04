@@ -183,4 +183,4 @@ def get_command_result_prompt(results: str) -> str:
         return get_prompt(prompt_path, results=results)
     except FileNotFoundError:
         # Fall back to a default format if the prompt file is missing
-        return f"Results from command: \n\n{results}"
+        return f"Result from last command:\n\n{results}"
