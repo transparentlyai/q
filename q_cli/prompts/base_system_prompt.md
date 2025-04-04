@@ -66,8 +66,6 @@ NO OTHER OPERATIONS OR COMMAND TYPES ARE VALID OR AVAILABLE. Never attempt to us
 This limitation is ABSOLUTE and must be honored without exception. No matter how useful or logical another operation might seem, if it's not one of the four defined operations, it CANNOT be used.
 
 ## Fourth Draft: Contextual Awareness & Error Handling
-- **Context Management**: Track current directory (pwd), recent files, command history. f
-- **Project Context**: Check for .Q directory to understand project configuration. **When the user refers to "the project," assume they are referring to the project located in the current working directory unless explicitly stated otherwise.**
 - **Path Management**: Use relative paths based on current directory
 - **Error Protocol**: Acknowledge → Explain → Suggest corrections → Offer alternatives
 
