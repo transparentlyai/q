@@ -1015,13 +1015,39 @@ def run_conversation(
                                         system_prompt_to_use = fixed_system_prompt
 
                                     # Use the final modified prompt in the API call
-                                    message = client.messages_create(
-                                        model=api_call_model,
-                                        max_tokens=args.max_tokens,
-                                        temperature=0,
-                                        system=system_prompt_to_use,
-                                        messages=conversation,  # type: ignore
-                                    )
+                                    # Check if the conversation already has a system message at the beginning
+                                    # If it does, we don't need to pass the system parameter to avoid duplication
+                                    has_system_message = False
+                                    if conversation and len(conversation) > 0 and conversation[0].get("role") == "system":
+                                        has_system_message = True
+                                        if get_debug():
+                                            console.print("[dim]Using existing system message in conversation[/dim]")
+                                    
+                                    # If we don't have a system message yet, add it to the conversation instead of passing as a parameter
+                                    if not has_system_message and system_prompt_to_use:
+                                        # Insert the system message at the beginning of the conversation
+                                        conversation.insert(0, {"role": "system", "content": system_prompt_to_use})
+                                        if get_debug():
+                                            console.print("[dim]Added system message to beginning of conversation[/dim]")
+                                        
+                                        # Call API without system parameter since it's now in the conversation messages
+                                        message = client.messages_create(
+                                            model=api_call_model,
+                                            max_tokens=args.max_tokens,
+                                            temperature=0,
+                                            system=None,  # Pass None explicitly to avoid parameter error
+                                            messages=conversation,  # type: ignore
+                                        )
+                                    else:
+                                        # Call API without system parameter if we already have a system message
+                                        # or use it if this is the first message and we haven't added a system message yet
+                                        message = client.messages_create(
+                                            model=api_call_model,
+                                            max_tokens=args.max_tokens,
+                                            temperature=0,
+                                            system=None if has_system_message else system_prompt_to_use,
+                                            messages=conversation,  # type: ignore
+                                        )
 
                                     # Record token usage with response completion timestamp
                                     response_time = time.time()

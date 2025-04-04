@@ -240,8 +240,11 @@ class LLMClient:
         """
         transformed = []
         
-        # Add system message if provided
-        if system:
+        # Add system message if provided, but ONLY if there's not already a system message in messages
+        # This ensures we don't duplicate system messages
+        has_system_in_messages = any(msg.get("role") == "system" for msg in messages)
+        
+        if system is not None and system and not has_system_in_messages:
             transformed.append({"role": "system", "content": system})
         
         # Process each message based on its role and content
