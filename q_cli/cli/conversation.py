@@ -220,8 +220,8 @@ def run_conversation(
                 pass
 
         # Get system prompt with user and project context
-        system_prompt = get_prompt(
-            prompt_path,
+        from q_cli.utils.prompts import get_system_prompt
+        system_prompt = get_system_prompt(
             model=display_model,
             usercontext=user_context,
             projectcontext=project_context,
@@ -247,8 +247,7 @@ def run_conversation(
         if session_manager:
             try:
                 # Make sure to include user and project context
-                base_system_prompt = get_prompt(
-                    prompt_path,
+                base_system_prompt = get_system_prompt(
                     model=display_model,
                     usercontext=user_context,
                     projectcontext=project_context,
@@ -950,9 +949,9 @@ def run_conversation(
                                             except Exception:
                                                 pass
 
-                                        # Include user and project context
-                                        system_prompt_to_use = get_prompt(
-                                            prompt_path,
+                                        # Use get_system_prompt to properly include all variables including directories
+                                        from q_cli.utils.prompts import get_system_prompt
+                                        system_prompt_to_use = get_system_prompt(
                                             model=clean_model_name.lower(),
                                             usercontext=user_context,
                                             projectcontext=project_context,
