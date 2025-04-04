@@ -2,6 +2,7 @@
 
 import os
 import re
+import pathlib
 from typing import Dict, List, Tuple, Optional
 
 from rich.console import Console
@@ -302,3 +303,47 @@ def handle_api_error(
         sys.exit(1)
 
     return is_rate_limit_error
+
+
+def get_working_and_project_dirs() -> str:
+    """
+    Find both the current working directory and the project root directory.
+    
+    The current working directory is where q was started from.
+    The project directory is identified by looking for a .Q or .git directory,
+    searching upward from the current directory until reaching the user's home directory.
+    
+    Returns:
+        A formatted string containing both directory paths.
+    """
+    # Get the current working directory
+    cwd = os.getcwd()
+    
+    # Get the user's home directory
+    home_dir = os.path.expanduser("~")
+    
+    # Start searching for project root from the current directory
+    project_dir = None
+    search_dir = cwd
+    
+    # Continue searching until we reach the home directory
+    while search_dir:
+        # Check if .Q or .git directory exists in the current search directory
+        if os.path.isdir(os.path.join(search_dir, ".Q")) or os.path.isdir(os.path.join(search_dir, ".git")):
+            project_dir = search_dir
+            break
+        
+        # Move up one directory
+        parent_dir = os.path.dirname(search_dir)
+        
+        # Stop searching if we've reached the root or are about to go beyond home directory
+        if parent_dir == search_dir or not search_dir.startswith(home_dir):
+            break
+        
+        search_dir = parent_dir
+    
+    # Format the result
+    if project_dir:
+        return f"Current Working Directory: {cwd}\nProject Root Directory: {project_dir}"
+    else:
+        return f"Current Working Directory: {cwd}\nProject Root Directory: Not found"
