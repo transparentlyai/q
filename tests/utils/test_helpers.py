@@ -120,11 +120,29 @@ class TestHelpers:
     @patch('os.getcwd')
     @patch('os.path.isdir')
     @patch('os.path.expanduser')
-    def test_get_working_and_project_dirs(self, mock_expanduser, mock_isdir, mock_getcwd):
+    @patch('os.path.dirname')
+    def test_get_working_and_project_dirs(self, mock_dirname, mock_expanduser, mock_isdir, mock_getcwd):
         """Test finding working directory and project directory."""
         # Set up mocks
         mock_getcwd.return_value = '/home/user/projects/myproject/subdir'
         mock_expanduser.return_value = '/home/user'
+        
+        # Mock dirname to return appropriate parent directories
+        def dirname_side_effect(path):
+            if path == '/home/user/projects/myproject/subdir':
+                return '/home/user/projects/myproject'
+            elif path == '/home/user/projects/myproject':
+                return '/home/user/projects'
+            elif path == '/home/user/projects':
+                return '/home/user'
+            elif path == '/home/user':
+                return '/home'
+            elif path == '/home':
+                return '/'
+            else:
+                return os.path.dirname(path)
+        
+        mock_dirname.side_effect = dirname_side_effect
         
         # Case 1: .git found in current directory
         def isdir_side_effect(path):
@@ -166,4 +184,4 @@ class TestHelpers:
         
         result = get_working_and_project_dirs()
         assert "Current Working Directory: /home/user/projects/myproject/subdir" in result
-        assert "Project Root Directory: Not found" in result
+        assert "Project Root Directory: Unknown" in result

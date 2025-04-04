@@ -311,7 +311,8 @@ def get_working_and_project_dirs() -> str:
     
     The current working directory is where q was started from.
     The project directory is identified by looking for a .Q or .git directory,
-    searching upward from the current directory until reaching the user's home directory.
+    searching upward from the current directory until reaching one directory before
+    the user's home directory.
     
     Returns:
         A formatted string containing both directory paths.
@@ -322,11 +323,14 @@ def get_working_and_project_dirs() -> str:
     # Get the user's home directory
     home_dir = os.path.expanduser("~")
     
+    # Get the parent of home directory (we should stop before this)
+    home_parent = os.path.dirname(home_dir)
+    
     # Start searching for project root from the current directory
     project_dir = None
     search_dir = cwd
     
-    # Continue searching until we reach the home directory
+    # Continue searching until we reach one directory before the home directory
     while search_dir:
         # Check if .Q or .git directory exists in the current search directory
         if os.path.isdir(os.path.join(search_dir, ".Q")) or os.path.isdir(os.path.join(search_dir, ".git")):
@@ -336,8 +340,13 @@ def get_working_and_project_dirs() -> str:
         # Move up one directory
         parent_dir = os.path.dirname(search_dir)
         
-        # Stop searching if we've reached the root or are about to go beyond home directory
-        if parent_dir == search_dir or not search_dir.startswith(home_dir):
+        # Stop searching if:
+        # 1. We've reached the root directory (parent == search_dir)
+        # 2. We've reached the parent of home directory
+        # 3. We've reached the home directory itself
+        if (parent_dir == search_dir or 
+            search_dir == home_parent or 
+            search_dir == home_dir):
             break
         
         search_dir = parent_dir
@@ -346,4 +355,4 @@ def get_working_and_project_dirs() -> str:
     if project_dir:
         return f"Current Working Directory: {cwd}\nProject Root Directory: {project_dir}"
     else:
-        return f"Current Working Directory: {cwd}\nProject Root Directory: Not found"
+        return f"Current Working Directory: {cwd}\nProject Root Directory: Unknown"
