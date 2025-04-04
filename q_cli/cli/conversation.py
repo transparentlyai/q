@@ -289,7 +289,29 @@ def run_conversation(
                 f"[yellow]No rate limit defined for provider '{provider}'. Rate limiting disabled.[/yellow]"
             )
 
+    # Check for ENV var or config file override
+    env_var_name = f"{provider.upper()}_MAX_TOKENS_PER_MIN"
+    env_value = os.environ.get(env_var_name)
+    if env_value:
+        try:
+            max_tokens_per_min = int(env_value)
+            if get_debug():
+                console.print(
+                    f"[green]Using rate limit from environment: {env_var_name}={max_tokens_per_min}[/green]"
+                )
+        except ValueError:
+            if get_debug():
+                console.print(
+                    f"[yellow]Invalid {env_var_name} value '{env_value}', using default[/yellow]"
+                )
+
+    # Create token tracker with the determined rate limit
     token_tracker = TokenRateTracker(max_tokens_per_min)
+    if get_debug():
+        console.print(
+            f"[dim]Token rate tracker initialized with max_tokens_per_min={max_tokens_per_min}[/dim]"
+        )
+    
     # Make token_tracker available in globals for access by transplant command
     globals()["token_tracker"] = token_tracker
 
@@ -533,47 +555,58 @@ def run_conversation(
                                 # Get the token tracker from the parent scope if possible
                                 if "token_tracker" in globals():
                                     # Set the appropriate rate limit based on the new provider
+                                    new_max_tokens_per_min = 0
+                                    
                                     if (
                                         new_provider == "anthropic"
                                         and "ANTHROPIC_MAX_TOKENS_PER_MIN" in globals()
                                     ):
-                                        globals()[
-                                            "token_tracker"
-                                        ].max_tokens_per_min = (
-                                            ANTHROPIC_MAX_TOKENS_PER_MIN
-                                        )
+                                        new_max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
                                     elif (
                                         new_provider == "vertexai"
                                         and "VERTEXAI_MAX_TOKENS_PER_MIN" in globals()
                                     ):
-                                        globals()[
-                                            "token_tracker"
-                                        ].max_tokens_per_min = (
-                                            VERTEXAI_MAX_TOKENS_PER_MIN
-                                        )
+                                        new_max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
                                     elif (
                                         new_provider == "groq"
                                         and "GROQ_MAX_TOKENS_PER_MIN" in globals()
                                     ):
-                                        globals()[
-                                            "token_tracker"
-                                        ].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
+                                        new_max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
                                     elif (
                                         new_provider == "openai"
                                         and "OPENAI_MAX_TOKENS_PER_MIN" in globals()
                                     ):
-                                        globals()[
-                                            "token_tracker"
-                                        ].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
+                                        new_max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
                                     else:
                                         # If no rate limit is defined for the provider, disable rate limiting
-                                        globals()[
-                                            "token_tracker"
-                                        ].max_tokens_per_min = 0
+                                        new_max_tokens_per_min = 0
                                         if get_debug():
                                             console.print(
                                                 f"[yellow]No rate limit defined for provider '{new_provider}'. Rate limiting disabled.[/yellow]"
                                             )
+                                    
+                                    # Check for ENV var or config file override
+                                    env_var_name = f"{new_provider.upper()}_MAX_TOKENS_PER_MIN"
+                                    env_value = os.environ.get(env_var_name)
+                                    if env_value:
+                                        try:
+                                            new_max_tokens_per_min = int(env_value)
+                                            if get_debug():
+                                                console.print(
+                                                    f"[green]Using rate limit from environment: {env_var_name}={new_max_tokens_per_min}[/green]"
+                                                )
+                                        except ValueError:
+                                            if get_debug():
+                                                console.print(
+                                                    f"[yellow]Invalid {env_var_name} value '{env_value}', using default[/yellow]"
+                                                )
+                                    
+                                    # Apply the new rate limit
+                                    globals()["token_tracker"].max_tokens_per_min = new_max_tokens_per_min
+                                    if get_debug():
+                                        console.print(
+                                            f"[dim]Token rate tracker updated to max_tokens_per_min={new_max_tokens_per_min}[/dim]"
+                                        )
 
                                 # Update context manager if it exists
                                 if "context_manager" in globals():
@@ -2103,9 +2136,10 @@ def handle_next_input(
 
                             # Only show formatting message if it changed
                             if formatted_model != args.model:
-                                console.print(
-                                    f"[yellow]Reformatting model name for LiteLLM: {args.model} → {formatted_model}[/yellow]"
-                                )
+                                if args.debug:
+                                    console.print(
+                                        f"[yellow]Reformatting model name for LiteLLM: {args.model} → {formatted_model}[/yellow]"
+                                    )
                                 args.model = formatted_model
 
                             # CRITICAL: Before initializing client, immediately reload the system prompt
@@ -2125,9 +2159,10 @@ def handle_next_input(
                             if "/" in clean_model:
                                 clean_model = clean_model.split("/", 1)[1]
 
-                            console.print(
-                                f"[bold green]Preemptively reloading system prompt with model {clean_model}[/bold green]"
-                            )
+                            if args.debug:
+                                console.print(
+                                    f"[dim]Preemptively reloading system prompt with model {clean_model}[/dim]"
+                                )
 
                             # Get fresh prompt with proper context and update all references
                             # Need to get both user context and project context
@@ -2196,11 +2231,8 @@ def handle_next_input(
 
                             # Verify client has the correct settings
                             console.print(
-                                f"[bold green]Client successfully initialized:[/bold green]"
+                                f"[bold green]Client successfully initialized:[/bold green] {client.provider}/{client.model}"
                             )
-                            console.print(f"  Provider: {client.provider}")
-                            console.print(f"  Model: {client.model}")
-                            console.print(f"  Max tokens: {args.max_tokens}")
 
                             # Force consistency by updating args to match client settings
                             args.provider = client.provider
@@ -2223,41 +2255,58 @@ def handle_next_input(
                             # Get the token tracker from the parent scope if possible
                             if "token_tracker" in globals():
                                 # Set the appropriate rate limit based on the new provider
+                                new_max_tokens_per_min = 0
+                                
                                 if (
                                     new_provider == "anthropic"
                                     and "ANTHROPIC_MAX_TOKENS_PER_MIN" in globals()
                                 ):
-                                    globals()[
-                                        "token_tracker"
-                                    ].max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
+                                    new_max_tokens_per_min = ANTHROPIC_MAX_TOKENS_PER_MIN
                                 elif (
                                     new_provider == "vertexai"
                                     and "VERTEXAI_MAX_TOKENS_PER_MIN" in globals()
                                 ):
-                                    globals()[
-                                        "token_tracker"
-                                    ].max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
+                                    new_max_tokens_per_min = VERTEXAI_MAX_TOKENS_PER_MIN
                                 elif (
                                     new_provider == "groq"
                                     and "GROQ_MAX_TOKENS_PER_MIN" in globals()
                                 ):
-                                    globals()[
-                                        "token_tracker"
-                                    ].max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
+                                    new_max_tokens_per_min = GROQ_MAX_TOKENS_PER_MIN
                                 elif (
                                     new_provider == "openai"
                                     and "OPENAI_MAX_TOKENS_PER_MIN" in globals()
                                 ):
-                                    globals()[
-                                        "token_tracker"
-                                    ].max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
+                                    new_max_tokens_per_min = OPENAI_MAX_TOKENS_PER_MIN
                                 else:
                                     # If no rate limit is defined for the provider, disable rate limiting
-                                    globals()["token_tracker"].max_tokens_per_min = 0
+                                    new_max_tokens_per_min = 0
                                     if get_debug():
                                         console.print(
                                             f"[yellow]No rate limit defined for provider '{new_provider}'. Rate limiting disabled.[/yellow]"
                                         )
+                                
+                                # Check for ENV var or config file override
+                                env_var_name = f"{new_provider.upper()}_MAX_TOKENS_PER_MIN"
+                                env_value = os.environ.get(env_var_name)
+                                if env_value:
+                                    try:
+                                        new_max_tokens_per_min = int(env_value)
+                                        if get_debug():
+                                            console.print(
+                                                f"[green]Using rate limit from environment: {env_var_name}={new_max_tokens_per_min}[/green]"
+                                            )
+                                    except ValueError:
+                                        if get_debug():
+                                            console.print(
+                                                f"[yellow]Invalid {env_var_name} value '{env_value}', using default[/yellow]"
+                                            )
+                                
+                                # Apply the new rate limit
+                                globals()["token_tracker"].max_tokens_per_min = new_max_tokens_per_min
+                                if get_debug():
+                                    console.print(
+                                        f"[dim]Token rate tracker updated to max_tokens_per_min={new_max_tokens_per_min}[/dim]"
+                                    )
 
                             # Update context manager if it exists
                             if "context_manager" in globals():
@@ -2405,30 +2454,22 @@ def handle_next_input(
                             # Update context manager's system prompt with the already reloaded system prompt
                             if context_manager:
                                 context_manager.set_system_prompt(current_system_prompt)
-                                console.print(
-                                    "[yellow]Updated context manager with fresh system prompt[/yellow]"
-                                )
-
+                            
                             # CRITICAL: Completely reset ALL conversation history to start fresh
                             # Empty the conversation list in-place to maintain the reference
-                            console.print(
-                                f"[yellow]Conversation history before clearing: {len(conversation)} messages[/yellow]"
-                            )
                             conversation.clear()
                             console.print(
-                                "[bold red]Conversation history cleared after transplant to new provider[/bold red]"
-                            )
-                            console.print(
-                                f"[yellow]Conversation history after clearing: {len(conversation)} messages[/yellow]"
+                                "[bold red]Conversation history reset for new provider[/bold red]"
                             )
 
                             # Also reset any session state that might be storing old conversation data
                             if session_manager:
                                 try:
                                     session_manager.clear_session()
-                                    console.print(
-                                        "[yellow]Session history cleared[/yellow]"
-                                    )
+                                    if args.debug:
+                                        console.print(
+                                            "[yellow]Session history cleared[/yellow]"
+                                        )
 
                                     # Force save an empty session with the new system prompt to ensure
                                     # persistence of the correct prompt even after provider switch

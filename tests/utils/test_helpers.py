@@ -121,41 +121,12 @@ class TestHelpers:
     @patch('os.path.isdir')
     @patch('os.path.expanduser')
     @patch('os.path.dirname')
-    @patch('os.listdir')
-    @patch('os.path.basename')
-    def test_get_working_and_project_dirs(self, mock_basename, mock_listdir, mock_dirname, mock_expanduser, mock_isdir, mock_getcwd):
-        """Test finding working directory and project directory."""
+    @patch('os.walk')
+    def test_get_working_and_project_dirs(self, mock_walk, mock_dirname, mock_expanduser, mock_isdir, mock_getcwd):
+        """Test finding working directory and project directory with file listing."""
         # Set up mocks
         mock_getcwd.return_value = '/home/user/projects/myproject/subdir'
         mock_expanduser.return_value = '/home/user'
-        
-        # Mock basename to return appropriate names
-        def basename_side_effect(path):
-            if path == '/home/user/projects/myproject/subdir/.Q':
-                return '.Q'
-            elif path == '/home/user/projects/myproject/.Q':
-                return '.Q'
-            elif path == '/home/user/projects/myproject/.Q/config':
-                return 'config'
-            elif path == '/home/user/projects/myproject/.Q/prompts':
-                return 'prompts'
-            else:
-                return os.path.basename(path)
-        
-        mock_basename.side_effect = basename_side_effect
-        
-        # Mock listdir to return appropriate content for .Q directory
-        def listdir_side_effect(path):
-            if path == '/home/user/projects/myproject/.Q':
-                return ['config', 'prompts', 'project.md']
-            elif path == '/home/user/projects/myproject/.Q/prompts':
-                return ['system.md', 'user.md']
-            elif path == '/home/user/projects/myproject/.Q/config':
-                return ['settings.json']
-            else:
-                return []
-        
-        mock_listdir.side_effect = listdir_side_effect
         
         # Mock dirname to return appropriate parent directories
         def dirname_side_effect(path):
@@ -174,18 +145,20 @@ class TestHelpers:
         
         mock_dirname.side_effect = dirname_side_effect
         
+        # Mock os.walk to return some sample files
+        mock_walk.return_value = [
+            ('/home/user/projects/myproject', [], ['README.md', 'setup.py']),
+            ('/home/user/projects/myproject/src', [], ['main.py', 'utils.py']),
+            ('/home/user/projects/myproject/tests', [], ['test_main.py']),
+            ('/home/user/projects/myproject/.git', [], ['config']),  # This should be skipped
+        ]
+        
         # Case 1: .git found in current directory
         def isdir_side_effect(path):
             if path == '/home/user/projects/myproject/subdir/.Q':
                 return False
             if path == '/home/user/projects/myproject/subdir/.git':
                 return True
-            if path.startswith('/home/user/projects/myproject/.Q'):
-                return path in [
-                    '/home/user/projects/myproject/.Q',
-                    '/home/user/projects/myproject/.Q/config',
-                    '/home/user/projects/myproject/.Q/prompts',
-                ]
             return False
             
         mock_isdir.side_effect = isdir_side_effect
@@ -193,7 +166,12 @@ class TestHelpers:
         result = get_working_and_project_dirs()
         assert "Current Working Directory: /home/user/projects/myproject/subdir" in result
         assert "Project Root Directory: /home/user/projects/myproject/subdir" in result
-        assert ".Q Directory Contents:" not in result
+        assert "Project Files:" in result
+        # Make sure listed files are included
+        assert "/home/user/projects/myproject/README.md" in result
+        assert "/home/user/projects/myproject/src/main.py" in result
+        # Make sure .git files are excluded
+        assert ".git" not in result
         
         # Case 2: .Q found in parent directory
         def isdir_side_effect2(path):
@@ -203,11 +181,6 @@ class TestHelpers:
                 return False
             if path == '/home/user/projects/myproject/.Q':
                 return True
-            if path.startswith('/home/user/projects/myproject/.Q/'):
-                return path in [
-                    '/home/user/projects/myproject/.Q/config',
-                    '/home/user/projects/myproject/.Q/prompts',
-                ]
             return False
             
         mock_isdir.side_effect = isdir_side_effect2
@@ -215,12 +188,10 @@ class TestHelpers:
         result = get_working_and_project_dirs()
         assert "Current Working Directory: /home/user/projects/myproject/subdir" in result
         assert "Project Root Directory: /home/user/projects/myproject" in result
-        assert ".Q Directory Contents:" in result
-        # Check for the correct tree format
-        assert "└── .Q" in result
-        assert "├── config" in result or "└── config" in result
-        assert "├── prompts" in result or "└── prompts" in result
-        assert "project.md" in result
+        assert "Project Files:" in result
+        # Make sure listed files are included
+        assert "/home/user/projects/myproject/README.md" in result
+        assert "/home/user/projects/myproject/src/main.py" in result
         
         # Case 3: No project directory found
         def isdir_side_effect3(path):
@@ -235,4 +206,4 @@ class TestHelpers:
         result = get_working_and_project_dirs()
         assert "Current Working Directory: /home/user/projects/myproject/subdir" in result
         assert "Project Root Directory: Unknown" in result
-        assert ".Q Directory Contents:" not in result
+        assert "Project Files:" not in result

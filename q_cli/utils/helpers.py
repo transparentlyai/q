@@ -2,7 +2,6 @@
 
 import os
 import re
-import pathlib
 from typing import Dict, List, Tuple, Optional
 
 from rich.console import Console
@@ -308,114 +307,89 @@ def handle_api_error(
 def get_working_and_project_dirs() -> str:
     """
     Find both the current working directory and the project root directory.
-    
+
     The current working directory is where q was started from.
     The project directory is identified by looking for a .Q or .git directory,
     searching upward from the current directory until reaching one directory before
     the user's home directory.
-    
+
     Returns:
-        A formatted string containing both directory paths and .Q directory tree if exists.
+        A formatted string containing both directory paths and a list of all project files.
     """
     # Get the current working directory
     cwd = os.getcwd()
-    
+
     # Get the user's home directory
     home_dir = os.path.expanduser("~")
-    
+
     # Get the parent of home directory (we should stop before this)
     home_parent = os.path.dirname(home_dir)
-    
+
     # Start searching for project root from the current directory
     project_dir = None
-    has_q_dir = False
     search_dir = cwd
-    
+
     # Continue searching until we reach one directory before the home directory
     while search_dir:
         # Check if .Q directory exists
         q_dir_path = os.path.join(search_dir, ".Q")
         if os.path.isdir(q_dir_path):
             project_dir = search_dir
-            has_q_dir = True
             break
-        
+
         # If not, check for .git directory
         git_dir_path = os.path.join(search_dir, ".git")
         if os.path.isdir(git_dir_path):
             project_dir = search_dir
             break
-        
+
         # Move up one directory
         parent_dir = os.path.dirname(search_dir)
-        
+
         # Stop searching if:
         # 1. We've reached the root directory (parent == search_dir)
         # 2. We've reached the parent of home directory
         # 3. We've reached the home directory itself
-        if (parent_dir == search_dir or 
-            search_dir == home_parent or 
-            search_dir == home_dir):
+        if (parent_dir == search_dir or
+                search_dir == home_parent or
+                search_dir == home_dir):
             break
-        
+
         search_dir = parent_dir
-    
+
     # Build the result string
     result = f"Current Working Directory: {cwd}\n"
-    
+
     if project_dir:
-        result += f"Project Root Directory: {project_dir}"
-        
-        # If .Q directory exists, include its tree
-        if has_q_dir:
-            q_dir_path = os.path.join(project_dir, ".Q")
-            result += f"\n\n.Q Directory Contents:\n"
-            result += _generate_directory_tree(q_dir_path)
+        result += f"Project Root Directory: {project_dir}\n\n"
+        result += "Project Files:\n"
+
+        # List all files in the project directory with full paths
+        try:
+            file_list = []
+            for root, _, files in os.walk(project_dir):
+                # Skip .git and other hidden directories
+                if "/." in root:
+                    continue
+
+                for file in files:
+                    # Skip hidden files
+                    if file.startswith("."):
+                        continue
+
+                    file_path = os.path.join(root, file)
+                    file_list.append(file_path)
+
+            # Sort the files for consistent output
+            file_list.sort()
+
+            # Add the file list to the result
+            result += "\n".join(file_list)
+        except Exception as e:
+            result += f"Error listing project files: {str(e)}"
     else:
         result += "Project Root Directory: Unknown"
-    
+
     return result
 
 
-def _generate_directory_tree(directory_path: str, prefix: str = "", is_last: bool = True, max_depth: int = 3) -> str:
-    """
-    Generate a tree representation of a directory structure.
-    
-    Args:
-        directory_path: Path to the directory
-        prefix: Prefix for the current line
-        is_last: Whether the current item is the last in its parent directory
-        max_depth: Maximum depth to traverse (avoid infinite recursion)
-        
-    Returns:
-        String representation of the directory tree
-    """
-    if max_depth <= 0:
-        return prefix + "..."
-    
-    # Get the base name of the directory
-    base_name = os.path.basename(directory_path)
-    
-    # Start with the directory name
-    result = f"{prefix}{'└── ' if is_last else '├── '}{base_name}\n"
-    
-    # Get all items in the directory
-    try:
-        items = sorted(os.listdir(directory_path))
-    except (PermissionError, FileNotFoundError):
-        return result + f"{prefix}{'    ' if is_last else '│   '}Error: Could not access directory\n"
-    
-    # Process each item
-    for i, item in enumerate(items):
-        item_path = os.path.join(directory_path, item)
-        is_last_item = (i == len(items) - 1)
-        new_prefix = prefix + ('    ' if is_last else '│   ')
-        
-        if os.path.isdir(item_path):
-            # If it's a directory, recursively generate its tree
-            result += _generate_directory_tree(item_path, new_prefix, is_last_item, max_depth - 1)
-        else:
-            # If it's a file, add it to the result
-            result += f"{new_prefix}{'└── ' if is_last_item else '├── '}{item}\n"
-    
-    return result
