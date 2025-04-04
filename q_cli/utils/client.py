@@ -153,6 +153,11 @@ class LLMClient:
                     if system:
                         console.print(f"[dim]System prompt length: {len(system)} characters[/dim]")
                     console.print(f"[dim]Sending {len(transformed_messages)} messages to model[/dim]")
+                    
+                    # Add detailed message log in orange color
+                    import json
+                    formatted_messages = json.dumps(transformed_messages, indent=2)
+                    console.print(f"[orange]Complete message sent to model:[/orange]\n[orange]{formatted_messages}[/orange]")
                 
             response = self.client.completion(**request_params)
 
@@ -426,6 +431,39 @@ class LLMClient:
             from rich.console import Console
             console = Console()
             console.print(f"[#FF8800]Received response from model:[/#FF8800] id={getattr(response, 'id', 'unknown')}")
+            
+            # Show complete response in orange
+            import json
+            try:
+                # Try to convert the complete response to a serializable format
+                response_dict = {}
+                if hasattr(response, 'id'):
+                    response_dict['id'] = response.id
+                if hasattr(response, 'choices'):
+                    response_dict['choices'] = []
+                    for choice in response.choices:
+                        choice_dict = {}
+                        if hasattr(choice, 'message'):
+                            msg = choice.message
+                            if hasattr(msg, 'content'):
+                                choice_dict['message'] = {'content': msg.content, 'role': 'assistant'}
+                        if hasattr(choice, 'finish_reason'):
+                            choice_dict['finish_reason'] = choice.finish_reason
+                        response_dict['choices'].append(choice_dict)
+                if hasattr(response, 'usage'):
+                    usage = response.usage
+                    response_dict['usage'] = {}
+                    if hasattr(usage, 'prompt_tokens'):
+                        response_dict['usage']['prompt_tokens'] = usage.prompt_tokens
+                    if hasattr(usage, 'completion_tokens'):
+                        response_dict['usage']['completion_tokens'] = usage.completion_tokens
+                    if hasattr(usage, 'total_tokens'):
+                        response_dict['usage']['total_tokens'] = usage.total_tokens
+                
+                formatted_response = json.dumps(response_dict, indent=2)
+                console.print(f"[orange]Complete response from model:[/orange]\n[orange]{formatted_response}[/orange]")
+            except Exception as e:
+                console.print(f"[orange]Could not format complete response: {str(e)}[/orange]")
             
             # Show content preview if available
             if hasattr(response, 'choices') and response.choices and hasattr(response.choices[0], 'message'):
