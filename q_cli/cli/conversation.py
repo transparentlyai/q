@@ -107,7 +107,12 @@ def run_conversation(
 
     # Determine the correct provider based on model name or args
     model = getattr(args, "model", "")
-    provider = getattr(args, "provider", DEFAULT_PROVIDER)
+    
+    # Get provider from client if available, otherwise from args, fall back to DEFAULT_PROVIDER
+    if hasattr(client, "provider") and client.provider:
+        provider = client.provider
+    else:
+        provider = getattr(args, "provider", DEFAULT_PROVIDER)
 
     # Check if we have a global system prompt from a previous provider switch
     global_system_prompt = get_global_system_prompt()
@@ -290,6 +295,12 @@ def run_conversation(
             )
 
     # Check for ENV var or config file override
+    if provider is None:
+        # If provider is None, use DEFAULT_PROVIDER (this should not normally happen)
+        provider = DEFAULT_PROVIDER
+        if get_debug():
+            console.print(f"[yellow]Provider was None, falling back to {DEFAULT_PROVIDER}[/yellow]")
+    
     env_var_name = f"{provider.upper()}_MAX_TOKENS_PER_MIN"
     env_value = os.environ.get(env_var_name)
     if env_value:
